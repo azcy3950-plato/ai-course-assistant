@@ -1,0 +1,33 @@
+{
+  "name": "ai-course-assistant",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/leaflet": "^1.9.21",
+    "leaflet": "^1.9.4",
+    "next": "^16.2.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-leaflet": "^5.0.0",
+    "recharts": "^3.9.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "postcss": "^8.5.19",
+    "tailwindcss": "^4.3.3",
+    "typescript": "7.0.2"
+  }
+}

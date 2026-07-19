@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-light: #3b82f6;
+  --color-primary-bg: #eff6ff;
+  --color-accent: #059669;
+  --color-accent-light: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f8fafc;
+  --color-border: #e2e8f0;
+  --color-text: #1e293b;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #94a3b8;
+
+  --font-sans: "Inter", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-surface-alt);
+}
+
+/* Leaflet CSS overrides */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  border-radius: 0.5rem;
+}
+
+/* Chat message markdown */
+.message-content p {
+  margin: 0.25rem 0;
+}
+
+.message-content code {
+  background: #f1f5f9;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+}
+
+/* Reference highlight animation */
+@keyframes highlight-pulse {
+  0%, 100% { background-color: #fef3c7; }
+  50% { background-color: #fde68a; }
+}
+
+.reference-highlight {
+  animation: highlight-pulse 1.5s ease-in-out 2;
+  border-radius: 0.25rem;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
