@@ -7,6 +7,10 @@
 
 # production
 /build
+/out
+
+# netlify
+/.netlify
 
 # misc
 .DS_Store
