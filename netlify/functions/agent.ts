@@ -1,5 +1,8 @@
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY!;
 const DEEPSEEK_MODEL = "deepseek-chat";
+const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY!;
+const SUPABASE_URL = process.env.SUPABASE_URL!;
+const SUPABASE_KEY = process.env.SUPABASE_KEY!;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,6 +15,7 @@ interface ChatMsg {
   content: string;
 }
 
+// ── Call DeepSeek chat ──
 async function callDeepSeek(messages: ChatMsg[], maxTokens = 2048) {
   const res = await fetch("https://api.deepseek.com/v1/chat/completions", {
     method: "POST",
@@ -26,14 +30,81 @@ async function callDeepSeek(messages: ChatMsg[], maxTokens = 2048) {
       temperature: 0.7,
     }),
   });
-
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`DeepSeek API 错误 (${res.status}): ${err}`);
+    throw new Error(`DeepSeek 错误 (${res.status}): ${err}`);
   }
-
   const data = await res.json();
   return data.choices?.[0]?.message?.content || "";
+}
+
+// ── Call DashScope embedding ──
+async function getEmbedding(text: string): Promise<number[]> {
+  const res = await fetch(
+    "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DASHSCOPE_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "text-embedding-v2",
+        input: text,
+      }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Embedding 错误: ${err}`);
+  }
+  const data = await res.json();
+  return data.data?.[0]?.embedding;
+}
+
+// ── Vector search in Supabase ──
+async function searchChunks(embedding: number[], topK = 5) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_chunks`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+    },
+    body: JSON.stringify({
+      query_embedding: embedding,
+      match_count: topK,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error("Search error:", err);
+    return [];
+  }
+  return res.json();
+}
+
+// ── Seed: store a chunk in Supabase ──
+async function storeChunk(
+  docName: string,
+  chapter: string,
+  content: string,
+  embedding: number[]
+) {
+  await fetch(`${SUPABASE_URL}/rest/v1/document_chunks`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+    },
+    body: JSON.stringify({
+      doc_name: docName,
+      chapter,
+      content,
+      embedding,
+    }),
+  });
 }
 
 export default async function handler(req: Request) {
@@ -60,17 +131,36 @@ export default async function handler(req: Request) {
     const { action, params } = await req.json();
     let messages: ChatMsg[];
 
-    // ══════════════ KNOWLEDGE AGENT ══════════════
+    // ══════════════ KNOWLEDGE AGENT (with vector RAG) ══════════════
     if (action === "knowledge") {
-      const { question, context } = params;
-      const contextBlock = context
-        ? `\n\n以下是知识库中与用户问题相关的参考内容：\n\n${context}\n\n请根据以上参考内容回答用户的问题。如果参考内容不足，可以结合你自己的知识补充，但要注明哪些是来自知识库，哪些是你的知识。`
-        : "";
+      const { question } = params;
+
+      // 1) Vector search
+      let contextBlock = "";
+      try {
+        const qEmbedding = await getEmbedding(question);
+        if (qEmbedding) {
+          const chunks = await searchChunks(qEmbedding, 5);
+          if (chunks.length > 0) {
+            contextBlock =
+              "\n\n以下是知识库中与问题最相关的资料片段：\n\n" +
+              chunks
+                .map(
+                  (c: any, i: number) =>
+                    `[${c.doc_name}${c.chapter ? " " + c.chapter : ""} 相似度:${(c.similarity * 100).toFixed(0)}%]\n${c.content}`
+                )
+                .join("\n\n") +
+              "\n\n请基于以上资料回答。如果资料不完整可以补充你的知识，但优先使用资料中的内容。";
+          }
+        }
+      } catch (e) {
+        console.error("向量搜索失败:", e);
+      }
 
       messages = [
         {
           role: "system",
-          content: `你是「城市排水与内涝防治」课程的 AI 助教。你的职责是帮助学生理解城市排水系统、内涝防治、海绵城市等相关知识。你应该：\n- 用中文回答，语言清晰专业，条理分明\n- 引用知识库中的资料时标注来源\n- 对于复杂问题，提供结构化的回答\n- 鼓励学生深入思考，但不要离题${contextBlock}`,
+          content: `你是「城市排水与内涝防治」课程的 AI 助教。用中文回答，专业清晰，引用资料时标注出处。${contextBlock}`,
         },
         { role: "user", content: question },
       ];
@@ -82,20 +172,49 @@ export default async function handler(req: Request) {
       );
     }
 
+    // ══════════════ SEED: 向量化存储知识库片段 ══════════════
+    if (action === "seed_chunk") {
+      const { docName, chapter, content } = params;
+      const embedding = await getEmbedding(content);
+      await storeChunk(docName, chapter || "", content, embedding);
+      return new Response(
+        JSON.stringify({ ok: true }),
+        { headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // ══════════════ CLEAR chunks ══════════════
+    if (action === "clear_chunks") {
+      await fetch(`${SUPABASE_URL}/rest/v1/document_chunks`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({}),
+      });
+      return new Response(
+        JSON.stringify({ ok: true }),
+        { headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     // ══════════════ GUIDED — START ══════════════
     if (action === "guided_start") {
-      const { scenarioTitle, scenarioDescription, firstQuestion, totalSteps } = params;
+      const { scenarioTitle, scenarioDescription, firstQuestion, totalSteps } =
+        params;
       messages = [
         {
           role: "system",
-          content: "你是引导式学习 AI 助教。用中文回复，语气亲切鼓励，帮助学生进入学习状态。",
+          content: "你是引导式学习 AI 助教。用中文，亲切鼓励。",
         },
         {
           role: "user",
-          content: `学习场景「${scenarioTitle}」：${scenarioDescription}\n第一道问题：${firstQuestion}\n总共 ${totalSteps} 步。\n\n请生成一个简短的欢迎语，然后自然地引出第一个问题。直接说人话，不要JSON。`,
+          content: `学习场景「${scenarioTitle}」：${scenarioDescription}\n第一个问题：${firstQuestion}\n共 ${totalSteps} 步。请生成简短欢迎语然后自然引出问题。直接说人话。`,
         },
       ];
-
       const text = await callDeepSeek(messages, 512);
       return new Response(
         JSON.stringify({ greeting: text, firstQuestion }),
@@ -105,30 +224,32 @@ export default async function handler(req: Request) {
 
     // ══════════════ GUIDED — EVALUATE ══════════════
     if (action === "guided_evaluate") {
-      const { scenarioTitle, stepNumber, totalSteps, question, expectedAnswer, studentAnswer } = params;
+      const {
+        scenarioTitle, stepNumber, totalSteps,
+        question, expectedAnswer, studentAnswer,
+      } = params;
       messages = [
         {
           role: "system",
-          content: `你是引导式学习 AI 助教。学生在学习「${scenarioTitle}」。你的任务是评价学生的回答。\n\n规则：\n- 以鼓励为主，肯定正确部分\n- 指出可以补充的地方，但不要直接否定\n- 给出知识点的完整解释\n- 如果学生回答很短（不到20字），鼓励他们展开思考\n\n用中文回复，输出JSON格式：\n{"feedback": "评价（1-2句）", "explanation": "完整知识讲解（2-5句）"}`,
+          content: `你评价学生在「${scenarioTitle}」中的回答。鼓励为主，指出可补充处。输出JSON: {"feedback":"评价","explanation":"知识讲解"}`,
         },
         {
           role: "user",
-          content: `问题（第${stepNumber}/${totalSteps}步）：${question}\n${expectedAnswer ? `参考答案要点：${expectedAnswer}` : ""}\n\n学生回答：${studentAnswer}\n\n请评价。`,
+          content: `问题(${stepNumber}/${totalSteps}): ${question}\n${expectedAnswer ? "参考要点:" + expectedAnswer : ""}\n学生回答: ${studentAnswer}`,
         },
       ];
-
       const text = await callDeepSeek(messages, 1024);
       try {
-        const parsed = JSON.parse(text);
-        return new Response(JSON.stringify({
-          feedback: parsed.feedback || "感谢你的回答！",
-          explanation: parsed.explanation || text,
-        }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+        const p = JSON.parse(text);
+        return new Response(
+          JSON.stringify({ feedback: p.feedback, explanation: p.explanation }),
+          { headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
       } catch {
-        return new Response(JSON.stringify({
-          feedback: text,
-          explanation: text,
-        }), { headers: { "Content-Type": "application/json", ...corsHeaders } });
+        return new Response(
+          JSON.stringify({ feedback: text, explanation: text }),
+          { headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
       }
     }
 
@@ -138,14 +259,13 @@ export default async function handler(req: Request) {
       messages = [
         {
           role: "system",
-          content: `你是引导式学习 AI 助教。学生遇到困难需要提示。\n规则：\n- 第1次提示：给一个知识点方向\n- 第2次提示：给思路引导\n- 第3次提示：给具体步骤但不给答案\n- 第4次及以上：可以非常接近答案但不要直接说出来\n\n用中文，直接说人话。`,
+          content: "逐级提示。1=方向,2=思路,3=步骤,4+=接近答案。直接说人话。",
         },
         {
           role: "user",
-          content: `问题：${question}\n已使用 ${hintsUsed} 次提示。请给第 ${hintsUsed + 1} 级提示。`,
+          content: `问题: ${question}\n已用${hintsUsed}次提示，给第${hintsUsed + 1}级。`,
         },
       ];
-
       const text = await callDeepSeek(messages, 256);
       return new Response(
         JSON.stringify({ hint: text }),
@@ -153,20 +273,19 @@ export default async function handler(req: Request) {
       );
     }
 
-    // ══════════════ SANDBOX AGENT ══════════════
+    // ══════════════ SANDBOX ══════════════
     if (action === "sandbox") {
       const { question, simulation } = params;
       messages = [
         {
           role: "system",
-          content: "你是城市排水与内涝防治的 AI 专家。你需要根据模拟数据分析内涝情况，提出专业建议和具体改进方案。用中文回答，条理清晰。",
+          content: "城市排水与内涝防治专家。分析模拟数据，给出专业建议。中文，清晰。",
         },
         {
           role: "user",
-          content: `当前模拟参数：\n- 降雨强度：${simulation?.intensity || "?"} mm/h\n- 降雨历时：${simulation?.duration || "?"} min\n- 最大积水深度：${simulation?.maxDepth || "?"} m\n- 积水面积：${simulation?.floodArea || "?"} km²\n\n用户问题：${question}`,
+          content: `降雨强度${simulation?.intensity || "?"}mm/h，历时${simulation?.duration || "?"}min，积水深${simulation?.maxDepth || "?"}m，面积${simulation?.floodArea || "?"}km²。问题: ${question}`,
         },
       ];
-
       const text = await callDeepSeek(messages);
       return new Response(
         JSON.stringify({ answer: text, references: [] }),

@@ -12,6 +12,9 @@
 # netlify
 /.netlify
 
+# scripts
+/scripts/*.json
+
 # misc
 .DS_Store
 *.pem
