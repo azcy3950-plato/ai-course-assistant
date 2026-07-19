@@ -6,6 +6,12 @@ export interface User {
   role: UserRole;
 }
 
+export interface AppState {
+  role: UserRole | null;
+  userName: string | null;
+  authLoading: boolean;
+}
+
 // ========== Chat & Messages ==========
 export interface Reference {
   id: number;

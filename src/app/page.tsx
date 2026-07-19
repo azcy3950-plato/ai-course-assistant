@@ -5,6 +5,37 @@ import Link from 'next/link';
 import { useApp } from '@/contexts/AppContext';
 import { useLearning } from '@/contexts/LearningContext';
 
+// ══════════════ UNAUTHENTICATED LANDING ══════════════
+function LandingPage() {
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8 text-center">
+      <div className="mt-20 mb-8">
+        <span className="text-6xl">🎓</span>
+        <h1 className="text-3xl font-bold text-[var(--color-text)] mt-4 mb-3">
+          AI 课程助教
+        </h1>
+        <p className="text-[var(--color-text-secondary)] mb-8 max-w-xl mx-auto leading-relaxed">
+          城市排水与内涝防治智能教学平台 — 统一知识库智能体、引导思考智能体、电子沙盘三位一体
+        </p>
+        <div className="flex gap-4 justify-center">
+          <Link
+            href="/login"
+            className="px-6 py-3 bg-[var(--color-primary)] text-white rounded-xl font-medium hover:opacity-90 transition-opacity"
+          >
+            登录
+          </Link>
+          <Link
+            href="/signup"
+            className="px-6 py-3 border border-[var(--color-border)] rounded-xl font-medium text-[var(--color-text)] hover:bg-gray-50 transition-colors"
+          >
+            注册
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Student module cards
 const studentModules = [
   {
@@ -67,6 +98,11 @@ const teacherModules = [
 export default function HomePage() {
   const { state } = useApp();
   const { state: learningState } = useLearning();
+  // ── Authenticated check ──
+  if (!state.role) {
+    return <LandingPage />;
+  }
+
   const isStudent = state.role === 'student';
   const modules = isStudent ? studentModules : teacherModules;
 

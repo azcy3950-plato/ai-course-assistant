@@ -1,8 +1,9 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { useApp } from '@/contexts/AppContext';
-import { UploadedDocument, StudentStats } from '@/types';
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useApp } from "@/contexts/AppContext";
+import { UploadedDocument, StudentStats } from "@/types";
 
 // Mock data
 const mockDocuments: UploadedDocument[] = [
@@ -96,6 +97,31 @@ type TabKey = 'upload' | 'knowledge' | 'students';
 
 export default function TeacherPage() {
   const { state } = useApp();
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState(false);
+
+  // ── Role guard ──
+  useEffect(() => {
+    if (state.authLoading) return;
+    if (!state.role) {
+      router.replace(
+        "/login?redirect=" + encodeURIComponent("/teacher")
+      );
+    } else if (state.role !== "teacher") {
+      router.replace("/");
+    } else {
+      setAuthorized(true);
+    }
+  }, [state.authLoading, state.role, router]);
+
+  if (state.authLoading || !authorized) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] text-[var(--color-text-muted)]">
+        加载中...
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState<TabKey>('upload');
   const [dragOver, setDragOver] = useState(false);
   const [documents, setDocuments] = useState(mockDocuments);
