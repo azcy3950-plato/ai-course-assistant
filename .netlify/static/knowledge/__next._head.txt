@@ -1,5 +1,5 @@
 1:"$Sreact.fragment"
-2:I[61722,["/_next/static/chunks/3n-01o5k3k4t2.js","/_next/static/chunks/0h0hqta8xvv7a.js","/_next/static/chunks/3bjg69ytrzkon.js"],"ViewportBoundary"]
-3:I[61722,["/_next/static/chunks/3n-01o5k3k4t2.js","/_next/static/chunks/0h0hqta8xvv7a.js","/_next/static/chunks/3bjg69ytrzkon.js"],"MetadataBoundary"]
+2:I[61722,["/_next/static/chunks/0lv-f4h-08c7r.js","/_next/static/chunks/0k__0ezxzmwlq.js","/_next/static/chunks/3bjg69ytrzkon.js"],"ViewportBoundary"]
+3:I[61722,["/_next/static/chunks/0lv-f4h-08c7r.js","/_next/static/chunks/0k__0ezxzmwlq.js","/_next/static/chunks/3bjg69ytrzkon.js"],"MetadataBoundary"]
 4:"$Sreact.suspense"
-0:{"rsc":["$","$1","h",{"children":[null,["$","$L2",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","div",null,{"hidden":true,"children":["$","$L3",null,{"children":["$","$4",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"AI 课程助教 — 城市排水与内涝防治"}],["$","meta","1",{"name":"description","content":"统一知识库智能体、引导思考智能体、电子沙盘三位一体的AI课程助教平台"}]]}]}]}],null]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"6N8MZtw6tsO1Yk8dsRRm5"}
+0:{"rsc":["$","$1","h",{"children":[null,["$","$L2",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","div",null,{"hidden":true,"children":["$","$L3",null,{"children":["$","$4",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"AI 课程助教 — 城市排水与内涝防治"}],["$","meta","1",{"name":"description","content":"统一知识库智能体、引导思考智能体、电子沙盘三位一体的AI课程助教平台"}]]}]}]}],null]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"GrGxA6vwZdx1SPooKctfh"}
