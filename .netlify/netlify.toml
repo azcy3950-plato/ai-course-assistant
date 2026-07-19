@@ -1,21 +1,14 @@
-headersOrigin = "inline"
+functionsDirectory = "C:\\Users\\1\\ai-course-assistant\\netlify\\functions"
+functionsDirectoryOrigin = "config-v1"
 redirectsOrigin = "inline"
-
-[functions]
-
-[functions."*"]
-
-[[plugins]]
-origin = "default"
-package = "@netlify/plugin-nextjs"
-
-[plugins.inputs]
+headersOrigin = "inline"
 
 [build]
 publish = "C:\\Users\\1\\ai-course-assistant\\out"
 publishOrigin = "config"
 commandOrigin = "config"
 command = "npm run build"
+functions = "C:\\Users\\1\\ai-course-assistant\\netlify\\functions"
 
 [build.environment]
 
@@ -31,11 +24,33 @@ command = "npm run build"
 
 [build.services]
 
+[functions]
+
+[functions."*"]
+
+[[plugins]]
+origin = "default"
+package = "@netlify/plugin-nextjs"
+
+[plugins.inputs]
+
 [[headers]]
 for = "/_next/static/*"
 
 [headers.values]
 Cache-Control = "public, max-age=31536000, immutable"
+
+[[redirects]]
+from = "/api/*"
+to = "/.netlify/functions/:splat"
+status = 200.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]
 
 [[redirects]]
 from = "/_next/image"
