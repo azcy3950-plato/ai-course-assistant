@@ -1,0 +1,1195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SRTM30米北京 -- DEM data product</title>
+    <link rel="shortcut icon" href="/tadmin/favicon.ico" />
+    <link href="/tadmin/media/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/tadmin/media/css/style_d.css" rel="stylesheet">
+    <script src="/tadmin/media/js/jquery-3.6.0.min.js"></script>
+    <script src="/tadmin/js/js.cookie.min.js"></script>
+</head>
+
+<body>
+
+<header>
+    <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
+        <div class="container">
+            <a class="navbar-brand d-block d-flex align-items-center fs-10 text-white mb-0" href="/thematic">
+                <img src="/tadmin/media/images/logo_en.png" alt="">
+                
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse"
+                    aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+
+            <a class="btn btn-secondary" href="https://data.casearth.cn/?locale=en">
+                <svg t="1648446965482" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3780" width="14" height="14">
+                    <path d="M475 276V141.4c-12.1-56.3-58.2-22-58.2-22L96.6 395.9c-70.4 48.9-4.8 85.7-4.8 85.7l315.4 274.1c63.1 46.5 67.9-24.5 67.9-24.5V606.4C795.3 506 926.3 907.5 926.3 907.5c12.1 22 19.4 0 19.4 0C1069.4 305.4 475 276 475 276z" p-id="3781" fill="#062d52"></path>
+                </svg>
+                Return
+            </a>
+
+            <div class="collapse navbar-collapse" id="navbarCollapse">
+                <ul class="navbar-nav me-auto mb-2 mb-md-0 d-flex align-items-center">
+                    <li class="nav-item">
+                        <a class="nav-link " aria-current="page" href="/thematic">HOME</a>
+                    </li>
+                    <i class="d-block">
+                        <img src="/tadmin/media/images/arrow.png" width="auto" alt="">
+                    </i>
+                    <li class="nav-item">
+                        <a class="nav-link " href="/thematic/dem" title="DEM data product">DEM data product</a>
+                    </li>
+                    <i class="d-block">
+                        <img src="/tadmin/media/images/arrow.png" width="auto" alt="">
+                    </i>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="javascript:void(0);" style="cursor: default;">DETAILS</a>
+                    </li>
+                </ul>
+                <select id="langSel" class="form-select" aria-label="Default select example">
+                    <option selected>Language</option>
+                    <option>English</option>
+                    <option>中文</option>
+                </select>
+            </div>
+        </div>
+    </nav>
+</header>
+
+<div id="myCarousel" class="carousel slide" data-bs-ride="carousel"></div>
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-3 zuobian">
+            
+    <div class="position-sticky rounded accordion accordion-flush" id="accordionFlushExample"
+         style="top: 2rem;">
+        <div class="accordion-item mb-2">
+            <div class="p-4 d-flex align-items-center rounded listShow accordion-header" id="flush-heading46">
+                <button class="accordion-button collapsed" type="button" title="Copericus DEM"  data-bs-toggle="collapse" data-bs-target="#flush-collapse46" aria-expanded="false" aria-controls="#flush-collapse46">
+                    <img src="/tadmin/media/images/tubiao.png" alt="">
+                    <h4 style="color:#5a5a5a;">Copericus DEM</h4>
+                </button>
+            </div>
+
+            <div class="listShow_con accordion-collapse show collapse" style="border: 1px solid rgba(0,0,0,.125);" id="flush-collapse46"  aria-labelledby="flush-heading46" data-bs-parent="#accordionFlushExample">
+                <div class="accordion-body">
+                    
+                        <a href="/thematic/dem/480" title="CopericusDEM30米-江苏省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-江苏省
+                        </a>
+                    
+                        <a href="/thematic/dem/479" title="CopericusDEM30米-辽宁省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-辽宁省
+                        </a>
+                    
+                        <a href="/thematic/dem/478" title="CopericusDEM30米-内蒙古自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-内蒙古自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/477" title="CopericusDEM30米-宁夏回族自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-宁夏回族自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/476" title="CopericusDEM30米-青海省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-青海省
+                        </a>
+                    
+                        <a href="/thematic/dem/475" title="CopericusDEM30米-山东省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-山东省
+                        </a>
+                    
+                        <a href="/thematic/dem/474" title="CopericusDEM30米-山西省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-山西省
+                        </a>
+                    
+                        <a href="/thematic/dem/473" title="CopericusDEM30米陕西省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米陕西省
+                        </a>
+                    
+                        <a href="/thematic/dem/472" title="CopericusDEM30米-上海市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-上海市
+                        </a>
+                    
+                        <a href="/thematic/dem/471" title="CopericusDEM30米-四川省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-四川省
+                        </a>
+                    
+                        <a href="/thematic/dem/470" title="CopericusDEM30米-天津市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-天津市
+                        </a>
+                    
+                        <a href="/thematic/dem/469" title="CopericusDEM30米-吉林省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-吉林省
+                        </a>
+                    
+                        <a href="/thematic/dem/468" title="CopericusDEM30米-江西省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-江西省
+                        </a>
+                    
+                        <a href="/thematic/dem/467" title="CopericusDEM30米-香港特别行政区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-香港特别行政区
+                        </a>
+                    
+                        <a href="/thematic/dem/466" title="CopericusDEM30米-云南省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-云南省
+                        </a>
+                    
+                        <a href="/thematic/dem/465" title="CopericusDEM30米-浙江省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-浙江省
+                        </a>
+                    
+                        <a href="/thematic/dem/463" title="CopericusDEM30米-西藏自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-西藏自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/462" title="CopericusDEM30米-新疆维吾尔自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-新疆维吾尔自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/386" title="CopericusDEM-贵州省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM-贵州省
+                        </a>
+                    
+                        <a href="/thematic/dem/387" title="CopericusDEM-广西壮族自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM-广西壮族自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/379" title="CopericusDEM-安徽省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM-安徽省
+                        </a>
+                    
+                        <a href="/thematic/dem/389" title="CopericusDEM-福建省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM-福建省
+                        </a>
+                    
+                        <a href="/thematic/dem/388" title="CopericusDEM-甘肃省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM-甘肃省
+                        </a>
+                    
+                        <a href="/thematic/dem/382" title="CopericusDEM30米-黑龙江省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-黑龙江省
+                        </a>
+                    
+                        <a href="/thematic/dem/384" title="CopericusDEM-河北省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM-河北省
+                        </a>
+                    
+                        <a href="/thematic/dem/385" title="CopericusDEM30米-海南"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-海南
+                        </a>
+                    
+                        <a href="/thematic/dem/380" title="CopericusDEM30米-湖南省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-湖南省
+                        </a>
+                    
+                        <a href="/thematic/dem/376" title="CopericusDEM-重庆市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM-重庆市
+                        </a>
+                    
+                        <a href="/thematic/dem/381" title="CopericusDEM30米-湖北省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-湖北省
+                        </a>
+                    
+                        <a href="/thematic/dem/383" title="CopericusDEM30米-河南省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM30米-河南省
+                        </a>
+                    
+                        <a href="/thematic/dem/378" title="CopericusDEM-澳门特别行政区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM-澳门特别行政区
+                        </a>
+                    
+                        <a href="/thematic/dem/377" title="CopericusDEM-北京市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            CopericusDEM-北京市
+                        </a>
+                    
+                </div>
+            </div>
+        </div>
+        <div class="accordion-item mb-2">
+            <div class="p-4 d-flex align-items-center rounded listShow accordion-header" id="flush-heading47">
+                <button class="accordion-button collapsed" type="button" title="SRTM 30米"  data-bs-toggle="collapse" data-bs-target="#flush-collapse47" aria-expanded="false" aria-controls="#flush-collapse47">
+                    <img src="/tadmin/media/images/tubiao.png" alt="">
+                    <h4 style="color:#5a5a5a;">SRTM 30米</h4>
+                </button>
+            </div>
+
+            <div class="listShow_con accordion-collapse show collapse" style="border: 1px solid rgba(0,0,0,.125);" id="flush-collapse47"  aria-labelledby="flush-heading47" data-bs-parent="#accordionFlushExample">
+                <div class="accordion-body">
+                    
+                        <a href="/thematic/dem/550" title="SRTM30米-广西壮族自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-广西壮族自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/461" title="SRTM30米-澳门特别行政区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-澳门特别行政区
+                        </a>
+                    
+                        <a href="/thematic/dem/460" title="SRTM30米-湖南省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-湖南省
+                        </a>
+                    
+                        <a href="/thematic/dem/459" title="SRTM30米-吉林省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-吉林省
+                        </a>
+                    
+                        <a href="/thematic/dem/458" title="SRTM30米-江苏省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-江苏省
+                        </a>
+                    
+                        <a href="/thematic/dem/457" title="SRTM30米-江西省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-江西省
+                        </a>
+                    
+                        <a href="/thematic/dem/456" title="SRTM30米-辽宁省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-辽宁省
+                        </a>
+                    
+                        <a href="/thematic/dem/455" title="SRTM30米-内蒙古自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-内蒙古自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/454" title="SRTM30米-宁夏回族自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-宁夏回族自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/453" title="SRTM30米-青海省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-青海省
+                        </a>
+                    
+                        <a href="/thematic/dem/452" title="SRTM30米-山东省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-山东省
+                        </a>
+                    
+                        <a href="/thematic/dem/451" title="SRTM30米-山西省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-山西省
+                        </a>
+                    
+                        <a href="/thematic/dem/450" title="SRTM30米-陕西省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-陕西省
+                        </a>
+                    
+                        <a href="/thematic/dem/449" title="SRTM30米-上海市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-上海市
+                        </a>
+                    
+                        <a href="/thematic/dem/448" title="SRTM30米-西藏自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-西藏自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/447" title="SRTM30米-新疆维吾尔自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-新疆维吾尔自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/446" title="SRTM30米-四川省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-四川省
+                        </a>
+                    
+                        <a href="/thematic/dem/445" title="SRTM30米-台湾省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-台湾省
+                        </a>
+                    
+                        <a href="/thematic/dem/444" title="SRTM30米-天津市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-天津市
+                        </a>
+                    
+                        <a href="/thematic/dem/443" title="SRTM30米-香港特别行政区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-香港特别行政区
+                        </a>
+                    
+                        <a href="/thematic/dem/442" title="SRTM30米-云南省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-云南省
+                        </a>
+                    
+                        <a href="/thematic/dem/441" title="SRTM30米-浙江省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-浙江省
+                        </a>
+                    
+                        <a href="/thematic/dem/440" title="SRTM30米-重庆市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-重庆市
+                        </a>
+                    
+                        <a href="/thematic/dem/439" title="SRTM30米-安徽"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-安徽
+                        </a>
+                    
+                        <a href="/thematic/dem/436" title="SRTM30米-甘肃"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-甘肃
+                        </a>
+                    
+                        <a href="/thematic/dem/435" title="SRTM30米-广东省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-广东省
+                        </a>
+                    
+                        <a href="/thematic/dem/433" title="SRTM30米-海南"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-海南
+                        </a>
+                    
+                        <a href="/thematic/dem/431" title="SRTM30米-黑龙江省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-黑龙江省
+                        </a>
+                    
+                        <a href="/thematic/dem/430" title="SRTM30米-河南省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-河南省
+                        </a>
+                    
+                        <a href="/thematic/dem/429" title="SRTM30米-湖北省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-湖北省
+                        </a>
+                    
+                        <a href="/thematic/dem/391" title="SRTM30米北京"
+                           class="list-group-item list-group-item-action list-group-item-light activeN">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米北京
+                        </a>
+                    
+                        <a href="/thematic/dem/392" title="SRTM30米-河北省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-河北省
+                        </a>
+                    
+                        <a href="/thematic/dem/390" title="SRTM30米-福建省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-福建省
+                        </a>
+                    
+                        <a href="/thematic/dem/393" title="SRTM30米-贵州省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-贵州省
+                        </a>
+                    
+                </div>
+            </div>
+        </div>
+        <div class="accordion-item mb-2">
+            <div class="p-4 d-flex align-items-center rounded listShow accordion-header" id="flush-heading59">
+                <button class="accordion-button collapsed" type="button" title="SRTM 90米"  data-bs-toggle="collapse" data-bs-target="#flush-collapse59" aria-expanded="false" aria-controls="#flush-collapse59">
+                    <img src="/tadmin/media/images/tubiao.png" alt="">
+                    <h4 style="color:#5a5a5a;">SRTM 90米</h4>
+                </button>
+            </div>
+
+            <div class="listShow_con accordion-collapse show collapse" style="border: 1px solid rgba(0,0,0,.125);" id="flush-collapse59"  aria-labelledby="flush-heading59" data-bs-parent="#accordionFlushExample">
+                <div class="accordion-body">
+                    
+                        <a href="/thematic/dem/551" title="SRTM30米-湖南省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM30米-湖南省
+                        </a>
+                    
+                        <a href="/thematic/dem/549" title="SRTM90米-北京市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-北京市
+                        </a>
+                    
+                        <a href="/thematic/dem/548" title="SRTM90米-安徽省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-安徽省
+                        </a>
+                    
+                        <a href="/thematic/dem/547" title="SRTM90米-澳门特别行政区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-澳门特别行政区
+                        </a>
+                    
+                        <a href="/thematic/dem/546" title="SRTM90米-重庆市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-重庆市
+                        </a>
+                    
+                        <a href="/thematic/dem/545" title="SRTM90米-福建省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-福建省
+                        </a>
+                    
+                        <a href="/thematic/dem/544" title="SRTM90米-甘肃省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-甘肃省
+                        </a>
+                    
+                        <a href="/thematic/dem/543" title="SRTM90米-广东省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-广东省
+                        </a>
+                    
+                        <a href="/thematic/dem/542" title="SRTM90米-广西壮族自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-广西壮族自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/541" title="SRTM90米-贵州省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-贵州省
+                        </a>
+                    
+                        <a href="/thematic/dem/540" title="SRTM90米-海南"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-海南
+                        </a>
+                    
+                        <a href="/thematic/dem/539" title="SRTM90米-河北省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-河北省
+                        </a>
+                    
+                        <a href="/thematic/dem/538" title="SRTM90米-黑龙江省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-黑龙江省
+                        </a>
+                    
+                        <a href="/thematic/dem/537" title="SRTM90米-河南省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-河南省
+                        </a>
+                    
+                        <a href="/thematic/dem/536" title="SRTM90米-湖北省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-湖北省
+                        </a>
+                    
+                        <a href="/thematic/dem/535" title="SRTM90米-江苏市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-江苏市
+                        </a>
+                    
+                        <a href="/thematic/dem/534" title="SRTM90米-江西省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-江西省
+                        </a>
+                    
+                        <a href="/thematic/dem/533" title="SRTM90米-吉林省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-吉林省
+                        </a>
+                    
+                        <a href="/thematic/dem/532" title="SRTM90米-辽宁省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-辽宁省
+                        </a>
+                    
+                        <a href="/thematic/dem/531" title="SRTM90米-内蒙古自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-内蒙古自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/530" title="SRTM90米-宁夏回族自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-宁夏回族自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/529" title="SRTM90米-青海省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-青海省
+                        </a>
+                    
+                        <a href="/thematic/dem/528" title="SRTM90米-陕西省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-陕西省
+                        </a>
+                    
+                        <a href="/thematic/dem/527" title="SRTM90米-山东省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-山东省
+                        </a>
+                    
+                        <a href="/thematic/dem/526" title="SRTM90米-上海市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-上海市
+                        </a>
+                    
+                        <a href="/thematic/dem/525" title="SRTM90米-山西省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-山西省
+                        </a>
+                    
+                        <a href="/thematic/dem/524" title="SRTM90米-四川省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-四川省
+                        </a>
+                    
+                        <a href="/thematic/dem/523" title="SRTM90米-台湾省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-台湾省
+                        </a>
+                    
+                        <a href="/thematic/dem/522" title="SRTM90米-天津市"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-天津市
+                        </a>
+                    
+                        <a href="/thematic/dem/521" title="SRTM90米-香港特别行政区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-香港特别行政区
+                        </a>
+                    
+                        <a href="/thematic/dem/520" title="SRTM90米-新疆维吾尔自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-新疆维吾尔自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/519" title="SRTM90米-西藏自治区"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-西藏自治区
+                        </a>
+                    
+                        <a href="/thematic/dem/518" title="SRTM90米-云南省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-云南省
+                        </a>
+                    
+                        <a href="/thematic/dem/517" title="SRTM90米-浙江省"
+                           class="list-group-item list-group-item-action list-group-item-light ">
+                            <svg t="1648281170491" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="15283" width="19" height="19">
+                                <path d="M485.053227 781.128992a242.523084 242.523084 0 1 1-242.181983-242.181983h242.181983v242.181983z m53.894019 0a242.523084 242.523084 0 1 0 242.181983-242.181983h-242.181983v242.181983zM485.053227 242.871008a242.523084 242.523084 0 1 0-242.181983 242.181983h242.181983v-242.181983z m53.894019 0a242.523084 242.523084 0 1 1 242.181983 242.181983h-242.181983v-242.181983z" p-id="15284"></path>
+                            </svg>
+                            SRTM90米-浙江省
+                        </a>
+                    
+                </div>
+            </div>
+        </div>
+
+        <div class="lianxi rounded">
+            
+            <h4 class="p-4">Contact Information</h4>
+            <ul class="nav col flex-column">
+                <li class="nav-item mb-3">
+                    <p class="p-0 mb-0" >Contact Name：<small>sunying</small></p>
+                </li>
+                <li class="nav-item mb-3">
+                    <p class="p-0 mb-0">Tel：<small></small></p>
+                </li>
+                <li class="nav-item mb-3">
+                    <p class="p-0 mb-0">Mail：<small>sunying01@aircas.ac.cn</small></p>
+                </li>
+                <li class="nav-item mb-3">
+                    <p class="p-0 mb-0">Released by：<small>可持续发展大数据国际研究中心</small></p>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+        </div>
+        
+    <div class="col-md-9">
+        
+        <div class="right_biaoti d-flex align-items-center">
+            <img src="/tadmin/media/images/star.png" alt="">
+            <p class="h2" >SRTM30米北京</p>
+        </div>
+        <div class="prolist">
+            <a class="" href="javascript:void(0)">
+                <div class="a">
+                    <div class="de_img text-center">
+                        <img class="img rounded img-fluid" src="https://data.casearth.cn/en/resources/2025/北京市.png" style="width: 280px;height: 190px"  alt="">
+                    </div>
+                </div>
+            </a>
+            <div class="">
+                <div class="des">
+                    <h4 class="mb-2">Dataset Overview</h4>
+                </div>
+                <p class="h6 newp">SRTM数据由美国太空总署（NASA）和国防部国家测绘局（NIMA）联合测量的，是全球首套高分辨率开源DEM数据集。我们基于SRTM V3数据拼接、整理生成30米分省数据，在整理过程中，对各省边界进行一定外扩，得到分省DEM数据。数据为WGS84椭球投影。</p>
+            </div>
+
+        </div>
+        
+            <div style="clear: both;margin: 0.5rem 0;height: 0.5rem;"></div>
+        <div class="Dataset mb-4">
+            <div class="Dataset_top d-flex align-items-center">
+                <div class="Dataset_top_1 d-flex align-items-center">
+                    <img src="/tadmin/media/images/tubiao.png" alt="">
+                    <h4 class="mb-0">Dataset Details</h4>
+                </div>
+                <div class="Dataset_top_2 row">
+                    <div class="col-sm-3" style="width:auto;">
+                        
+                    </div>
+                    <div class="col-sm-3" style="width:auto;">
+                        
+                    </div>
+                    <div class="col-sm-3" style="width:auto;">
+                        <a href="https://data.casearth.cn/api/dataset/sn/CBAS2024_SRTM30BJ?locale=en" target="_blank"  class="btn btn-success btn-sm d-flex align-items-center">
+                            <svg t="1648368276206" class="icon" viewBox="0 0 1354 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="4688" width="25" height="25">
+                                <path d="M1034.83248 645.406063l-191.508238 191.508238a53.622507 53.622507 0 0 1-75.964301 0l-191.508238-191.508238a53.622507 53.622507 0 0 1 0-75.964301 53.622507 53.622507 0 0 1 75.965301 0l102.775054 102.775054V303.884205a53.622507 53.622507 0 1 1 107.245014 0v368.332611l95.753119-102.775054a53.622507 53.622507 0 0 1 75.965301 0 53.622507 53.622507 0 0 1 1.276988 75.964301z m262.364587-175.548385a365.141641 365.141641 0 0 0-97.030108-98.94609 378.546518 378.546518 0 0 0-29.364729-123.202867 397.697341 397.697341 0 0 0-89.369178-127.671825 404.719277 404.719277 0 0 0-133.418773-91.28516A408.549242 408.549242 0 0 0 792.894706 0.026a400.251318 400.251318 0 0 0-225.977921 67.665377 410.464224 410.464224 0 0 0-97.669102 91.285161 261.088598 261.088598 0 0 0-63.836412-7.65993 247.044727 247.044727 0 0 0-176.18738 70.857348 245.129745 245.129745 0 0 0-72.134336 202.360139 324.925011 324.925011 0 0 0-84.263225 72.77333A308.965158 308.965158 0 0 0 0.053 702.22054a310.242146 310.242146 0 0 0 97.029107 228.531898 331.307952 331.307952 0 0 0 105.969025 69.58136 330.030964 330.030964 0 0 0 127.670826 23.619782h656.233963A360.034688 360.034688 0 0 0 1242.298572 919.261544a360.034688 360.034688 0 0 0 81.071254-116.181932 354.288741 354.288741 0 0 0 27.449748-138.523725 344.713829 344.713829 0 0 0-54.260501-194.699209z" p-id="4689" fill="#ffffff"></path>
+                            </svg>
+                            Download
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="Dataset_bot">
+                <div class="row mb-3">
+                    <div class="col-md-5">
+                        <p class="mb-0">Spatial Resolution: <small></small></p>
+                    </div>
+                    <div class="col-md-7">
+                        <p class="mb-0">Time Resolution: <small></small></p>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-5">
+                        <p class="mb-0">Product Number: <small>CBAS2024_SRTM30BJ</small></p>
+                    </div>
+                    <div class="col-md-7">
+                        <p class="mb-0">Create Institution: <small>可持续发展大数据国际研究中心</small></p>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-5">
+                        <p class="mb-0">Created By: <small>null</small></p>
+                    </div>
+                    <div class="col-md-7">
+                        <p class="">Creation Date: <small></small></p>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-5">
+                        <p class="mb-0">File Size: <small>1</small></p>
+                    </div>
+
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-5">
+                        <p class="mb-0">Data Format: <small>GeoTiff</small></p>
+                    </div>
+                    <div class="col-md-7">
+                        <p class="mb-0">Type Of Data: <small>栅格</small></p>
+                    </div>
+                </div>
+                <div class="row mb-0">
+                    <div class="col-md-2">
+                        <p class="mb-0">Data Label:</p>
+                    </div>
+                    <div class="col-md-10">
+                        <div class="nav d-flex align-items-center">
+                            
+                            <div class="nav_item">  <p class="mt-1">SRTM</p> </div>
+                            
+                            <div class="nav_item">  <p class="mt-1">DEM</p> </div>
+                            
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+
+        
+
+        
+
+        
+        
+
+        
+
+
+            <div class="modal fade" id="ftpModal" tabindex="-1" aria-labelledby="ftpModalLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h1 class="modal-title fs-5" id="ftpModalLabel">FTP download (login-free)</h1>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <ul class="list-group list-group-flush">
+                                <li class="list-group-item">Host：<span id="ftpHost" class="bg-light text-dark p-2 m-1"></span>
+                                    <svg data-clipboard-target="#ftpHost" style="cursor:pointer;"  xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                    <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                    <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </li>
+                                <li class="list-group-item">Port：<span id="ftpPort" class="bg-light text-dark p-2 m-1"></span>
+                                    <svg data-clipboard-target="#ftpPort" style="cursor:pointer;" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </li>
+                                <li class="list-group-item">Username：<span id="ftpUsername" class="bg-light text-dark p-2 m-1"></span>
+                                    <svg data-clipboard-target="#ftpUsername" style="cursor:pointer;" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </li>
+                                <li class="list-group-item">Password：<span id="ftpPassword" class="bg-light text-dark p-2 m-1"></span>
+                                    <svg data-clipboard-target="#ftpPassword" style="cursor:pointer;" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </li>
+                            </ul>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        
+    </div>
+
+    </div>
+</div>
+
+
+<footer class="footer">
+    <div class="container py-5">
+        <div class="row">
+            <div class="col-md-5">
+                <div class="footer_top d-flex mb-3 align-items-center">
+                    <img src="/tadmin/media/images/about.png" alt="">
+                    <h4>About</h4>
+                </div>
+                <ul class="nav flex-column">
+                    <li class="nav-item mb-2">
+                        <p class="p-0">International Research Center of Big Data for Sustainable Development Goals</p>
+                    </li>
+                    <li class="nav-item mb-2">
+                        <p class="p-0">No.9 Dengzhuang South Road, Haidian District, Beijing 100094</p>
+                    </li>
+                    <li class="nav-item mb-1">
+                        <p class="p-0">Tel: + 86-010-82178985</p>
+                    </li>
+                    <li class="nav-item mb-1">
+                        <p class="p-0 mb-0">&copy; 2018-2022 Strategic Priority Research Program (Class A), CAS Big Earth Data Science Engineering Project (CASEarth) </p>
+                    </li>
+                    
+                    <li class="nav-item mb-2">
+                        <p class="p-0">京ICP备05080539号-26</p>
+                    </li>
+                    <li class="nav-item mb-2"></li>
+                    </li>
+                </ul>
+            </div>
+            <div class="col-md-2"></div>
+            <div class="col-md-5">
+                <div class="footer_top d-flex mb-3 align-items-center">
+                    <img src="/tadmin/media/images/links.png" alt="">
+                    <h4>Links</h4>
+                </div>
+                <ul class="nav flex-column">
+                    <li class="nav-item mb-2">
+                        <p class="p-0">
+                            <a href="http://english.casearth.com/">Big Earth Data Science Engineering Project</a>
+                        </p>
+                    </li>
+                    <li class="nav-item mb-2">
+                        <p class="p-0">
+                            <a href="https://data.casearth.cn?locale=en">Data Sharing and Service Portal</a>
+                        </p>
+                    </li>
+                    <li class="nav-item mb-2">
+                        <p class="p-0">
+                            <a href="https://sdg.casearth.cn/en/">SDG Big Data Platform</a>
+                        </p>
+                    </li>
+                    <li class="nav-item mb-2">
+                         <p class="p-0">
+                            <a href="http://www.cbas.ac.cn/en/">International Research Center of Big Data for SDGs</a>
+                         </p>
+                    </li>
+                    <li class="nav-item mb-2">
+                        <p class="p-0">
+                            <a href="http://portal.casearth.cn/en/">CASEarth Cloud</a>
+                        </p>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</footer>
+
+
+<div class="fudong">
+    <a href="javascript:void(0);" id="btop">
+        <img src="/tadmin/media/images/btop.png" alt="">
+    </a>
+</div>
+<script>
+    $(function () {
+        $("#btop").click(function () {$("html,body").animate({'scrollTop': '0px'}, 300)});
+        var daohangHeight = $(".fudong").offset().top - $(window).scrollTop();
+        $(window).scroll(function () {if ($(this).scrollTop() > daohangHeight) {$('.fudong').addClass('new_side_show');} else {$('.fudong').removeClass('new_side_show')}});
+
+        $("#langSel").change(function(){
+            var selectedLang =  "zh_CN";var unSelectedLang =  "en_US";if($(this).find("option:selected").text()=="English"){selectedLang = "en_US";unSelectedLang = "zh_CN";}
+            Cookies.set('lang', selectedLang, { expires: 31, path: '/' });
+            if(window.location.href.indexOf("lang=")>0) {window.location = window.location.href.replace(unSelectedLang, selectedLang);}else{window.location.reload();}
+        });
+    })
+</script>
+
+<script src="/tadmin/media/js/bootstrap.bundle.min.js"></script>
+<script src="/tadmin/media/js/clipboard.min.js"></script>
+<script>
+    $(function(){
+        new ClipboardJS('.bi-clipboard');
+        // const tooltip = bootstrap.Tooltip.getInstance('#ftpHost');
+        // tooltip.setContent({ '.tooltip-inner': 'another title' });
+        // tooltip.show();
+    });
+</script>
+</body>
+</html>

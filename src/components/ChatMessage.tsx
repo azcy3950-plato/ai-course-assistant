@@ -2,15 +2,22 @@
 
 import React from 'react';
 import { Message, Reference } from '@/types';
+import Markdown from './Markdown';
 
 interface Props {
   message: Message;
   onReferenceClick?: (refId: number) => void;
   highlightedRef?: number | null;
+  onRegenerate?: () => void;
 }
 
-export default function ChatMessage({ message, onReferenceClick, highlightedRef }: Props) {
+export default function ChatMessage({ message, onReferenceClick, highlightedRef, onRegenerate }: Props) {
   const isUser = message.role === 'user';
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = async () => {
+    try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
+  };
 
   // Render content with clickable reference markers [1], [2], etc.
   const renderContent = (content: string) => {
@@ -61,7 +68,7 @@ export default function ChatMessage({ message, onReferenceClick, highlightedRef 
         }`}
       >
         <div className="text-sm leading-relaxed whitespace-pre-wrap">
-          {isUser ? message.content : renderContent(message.content)}
+          {isUser ? <span className="whitespace-pre-wrap">{message.content}</span> : <Markdown text={message.content} />}
         </div>
 
         {/* References list inline */}
@@ -91,12 +98,21 @@ export default function ChatMessage({ message, onReferenceClick, highlightedRef 
           </div>
         )}
 
+        {/* Actions row */}
+        {!isUser && (
+          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-[var(--color-border)]">
+            <button onClick={handleCopy} className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors flex items-center gap-1">
+              {copied ? '✅ 已复制' : '📋 复制'}
+            </button>
+            {onRegenerate && (
+              <button onClick={onRegenerate} className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors flex items-center gap-1">🔄 重新生成</button>
+            )}
+            <span className="text-[10px] text-[var(--color-text-muted)] ml-auto">{message.content.length} 字</span>
+          </div>
+        )}
         {/* Timestamp */}
-        <div className={`text-[10px] mt-1.5 ${isUser ? 'text-white/70' : 'text-[var(--color-text-muted)]'}`}>
-          {new Date(message.timestamp).toLocaleTimeString('zh-CN', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
+        <div className={`text-[10px] mt-1 ${isUser ? 'text-white/70' : 'text-[var(--color-text-muted)]'}`}>
+          {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
     </div>

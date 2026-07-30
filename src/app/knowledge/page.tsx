@@ -4,20 +4,24 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useChat } from '@/contexts/ChatContext';
 import { useApp } from '@/contexts/AppContext';
 import { useLearning } from '@/contexts/LearningContext';
-import { queryKnowledgeAgent } from '@/services/agent';
+import { supabase } from '@/lib/supabase';
+import { queryKnowledgeAgent, queryKnowledgeAgentStream } from '@/services/agent';
 import ChatMessage from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
 import SourceCard from '@/components/SourceCard';
+import QuizPanel from '@/components/QuizPanel';
 import { Reference } from '@/types';
 
 export default function KnowledgePage() {
-  const { state: chatState, createConversation, setActive, addMessage, deleteConversation, getActiveConversation } = useChat();
+  const { state: chatState, createConversation, setActive, addMessage, deleteConversation, updateTitle, updateLastMessage, getActiveConversation } = useChat();
   const { state: appState } = useApp();
   const { addRecord } = useLearning();
 
   const [loading, setLoading] = useState(false);
   const [highlightedRef, setHighlightedRef] = useState<number | null>(null);
   const [allReferences, setAllReferences] = useState<Reference[]>([]);
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const sourcePanelRef = useRef<HTMLDivElement>(null);
 
@@ -43,24 +47,36 @@ export default function KnowledgePage() {
 
     // Query agent
     setLoading(true);
+    // Add placeholder for streaming
+    const placeholderId = Date.now().toString();
+    addMessage(activeConv.id, { role: 'assistant', content: '' });
     try {
-      const response = await queryKnowledgeAgent(content);
-      addMessage(activeConv.id, {
-        role: 'assistant',
-        content: response.answer,
-        references: response.references,
+      let fullAnswer = '';
+      const response = await queryKnowledgeAgentStream(content, (text) => {
+        fullAnswer = text;
+        if (activeConv) updateLastMessage(activeConv.id, text);
+      }, (refs) => {
+        setAllReferences(refs);
       });
 
-      // Update references panel
-      if (response.references && response.references.length > 0) {
-        setAllReferences(prev => {
-          const existing = new Set(prev.map(r => r.id));
-          const newRefs = response.references!.filter(r => !existing.has(r.id));
-          return [...prev, ...newRefs].sort((a, b) => a.id - b.id);
-        });
+      // Auto-title
+      if (activeConv.title === '新对话') {
+        const shortQ = content.length > 30 ? content.slice(0, 30) + '...' : content;
+        updateTitle(activeConv.id, shortQ);
       }
 
-      // Add learning record
+      // Save record
+      try {
+        const { data: s } = await supabase.auth.getSession();
+        const em = s.session?.user?.email || '';
+        if (em) {
+          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: false }) });
+          const qr = await fetch('/api/quiz?email=' + encodeURIComponent(em));
+          const qd = await qr.json();
+          if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }
+        }
+      } catch (e) {}
+
       addRecord('knowledge', content.slice(0, 30) + (content.length > 30 ? '...' : ''), `查询了关于"${content.slice(0, 50)}"的内容`);
     } catch (err) {
       addMessage(activeConv.id, {
@@ -71,6 +87,23 @@ export default function KnowledgePage() {
       setLoading(false);
     }
   }, [activeConv, addMessage, addRecord]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (!activeConv || loading) return;
+    const msgs = activeConv.messages;
+    // Find last user message
+    let lastUserMsg = '';
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') { lastUserMsg = msgs[i].content; break; }
+    }
+    if (!lastUserMsg) return;
+    // Remove last AI message
+    const updatedMessages = msgs.slice(0, -1);
+    activeConv.messages = updatedMessages;
+    chatState.conversations = chatState.conversations.map(c => c.id === activeConv.id ? { ...c, messages: updatedMessages } : c);
+    // Re-send
+    handleSend(lastUserMsg);
+  }, [activeConv, loading, handleSend, chatState.conversations]);
 
   const handleReferenceClick = useCallback((refId: number) => {
     setHighlightedRef(prev => prev === refId ? null : refId);
@@ -174,11 +207,19 @@ export default function KnowledgePage() {
                   message={msg}
                   onReferenceClick={handleReferenceClick}
                   highlightedRef={highlightedRef}
+                  onRegenerate={msg.role === 'assistant' && msg.id === activeConv.messages[activeConv.messages.length - 1]?.id ? handleRegenerate : undefined}
                 />
               ))}
               {loading && (
-                <div className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] py-4">
-                  <span className="animate-spin">⏳</span> AI 正在思考...
+                <div className="flex items-center gap-3 py-4">
+                  <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] text-white flex items-center justify-center text-sm">AI</div>
+                  <div className="bg-white border border-[var(--color-border)] rounded-2xl px-4 py-3">
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-bounce" style={{animationDelay:'0ms'}} />
+                      <span className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-bounce" style={{animationDelay:'150ms'}} />
+                      <span className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-bounce" style={{animationDelay:'300ms'}} />
+                    </div>
+                  </div>
                 </div>
               )}
               <div ref={chatEndRef} />
@@ -186,7 +227,12 @@ export default function KnowledgePage() {
           )}
         </div>
 
-        <ChatInput onSend={handleSend} disabled={loading} placeholder="输入课程知识相关问题..." />
+        <div className="flex flex-wrap gap-2 mb-3">
+            {["海绵城市的核心技术有哪些？","暴雨重现期怎么确定？","SWMM模型的主要功能是什么？","LID设施的径流削减效果如何？"].map(q => (
+              <button key={q} onClick={() => handleSend(q)} disabled={loading} className="text-xs px-3 py-1.5 bg-blue-50 text-[var(--color-primary)] rounded-full hover:bg-blue-100 transition-colors disabled:opacity-50">{q}</button>
+            ))}
+          </div>
+          <ChatInput onSend={handleSend} disabled={loading} placeholder="输入课程知识相关问题..." />
       </div>
 
       {/* Right: Source Panel */}
@@ -227,6 +273,7 @@ export default function KnowledgePage() {
           )}
         </div>
       </aside>
+      {quizOpen && <QuizPanel questions={quizQuestions} onClose={() => setQuizOpen(false)} onComplete={() => setQuizOpen(false)} />}
     </div>
   );
 }

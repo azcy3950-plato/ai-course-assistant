@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useApp } from '@/contexts/AppContext';
 import { useLearning } from '@/contexts/LearningContext';
+import { supabase } from '@/lib/supabase';
 
 // ══════════════ UNAUTHENTICATED LANDING ══════════════
 function LandingPage() {
@@ -98,6 +99,31 @@ const teacherModules = [
 export default function HomePage() {
   const { state } = useApp();
   const { state: learningState } = useLearning();
+  const [stats, setStats] = useState({ docCount: 0, quizTotal: 0, quizRate: 0, recordCount: 0 });
+
+  useEffect(() => {
+    if (!state.role) return;
+    (async () => {
+      try {
+        const { data: s } = await supabase.auth.getSession();
+        const em = s.session?.user?.email || '';
+        // Fetch documents count
+        const dRes = await fetch('/api/documents', { headers: { Authorization: 'Bearer ' + (s.session?.access_token || '') } });
+        let docCount = 0;
+        if (dRes.ok) { const docs = await dRes.json(); docCount = docs.length; }
+        // Fetch quiz stats
+        const qRes = await fetch('/api/quiz-results?email=' + encodeURIComponent(em));
+        let quizTotal = 0, quizRate = 0;
+        if (qRes.ok) { const qr = await qRes.json(); quizTotal = qr.length; quizRate = qr.length > 0 ? Math.round(qr.filter((q: any) => q.is_correct).length / qr.length * 100) : 0; }
+        // Fetch records count
+        const rRes = await fetch('/api/records?email=' + encodeURIComponent(em));
+        let recordCount = 0;
+        if (rRes.ok) { const recs = await rRes.json(); recordCount = recs.length; }
+        setStats({ docCount, quizTotal, quizRate, recordCount });
+      } catch (e) {}
+    })();
+  }, [state.role]);
+
   // ── Authenticated check ──
   if (!state.role) {
     return <LandingPage />;
@@ -107,18 +133,35 @@ export default function HomePage() {
   const modules = isStudent ? studentModules : teacherModules;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Welcome */}
-      <div className="text-center mb-10">
-        <h1 className="text-3xl font-bold text-[var(--color-text)] mb-3">
-          {isStudent ? '欢迎回来，' + state.userName : '教师工作台'}
-        </h1>
-        <p className="text-[var(--color-text-secondary)] max-w-2xl mx-auto">
+    <div className="max-w-6xl mx-auto px-4 py-6">
+      {/* Dashboard Header */}
+      <div className="bg-white rounded-2xl border border-[var(--color-border)] p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--color-text)]">{isStudent ? '欢迎回来，' + state.userName : '教师工作台'}</h1>
+            <p className="text-sm text-[var(--color-text-secondary)] mt-1">{isStudent ? '继续你的学习之旅' : '管理课程与学生学习'}</p>
+          </div>
+          <div className="text-5xl">{isStudent ? '🧑‍🎓' : '👨‍🏫'}</div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {(isStudent
+            ? [["问答次数",stats.recordCount+"次","💬","bg-blue-50"],["小测正确率",stats.quizRate+"%","✅","bg-green-50"],["小测次数",stats.quizTotal+"次","🏷️","bg-purple-50"],["学习状态",stats.quizRate>=70?"良好":"加油","⏱️","bg-amber-50"]]
+            : [["文档总数",stats.docCount,"📄","bg-blue-50"],["问答次数",stats.recordCount+"次","💬","bg-green-50"],["小测正确率",stats.quizRate+"%","📊","bg-purple-50"],["已处理文档",stats.docCount,"📋","bg-amber-50"]]
+          ).map(([label,val,icon,bg]) => (
+            <div key={String(label)} className={bg + " rounded-xl p-4"}>
+              <div className="flex justify-between items-center"><span className="text-xs text-[var(--color-text-secondary)]">{label}</span><span className="text-sm">{icon}</span></div>
+              <div className="text-xl font-bold mt-1">{val}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Welcome subtitle */}
+      <p className="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-6 text-center">
           {isStudent
             ? '选择下方模块开始学习。AI 助教将帮助你掌握城市排水与内涝防治的核心知识。'
             : '管理课程资料、知识库和沙盘数据，查看学生学习情况。'}
         </p>
-      </div>
 
       {/* Module Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">

@@ -17,6 +17,7 @@ interface Props {
   onAskAI: () => void;
   aiResponse: string;
   aiLoading: boolean;
+  swmmResult?: any;
 }
 
 export default function ResultPanel({
@@ -27,6 +28,7 @@ export default function ResultPanel({
   onAskAI,
   aiResponse,
   aiLoading,
+  swmmResult,
 }: Props) {
   const hasSimulation = timelineValues.length > 0 && timelineValues.some(t => t.maxDepth > 0);
 
@@ -134,6 +136,37 @@ export default function ResultPanel({
             </div>
           </div>
         )}
+      {swmmResult?.ok && (
+        <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+          <div className="flex items-center gap-1 mb-2">
+            <span className="text-xs font-bold text-[var(--color-text-secondary)]">🌊 SWMM 专业模型</span>
+            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">EPA</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <div className="bg-blue-50 rounded-lg p-2 text-center">
+              <div className="text-base font-bold text-blue-700">{swmmResult.summary?.maxDepth?.toFixed(2)}m</div>
+              <div className="text-[10px] text-blue-600">最大水深</div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-2 text-center">
+              <div className="text-base font-bold text-green-700">{swmmResult.summary?.timesteps}</div>
+              <div className="text-[10px] text-green-600">模拟步数</div>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-2 text-center">
+              <div className="text-base font-bold text-amber-700">{swmmResult.params?.intensity || 0}mm/h</div>
+              <div className="text-[10px] text-amber-600">降雨强度</div>
+            </div>
+          </div>
+          <div className="text-[10px] text-[var(--color-text-secondary)]">
+            {swmmResult.subcatchments && Object.entries(swmmResult.subcatchments).map(([k, v]: [string, any]) => {
+              const labels: Record<string, string> = { S_res: "🏘️住宅", S_com: "🏢商业", S_park: "🌳公园", S_ind: "🏭工业" };
+              return <span key={k} className="mr-2">{labels[k] || k} {(v as number).toFixed(1)}m³</span>;
+            })}
+          </div>
+          <div className="text-[10px] text-[var(--color-text-muted)] mt-1">
+            节点水深: {swmmResult.nodes && Object.entries(swmmResult.nodes).map(([k, v]: [string, any]) => k + " " + v.maxD.toFixed(2) + "m").join(" · ")}
+          </div>
+        </div>
+      )}
       </div>
     </aside>
   );

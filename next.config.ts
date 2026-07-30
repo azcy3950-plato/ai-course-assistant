@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  output: "export",
+  // Server mode for SWMM API routes (not static export)
   images: {
     unoptimized: true,
   },
