@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLearning } from '@/contexts/LearningContext';
+import { supabase } from '@/lib/supabase';
 import { RecordType, LearningRecord } from '@/types';
 
 const typeConfig: Record<RecordType, { icon: string; label: string; color: string }> = {
@@ -13,6 +14,17 @@ const typeConfig: Record<RecordType, { icon: string; label: string; color: strin
 export default function RecordsPage() {
   const { state } = useLearning();
   const [filter, setFilter] = useState<RecordType | 'all'>('all');
+  const [remoteRecords, setRemoteRecords] = useState<any[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const { data: s } = await supabase.auth.getSession();
+      const em = s.session?.user?.email || '';
+      if (!em) return;
+      const r = await fetch('/api/records?email=' + encodeURIComponent(em));
+      if (r.ok) setRemoteRecords(await r.json());
+    })();
+  }, []);
 
   const filteredRecords = useMemo(() => {
     if (filter === 'all') return state.records;

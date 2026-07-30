@@ -85,7 +85,7 @@ export default function TeacherPage() {
   const handleFiles = useCallback(async (fileList: FileList | null) => {
     if (!fileList?.length) return;
     const file = fileList[0];
-    if (file.size > 50 * 1024 * 1024) { alert("文件不能超过 50MB"); return; }
+    if (file.size > 200 * 1024 * 1024) { alert("文件不能超过 200MB"); return; }
 
     setUploading(true);
     setUploadProgress(0);
@@ -98,7 +98,7 @@ export default function TeacherPage() {
         body: JSON.stringify({ fileName: file.name, fileType: file.type }),
       });
       if (!urlRes.ok) { alert("获取上传链接失败"); return; }
-      const { uploadUrl, fileKey } = await urlRes.json();
+      const { uploadUrl, fileKey, fileUrl } = await urlRes.json();
 
       // 2) Upload directly to OSS
       await new Promise<void>((resolve, reject) => {
@@ -118,6 +118,15 @@ export default function TeacherPage() {
         name: file.name, type: mapType(file.name), size: file.size,
         r2_key: fileKey, uploaded_by: state.userName || "unknown",
       });
+
+      // 4) Trigger document processing (extract text → chunk → vectorize)
+      try {
+        await fetch("/api/process-file", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ fileName: file.name, fileUrl }),
+        });
+      } catch (e) { /* non-fatal */ }
 
       await loadFiles();
     } catch (err: any) { alert("上传失败: " + (err.message || "未知错误")); }

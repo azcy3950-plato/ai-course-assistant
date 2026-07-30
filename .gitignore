@@ -21,10 +21,27 @@
 
 # env
 .env*.local
+.env
 
 # debug
 npm-debug.log*
+*.log
 
 # IDE
 .idea/
 .vscode/
+
+# Cesium static assets (45MB, regenerated at build time)
+/public/Cesium/
+
+# Python
+__pycache__/
+*.pyc
+
+# large data files (downloaded at build time)
+/public/beijing_buildings*.json
+/public/beijing_terrain.tif
+
+# test files with credentials
+/test-pdf.js
+/test-pipeline.js

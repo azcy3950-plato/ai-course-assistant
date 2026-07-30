@@ -19,6 +19,7 @@ export interface Reference {
   chapter: string;
   page: number;
   snippet: string;
+  fileUrl?: string;
 }
 
 export interface Message {

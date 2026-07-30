@@ -1,16 +1,12 @@
 "use client";
 
 import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-  type ReactNode,
+  createContext, useContext, useState, useEffect, useCallback, type ReactNode,
 } from "react";
-import { type User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
 import type { AppState, UserRole } from "@/types";
+
+const TOKEN_KEY = "aicourse-token";
+const USER_KEY = "aicourse-user";
 
 const initialState: AppState = {
   role: null,
@@ -20,96 +16,112 @@ const initialState: AppState = {
 
 interface AppContextValue {
   state: AppState;
-  login: (
-    email: string,
-    password: string
-  ) => Promise<{ error: string | null }>;
-  signup: (
-    email: string,
-    password: string,
-    name: string,
-    role: UserRole
-  ) => Promise<{ error: string | null }>;
+  darkMode: boolean;
+  toggleDarkMode: () => void;
+  login: (email: string, password: string) => Promise<{ error: string | null }>;
+  signup: (email: string, password: string, name: string, role: UserRole) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-function deriveUserInfo(user: User | null): {
-  role: UserRole | null;
-  userName: string | null;
-} {
-  if (!user) return { role: null, userName: null };
-  const role =
-    (user.user_metadata?.role as UserRole) || "student";
-  const name =
-    (user.user_metadata?.name as string) ||
-    user.email?.split("@")[0] ||
-    "用户";
-  return { role, userName: name };
-}
-
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(initialState);
+  const [darkMode, setDarkMode] = useState(false);
 
-  const updateAuthState = useCallback((user: User | null) => {
-    const { role, userName } = deriveUserInfo(user);
-    setState({ role, userName, authLoading: false });
+  // Dark mode init
+  useEffect(() => {
+    const saved = localStorage.getItem("aicourse-dark");
+    const prefers = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark = saved !== null ? saved === "true" : prefers;
+    setDarkMode(isDark);
+    if (isDark) document.documentElement.classList.add("dark");
   }, []);
 
-  // ── Session recovery + real-time listener ──
+  const toggleDarkMode = useCallback(() => {
+    setDarkMode(prev => {
+      const next = !prev;
+      localStorage.setItem("aicourse-dark", String(next));
+      document.documentElement.classList.toggle("dark", next);
+      return next;
+    });
+  }, []);
+
+  // Restore session on mount
   useEffect(() => {
-    // 1) Recover any existing session (refresh-token auto-handled)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      updateAuthState(session?.user ?? null);
-    });
+    const token = localStorage.getItem(TOKEN_KEY);
+    const savedUser = localStorage.getItem(USER_KEY);
+    if (token && savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        setState({ role: user.role, userName: user.name, authLoading: false });
+        // Validate token in background
+        fetch("/api/auth/me", { headers: { Authorization: "Bearer " + token } })
+          .then(r => { if (!r.ok) { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); setState({ role: null, userName: null, authLoading: false }); } })
+          .catch(() => {});
+      } catch {
+        setState({ role: null, userName: null, authLoading: false });
+      }
+    } else {
+      setState({ role: null, userName: null, authLoading: false });
+    }
+  }, []);
 
-    // 2) Listen for login / logout / token-refresh events
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      updateAuthState(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [updateAuthState]);
-
-  // ── Public API ──
-
-  const login = useCallback(
-    async (email: string, password: string) => {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+  const login = useCallback(async (email: string, password: string) => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
       });
-      return { error: error?.message ?? null };
-    },
-    []
-  );
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || "登录失败" };
 
-  const signup = useCallback(
-    async (
-      email: string,
-      password: string,
-      name: string,
-      role: UserRole
-    ) => {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { role, name } },
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      setState({ role: data.user.role, userName: data.user.name, authLoading: false });
+      return { error: null };
+    } catch {
+      return { error: "网络错误，请重试" };
+    }
+  }, []);
+
+  const signup = useCallback(async (email: string, password: string, name: string, role: UserRole) => {
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name, role }),
       });
-      return { error: error?.message ?? null };
-    },
-    []
-  );
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || "注册失败" };
+
+      // Auto-login after signup
+      const loginRes = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const loginData = await loginRes.json();
+      if (loginRes.ok) {
+        localStorage.setItem(TOKEN_KEY, loginData.token);
+        localStorage.setItem(USER_KEY, JSON.stringify(loginData.user));
+        setState({ role: loginData.user.role, userName: loginData.user.name, authLoading: false });
+      }
+      return { error: null };
+    } catch {
+      return { error: "网络错误，请重试" };
+    }
+  }, []);
 
   const logout = useCallback(async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    setState({ role: null, userName: null, authLoading: false });
   }, []);
 
   return (
-    <AppContext.Provider value={{ state, login, signup, logout }}>
+    <AppContext.Provider value={{ state, darkMode, toggleDarkMode, login, signup, logout }}>
       {children}
     </AppContext.Provider>
   );
@@ -119,4 +131,10 @@ export function useApp() {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error("useApp must be used within AppProvider");
   return ctx;
+}
+
+// Helper for other components to get auth token
+export function getAuthToken(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(TOKEN_KEY) || "";
 }

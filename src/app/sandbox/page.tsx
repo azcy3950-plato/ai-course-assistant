@@ -1,215 +1,246 @@
-'use client';
+"use client";
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import dynamic from 'next/dynamic';
-import { useLearning } from '@/contexts/LearningContext';
-import { SandboxMode, SandboxLayer, FloodGrid } from '@/types';
-import ParamPanel from './components/ParamPanel';
-import ResultPanel from './components/ResultPanel';
-import Timeline from './components/Timeline';
-import { floodLegend } from '@/data/sandbox-scenarios';
-import { computeSimulation } from '@/data/sandbox-scenarios';
-import { querySandboxAgent } from '@/services/agent';
+import React, { useEffect, useRef, useState } from "react";
 
-// Dynamic import for MapView (Leaflet requires window)
-const MapView = dynamic(() => import('./components/MapView'), {
-  ssr: false,
-  loading: () => (
-    <div className="h-full bg-gray-100 flex items-center justify-center">
-      <span className="animate-spin text-2xl">⏳</span>
-      <span className="ml-2 text-[var(--color-text-secondary)]">加载地图...</span>
-    </div>
-  ),
-});
+declare const AMap: any;
+
+const BEIJING: [number, number] = [116.4074, 39.9142];
+
+const SUBCATCHMENTS = [
+  { id: "S_res",  name: "🏘️ 住宅区", center: [116.4100, 39.9170], half: 0.0045, info: "2.0ha · 不透水70%", color: "#ff9800" },
+  { id: "S_com",  name: "🏢 商业区", center: [116.4040, 39.9160], half: 0.0040, info: "1.5ha · 不透水85%", color: "#f44336" },
+  { id: "S_park", name: "🌳 公园绿地", center: [116.4080, 39.9110], half: 0.0050, info: "3.0ha · 不透水10%", color: "#4caf50" },
+  { id: "S_ind",  name: "🏭 工业区", center: [116.4150, 39.9135], half: 0.0035, info: "1.0ha · 不透水80%", color: "#9c27b0" },
+];
+
+const JUNCTIONS = [
+  { id: "J_res",  pos: [116.4100, 39.9170], name: "住宅区井" },
+  { id: "J_com",  pos: [116.4040, 39.9160], name: "商业区井" },
+  { id: "J_park", pos: [116.4080, 39.9110], name: "公园区井" },
+  { id: "J_ind",  pos: [116.4150, 39.9135], name: "工业区井" },
+  { id: "J_main", pos: [116.4060, 39.9135], name: "主管汇流井" },
+];
+
+const OUTFALLS = [
+  { id: "O_river", pos: [116.4010, 39.9090], name: "河道出水口" },
+];
+
+const PIPES = [
+  { from: [116.4100, 39.9170], to: [116.4060, 39.9135], d: 1.2, name: "住宅支管" },
+  { from: [116.4040, 39.9160], to: [116.4060, 39.9135], d: 1.5, name: "商业支管" },
+  { from: [116.4080, 39.9110], to: [116.4060, 39.9135], d: 1.0, name: "公园支管" },
+  { from: [116.4150, 39.9135], to: [116.4060, 39.9135], d: 1.0, name: "工业支管" },
+  { from: [116.4060, 39.9135], to: [116.4010, 39.9090], d: 2.0, name: "总干管" },
+];
+
+const LAYER_DEFS = [
+  { id: "satellite", label: "🛰️ 卫星图", icon: "🛰️" },
+  { id: "buildings", label: "🏢 3D建筑", icon: "🏢" },
+  { id: "pipes", label: "🔵 管网", icon: "🔵" },
+  { id: "subcatchments", label: "🟠 汇水区", icon: "🟠" },
+  { id: "nodes", label: "🔹 节点", icon: "🔹" },
+];
 
 export default function SandboxPage() {
-  const { addRecord } = useLearning();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const layerGroups = useRef<Record<string, any[]>>({});
+  const [loaded, setLoaded] = useState(false);
+  const [layers, setLayers] = useState<Record<string, boolean>>({
+    satellite: true, buildings: true, pipes: true, subcatchments: true, nodes: true,
+  });
 
-  const [mode, setMode] = useState<SandboxMode>('dynamic');
-  const [layers, setLayers] = useState<SandboxLayer[]>([
-    { id: 'terrain', name: '地形高程', color: '#8B7355', visible: true },
-    { id: 'pipes', name: '排水管网', color: '#2563eb', visible: true },
-    { id: 'buildings', name: '建筑分布', color: '#94a3b8', visible: false },
-    { id: 'roads', name: '道路网络', color: '#475569', visible: false },
-  ]);
-
-  const [intensity, setIntensity] = useState(50);
-  const [duration, setDuration] = useState(60);
-  const [returnPeriod, setReturnPeriod] = useState(10);
-
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simulationData, setSimulationData] = useState<ReturnType<typeof computeSimulation> | null>(null);
-  const [currentTimeIndex, setCurrentTimeIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  const [aiQuestion, setAiQuestion] = useState('');
-  const [aiResponse, setAiResponse] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-
-  // Run simulation
   useEffect(() => {
-    if (!isSimulating) return;
+    if (typeof window === "undefined") return;
+    if ((window as any).AMap) { initMap(); return; }
 
-    const data = computeSimulation(intensity, duration, 5);
-    setSimulationData(data);
-    setCurrentTimeIndex(0);
-    setIsPlaying(false);
-    setIsSimulating(false);
-
-    addRecord('sandbox', `内涝模拟: ${intensity}mm/h`, `模拟了${intensity}mm/h降雨强度历时${duration}min的内涝情景`);
-  }, [isSimulating, intensity, duration, addRecord]);
-
-  // Auto-play
-  useEffect(() => {
-    if (!isPlaying || !simulationData) return;
-    const timer = setInterval(() => {
-      setCurrentTimeIndex(prev => {
-        if (prev >= simulationData.length - 1) {
-          setIsPlaying(false);
-          return prev;
-        }
-        return prev + 1;
-      });
-    }, 500);
-    return () => clearInterval(timer);
-  }, [isPlaying, simulationData]);
-
-  const currentFrame = simulationData?.[currentTimeIndex];
-  const currentGrids = currentFrame?.grids ?? [];
-  const currentTimeline = simulationData?.map((d, i) => ({
-    time: (i * 5),
-    floodArea: d.grids.reduce((sum, g) => sum + 0.05, 0),
-    maxDepth: Math.max(...d.grids.map(g => g.depth), 0),
-  })) ?? [];
-
-  const timelineValues = useMemo(() => {
-    return currentTimeline.length > 0 ? currentTimeline : [{ time: 0, floodArea: 0, maxDepth: 0 }];
-  }, [currentTimeline]);
-
-  const currentStats = useMemo(() => {
-    if (!currentFrame) return { floodArea: 0, maxDepth: 0, highRiskZones: 0 };
-    const area = currentFrame.grids.length * 0.05;
-    const maxD = currentFrame.grids.reduce((max, g) => Math.max(max, g.depth), 0);
-    const highRisk = currentFrame.grids.filter(g => g.depth > 0.3).length;
-    return { floodArea: Math.round(area * 100) / 100, maxDepth: Math.round(maxD * 100) / 100, highRiskZones: highRisk };
-  }, [currentFrame]);
-
-  const handleStartSimulation = useCallback(() => {
-    setIsSimulating(true);
-    setAiResponse('');
-    setAiQuestion('');
+    const script = document.createElement("script");
+    script.src = "https://webapi.amap.com/maps?v=2.0&key=9c49e8b79be344ae9eb30d7a6c95c15b&plugin=AMap.ControlBar,AMap.Object3D,AMap.Polyline,AMap.Polygon,AMap.Marker";
+    script.onload = () => initMap();
+    document.body.appendChild(script);
+    return () => { script.remove(); if (mapRef.current) { mapRef.current.destroy(); mapRef.current = null; } };
   }, []);
 
-  const handleAskAI = useCallback(async () => {
-    if (!aiQuestion.trim() || !currentFrame) return;
-    setAiLoading(true);
-    try {
-      const resp = await querySandboxAgent(aiQuestion, {
-        intensity,
-        duration,
-        maxDepth: currentStats.maxDepth,
-        floodArea: currentStats.floodArea,
-      });
-      setAiResponse(resp.answer);
-    } catch {
-      setAiResponse('AI 分析出错，请重试。');
-    } finally {
-      setAiLoading(false);
-    }
-  }, [aiQuestion, currentFrame, intensity, duration, currentStats]);
+  function initMap() {
+    if (!containerRef.current) return;
+    const map = new AMap.Map(containerRef.current, {
+      mapStyle: "amap://styles/darkblue",
+      center: BEIJING,
+      zoom: 14,
+      pitch: 55,
+      viewMode: "3D",
+      buildingAnimation: true,
+      showBuildingBlock: true,
+      layers: [new AMap.TileLayer.Satellite()],
+    });
+    map.addControl(new AMap.ControlBar({ position: { right: "10px", top: "10px" } }));
 
-  const timeLabels = useMemo(() => {
-    if (!simulationData) return ['0min'];
-    return simulationData.map((_, i) => `${i * 5}min`);
-  }, [simulationData]);
+    // Wait for map to complete
+    map.on("complete", () => {
+      drawAll(map);
+      setLoaded(true);
+    });
+    mapRef.current = map;
+  }
+
+  function drawAll(map: any) {
+    const groups: Record<string, any[]> = {};
+
+    // --- Subcatchments ---
+    const scGroup: any[] = [];
+    SUBCATCHMENTS.forEach(sc => {
+      const [cx, cy] = sc.center;
+      const s = sc.half;
+      const poly = new AMap.Polygon({
+        path: [[cx - s, cy - s], [cx + s, cy - s], [cx + s, cy + s], [cx - s, cy + s]],
+        fillColor: sc.color, fillOpacity: 0.25,
+        strokeColor: sc.color, strokeWeight: 2, strokeOpacity: 0.8,
+        zIndex: 50,
+      });
+      poly.setMap(map);
+      const m = new AMap.Marker({
+        position: sc.center,
+        offset: new AMap.Pixel(-35, -25),
+        content: `<div style="background:rgba(0,0,0,0.75);color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;white-space:nowrap">${sc.name}<br>${sc.info}</div>`,
+        zIndex: 51,
+      });
+      m.setMap(map);
+      scGroup.push(poly, m);
+    });
+    groups["subcatchments"] = scGroup;
+
+    // --- Pipes ---
+    const pipeGroup: any[] = [];
+    PIPES.forEach(p => {
+      const line = new AMap.Polyline({
+        path: [p.from, p.to],
+        strokeColor: "#00bcd4", strokeWeight: Math.max(3, p.d * 2), strokeOpacity: 0.85,
+        strokeStyle: "dashed", zIndex: 60, showDir: true,
+      });
+      line.setMap(map);
+      // Label
+      const mx = (p.from[0] + p.to[0]) / 2;
+      const my = (p.from[1] + p.to[1]) / 2;
+      const m = new AMap.Marker({
+        position: [mx, my],
+        offset: new AMap.Pixel(-20, -10),
+        content: `<div style="background:#006064;color:#00e5ff;padding:1px 6px;border-radius:8px;font-size:9px">${p.name} ${p.d}m</div>`,
+        zIndex: 61,
+      });
+      m.setMap(map);
+      pipeGroup.push(line, m);
+    });
+    groups["pipes"] = pipeGroup;
+
+    // --- Junctions ---
+    const nodeGroup: any[] = [];
+    JUNCTIONS.forEach(j => {
+      const cm = new AMap.CircleMarker({
+        center: j.pos, radius: 10,
+        fillColor: "#2196f3", fillOpacity: 0.9,
+        strokeColor: "#fff", strokeWeight: 2,
+        zIndex: 100,
+      });
+      cm.setMap(map);
+      const m = new AMap.Marker({
+        position: j.pos,
+        offset: new AMap.Pixel(-5, -18),
+        content: `<div style="background:#2196f3;color:#fff;padding:1px 6px;border-radius:8px;font-size:9px">${j.id.replace("J_","J")}</div>`,
+        zIndex: 101,
+      });
+      m.setMap(map);
+      nodeGroup.push(cm, m);
+    });
+
+    // --- Outfall ---
+    OUTFALLS.forEach(o => {
+      const cm = new AMap.CircleMarker({
+        center: o.pos, radius: 12,
+        fillColor: "#ff5722", fillOpacity: 0.9,
+        strokeColor: "#fff", strokeWeight: 2,
+        zIndex: 100,
+      });
+      cm.setMap(map);
+      const m = new AMap.Marker({
+        position: o.pos,
+        offset: new AMap.Pixel(-5, -22),
+        content: `<div style="background:#ff5722;color:#fff;padding:2px 6px;border-radius:8px;font-size:9px">${o.name}</div>`,
+        zIndex: 101,
+      });
+      m.setMap(map);
+      nodeGroup.push(cm, m);
+    });
+    groups["nodes"] = nodeGroup;
+
+    // Buildings and satellite are handled by AMap config, no entities to store
+    groups["buildings"] = [];
+    groups["satellite"] = [];
+
+    layerGroups.current = groups;
+  }
+
+  function toggleLayer(id: string) {
+    setLayers(prev => {
+      const next = !prev[id];
+      const map = mapRef.current;
+      if (!map) return { ...prev, [id]: next };
+
+      if (id === "buildings") {
+        map.setFeatures(next ? ["bg", "building", "point"] : ["bg", "point"]);
+      } else if (id === "satellite") {
+        // Toggle satellite tile layer
+        const tileLayers = map.getLayers();
+        tileLayers.forEach((l: any) => {
+          if (l._className === "TileLayer" || l instanceof AMap.TileLayer) {
+            next ? l.show() : l.hide();
+          }
+        });
+      } else {
+        const group = layerGroups.current[id];
+        if (group) group.forEach((o: any) => { next ? o.show() : o.hide(); });
+      }
+      return { ...prev, [id]: next };
+    });
+  }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
-      {/* Map + Side Panels */}
-      <div className="flex flex-1 min-h-0">
-        {/* Left: Parameters */}
-        <ParamPanel
-          mode={mode}
-          onModeChange={setMode}
-          layers={layers}
-          onLayersChange={setLayers}
-          intensity={intensity}
-          onIntensityChange={setIntensity}
-          duration={duration}
-          onDurationChange={setDuration}
-          returnPeriod={returnPeriod}
-          onReturnPeriodChange={setReturnPeriod}
-          onSimulate={handleStartSimulation}
-          simulating={isSimulating}
-        />
-
-        {/* Center: Map */}
-        <div className="flex-1 relative min-w-0">
-          <MapView
-            floodGrids={currentGrids}
-            visibleLayers={layers.filter(l => l.visible)}
-            mode={mode}
-          />
-
-          {/* Flood Legend */}
-          <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur rounded-lg border border-[var(--color-border)] p-3 shadow-lg">
-            <div className="text-[10px] font-medium text-[var(--color-text)] mb-2">
-              积水深度图例
-            </div>
-            <div className="space-y-1">
-              {floodLegend.map((item, i) => (
-                <div key={i} className="flex items-center gap-2 text-[10px]">
-                  <div
-                    className="w-4 h-2.5 rounded"
-                    style={{ backgroundColor: item.color }}
-                  />
-                  <span className="text-[var(--color-text-secondary)]">{item.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Time display */}
-          {currentTimeline.length > 0 && (
-            <div className="absolute top-4 right-4 bg-white/90 backdrop-blur rounded-lg border border-[var(--color-border)] px-4 py-2 shadow-lg">
-              <div className="text-xs text-[var(--color-text-muted)]">模拟时间</div>
-              <div className="text-lg font-bold text-[var(--color-text)]">
-                {currentTimeIndex * 5} min
-              </div>
-            </div>
-          )}
+    <div className="h-[calc(100vh-3.5rem)] flex flex-col relative">
+      <div className="absolute top-0 left-0 right-0 bg-black/85 backdrop-blur px-6 py-3 flex items-center justify-between z-10 text-white">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold">🌊 城市排水 3D GIS 查看器</span>
+          <span className="text-[10px] text-gray-400">高德3D引擎 · 静态沙盘</span>
         </div>
-
-        {/* Right: Results */}
-        <ResultPanel
-          stats={currentStats}
-          timelineValues={timelineValues}
-          aiQuestion={aiQuestion}
-          onAiQuestionChange={setAiQuestion}
-          onAskAI={handleAskAI}
-          aiResponse={aiResponse}
-          aiLoading={aiLoading}
-        />
+        <div className="flex gap-1">
+          {LAYER_DEFS.map(l => (
+            <button key={l.id} onClick={() => toggleLayer(l.id)}
+              className={"px-3 py-1.5 rounded-lg text-[11px] transition-colors font-medium " +
+                (layers[l.id] ? "bg-blue-600 text-white" : "bg-gray-700/50 text-gray-400 hover:bg-gray-600")}>
+              {l.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[10px] text-gray-500">🖱️ 左键旋转 · 右键平移 · 滚轮缩放</span>
       </div>
 
-      {/* Bottom: Timeline */}
-      <Timeline
-        timeLabels={timeLabels}
-        currentIndex={currentTimeIndex}
-        onIndexChange={(i) => {
-          setCurrentTimeIndex(i);
-          setIsPlaying(false);
-        }}
-        timelineValues={timelineValues}
-        isPlaying={isPlaying}
-        onPlayPause={() => {
-          if (currentTimeIndex >= timelineValues.length - 1) {
-            setCurrentTimeIndex(0);
-          }
-          setIsPlaying(!isPlaying);
-        }}
-        disabled={!simulationData}
-      />
+      <div ref={containerRef} className="flex-1" />
+
+      <div className="absolute bottom-4 right-4 bg-black/85 backdrop-blur rounded-xl border border-gray-700 p-4 text-white text-xs z-10 max-w-xs">
+        <div className="font-bold mb-2 text-blue-400 text-sm">📊 场景信息</div>
+        <div className="space-y-1.5 text-gray-300">
+          <div>📍 北京市中心城区</div>
+          <div>🟠 4 个汇水区 · 🔵 5 个检查井</div>
+          <div>▬ 5 条排水管道 · 🔴 1 个出水口</div>
+          <div className="mt-2 pt-2 border-t border-gray-700">
+            <a href="/sandbox/simulate" className="text-cyan-400 hover:underline font-bold">⚡ 进入动态仿真推演 →</a>
+          </div>
+        </div>
+      </div>
+
+      {!loaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-white z-20">
+          <span className="animate-spin mr-2">⏳</span>加载高德 3D 地图...
+        </div>
+      )}
     </div>
   );
 }
