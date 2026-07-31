@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import * as THREE from "three";
 import { SceneManager, type Node3D, type Pipe3D, type SC3D } from "./scene/SceneManager";
-import { FlowParticleSystem } from "./scene/FlowParticles";
+import { FlowArrowRenderer } from "./scene/FlowArrowRenderer";
 
 // ═══════════════════════════════════════════════════
-// INP PARSER
+// INP PARSER (unchanged from verified backend)
 // ═══════════════════════════════════════════════════
 const CX = 529350, CY = 305850;
 function sec(t: string, s: string, e: string) { const si = t.indexOf(s); if (si < 0) return ""; const ei = t.indexOf(e, si + s.length); return t.substring(si + s.length, ei > 0 ? ei : t.length); }
@@ -72,20 +72,21 @@ function fmtTime(h: number) { const m = Math.round(h*60); return `${String(Math.
 export default function SandboxPage() {
   const cr = useRef<HTMLDivElement>(null);
   const smRef = useRef<SceneManager | null>(null);
-  const fpRef = useRef<FlowParticleSystem | null>(null);
+  const arRef = useRef<FlowArrowRenderer | null>(null);
   const dataRef = useRef<any>(null);
   const selRef = useRef<THREE.Object3D | null>(null);
+  const curveCharts = useRef<Map<string, any>>(new Map());
+  const curveDivs = useRef<(HTMLDivElement | null)[]>([null, null, null, null]);
+  const echRef = useRef<any>(null);
 
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"static"|"dynamic">("static");
   const [selected, setSelected] = useState<any>(null);
   const [hovered, setHovered] = useState<any>(null);
-  const [layers, setLayers] = useState<Record<string,boolean>>({ terrain:true, sc:true, pipes:true, nodes:true });
+  const [layers, setLayers] = useState<Record<string,boolean>>({ slab:true, sc:true, pipes:true, nodes:true });
   const [stats, setStats] = useState({ nodes:0, pipes:0, scs:0 });
-  const [ve, setVe] = useState(8);
-  const [clipOn, setClipOn] = useState(true);
-  const [clipOffset, setClipOffset] = useState(0);
+  const [ve, setVe] = useState(6);
   const [searchQ, setSearchQ] = useState("");
   const [searchRes, setSearchRes] = useState<any[]>([]);
   const [leftOpen, setLeftOpen] = useState(true);
@@ -120,35 +121,25 @@ export default function SandboxPage() {
 
       const sm = new SceneManager(cr.current);
       smRef.current = sm;
-      sm.build(data, 8);
-      sm.defaultCamera();
+      sm.build(data, 6);
+      sm.defaultView();
 
-      const fp = new FlowParticleSystem(sm.scene);
-      fpRef.current = fp;
-      // Register all pipes for flow particles
-      sm.pipeMap.forEach((v, id) => { fp.registerPipe(id, v.mesh, v.curve); });
+      const ar = new FlowArrowRenderer(sm.scene);
+      arRef.current = ar;
+      sm.pipeMap.forEach((v, id) => { ar.registerPipe(id, v.curve); });
 
-      // Selection via raycaster
+      // Selection
       const raycaster = new THREE.Raycaster();
-      const onPointerDown = (e: PointerEvent) => {
+      sm.renderer.domElement.addEventListener("pointerdown", e => {
         if (e.button > 1) return;
         const rect = sm.renderer.domElement.getBoundingClientRect();
         const mouse = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         raycaster.setFromCamera(mouse, sm.camera);
         const hits = raycaster.intersectObjects(sm.scene.children, true);
-        if (hits.length > 0) {
-          let obj: any = hits[0].object;
-          while (obj) {
-            if (obj.userData?.type) {
-              if (selRef.current !== obj) { clearSel(); selRef.current = obj; highlightObj(obj); setSelected({ type: obj.userData.type, data: obj.userData.data }); }
-              return;
-            }
-            obj = obj.parent;
-          }
-        }
+        if (hits.length > 0) { let obj: any = hits[0].object; while (obj) { if (obj.userData?.type) { if (selRef.current !== obj) { clearSel(); selRef.current = obj; hl(obj); setSelected({ type: obj.userData.type, data: obj.userData.data }); } return; } obj = obj.parent; } }
         clearSel(); setSelected(null);
-      };
-      const onPointerMove = (e: PointerEvent) => {
+      });
+      sm.renderer.domElement.addEventListener("pointermove", e => {
         const rect = sm.renderer.domElement.getBoundingClientRect();
         const mouse = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         raycaster.setFromCamera(mouse, sm.camera);
@@ -156,54 +147,32 @@ export default function SandboxPage() {
         let found: any = null;
         if (hits.length > 0) { let obj: any = hits[0].object; while (obj) { if (obj.userData?.type) { found = obj; break; } obj = obj.parent; } }
         setHovered(found ? { type: found.userData.type, data: found.userData.data } : null);
-        cr.current!.style.cursor = found ? "pointer" : "";
-      };
-      sm.renderer.domElement.addEventListener("pointerdown", onPointerDown);
-      sm.renderer.domElement.addEventListener("pointermove", onPointerMove);
-      document.addEventListener("keydown", (e) => { if (e.key === "Escape") { clearSel(); setSelected(null); } });
+        if (cr.current) cr.current.style.cursor = found ? "pointer" : "";
+      });
+      document.addEventListener("keydown", e => { if (e.key === "Escape") { clearSel(); setSelected(null); } });
 
       sm.animate(() => {
-        if (fpRef.current && mode === "dynamic" && dynPhase === "running") {
-          fpRef.current.update(dynStep);
+        if (arRef.current && mode === "dynamic" && (dynPhase === "running" || dynPhase === "paused")) {
+          arRef.current.update(dynStep, performance.now());
         }
       });
 
       setLoaded(true);
-      return () => { sm.renderer.domElement.removeEventListener("pointerdown", onPointerDown); sm.renderer.domElement.removeEventListener("pointermove", onPointerMove); sm.dispose(); };
+      return () => { sm.dispose(); };
     } catch (e: any) { setError(e.message); }
   })(); }, []);
 
-  function highlightObj(o: THREE.Object3D) {
-    o.traverse(c => { if (c instanceof THREE.Mesh && c.material && !(c.material as any)._isW) { const m = c.material as any; m.emissive = new THREE.Color("#ffff44"); m.emissiveIntensity = 0.5; } });
-  }
-  function clearSel() {
-    if (selRef.current) { selRef.current.traverse(c => { if (c instanceof THREE.Mesh && c.material && !(c.material as any)._isW) { const m = c.material as any; m.emissive = new THREE.Color("#000"); m.emissiveIntensity = 0; } }); selRef.current = null; }
-  }
+  function hl(o: THREE.Object3D) { o.traverse(c => { if (c instanceof THREE.Mesh && c.material && !(c.material as any)._isW) { const m = c.material as any; m.emissive = new THREE.Color("#ffff44"); m.emissiveIntensity = 0.5; } }); }
+  function clearSel() { if (selRef.current) { selRef.current.traverse(c => { if (c instanceof THREE.Mesh && c.material && !(c.material as any)._isW) { const m = c.material as any; m.emissive = new THREE.Color("#000"); m.emissiveIntensity = 0; } }); selRef.current = null; } }
 
   // ═══════════════════════════════════════════════════
-  // VIEW / SEARCH / ISOLATE
+  // ACTIONS
   // ═══════════════════════════════════════════════════
-  const focusObj = (obj: any) => {
-    const sm = smRef.current; if (!sm || !obj) return;
-    let tx = 0, tz = 0;
-    if (obj.type === "node") { const n = sm.data.nodes.find((nn: Node3D) => nn.id === obj.data.id); if (n) { tx = n.x; tz = n.z; } }
-    else if (obj.type === "pipe") { const fn = sm.data.nodes.find((nn: Node3D) => nn.id === obj.data.from); const tn = sm.data.nodes.find((nn: Node3D) => nn.id === obj.data.to); if (fn && tn) { tx = (fn.x + tn.x) / 2; tz = (fn.z + tn.z) / 2; } }
-    const cy = sm.ey(sm.minElev + (sm.avgSurface - sm.minElev) * 0.3);
-    sm.camera.position.set(tx + sm.span * 0.3 * Math.cos(0.45), cy + sm.span * 0.25, tz + sm.span * 0.3 * Math.sin(0.45));
-    sm.camera.lookAt(tx, cy, tz);
-  };
-
+  const focusObj = (obj: any) => { smRef.current?.focusObject(obj); };
   const doSearch = (q: string) => { setSearchQ(q); if (!q.trim() || !dataRef.current) { setSearchRes([]); return; } const d = dataRef.current; const ql = q.toLowerCase(); const r: any[] = []; d.nodes.forEach((n: Node3D) => { if (n.id.toLowerCase().includes(ql)) r.push({ type: "node", data: { id: n.id, type: n.type, invert: n.invert, ground: n.ground } }); }); d.pipes.forEach((p: Pipe3D) => { if (p.id.toLowerCase().includes(ql) || p.from.toLowerCase().includes(ql) || p.to.toLowerCase().includes(ql)) r.push({ type: "pipe", data: { id: p.id, from: p.from, to: p.to, diam: p.diam } }); }); setSearchRes(r.slice(0, 20)); };
   const locateRes = (r: any) => { setSelected(r); focusObj(r); };
-
-  const isolateObj = (obj: any) => {
-    if (!obj || !smRef.current) return;
-    setIsolated(obj.data.id);
-    smRef.current.groups.nodes.children.forEach((g: any) => { g.visible = g.userData?.data?.id === obj.data.id; });
-    smRef.current.groups.pipes.children.forEach((m: any) => { const d2 = m.userData?.data; m.visible = d2?.id === obj.data.id || d2?.from === obj.data.id || d2?.to === obj.data.id; });
-  };
-  const resetIsolation = () => { setIsolated(null); if (smRef.current) { smRef.current.groups.nodes.children.forEach((g: any) => { g.visible = true; }); smRef.current.groups.pipes.children.forEach((m: any) => { m.visible = true; }); } };
-
+  const isolateObj = (obj: any) => { if (!obj || !smRef.current) return; setIsolated(obj.data.id); smRef.current.groups.nodes.children.forEach((g: any) => { g.visible = g.userData?.data?.id === obj.data.id; }); smRef.current.groups.pipes.children.forEach((m: any) => { const d2 = m.userData?.data; m.visible = d2?.id === obj.data.id || d2?.from === obj.data.id || d2?.to === obj.data.id; }); };
+  const resetIso = () => { setIsolated(null); if (smRef.current) { smRef.current.groups.nodes.children.forEach((g: any) => { g.visible = true; }); smRef.current.groups.pipes.children.forEach((m: any) => { m.visible = true; }); } };
   const toggleLayer = (id: string) => { setLayers(p => { const n = !p[id]; const g = smRef.current?.groups[id]; if (g) g.visible = n; return { ...p, [id]: n }; }); };
 
   // ═══════════════════════════════════════════════════
@@ -217,10 +186,9 @@ export default function SandboxPage() {
       clearTimeout(tid); const d = await res.json();
       if (!d.ok) throw new Error(d.error || "API error");
       setDynRes(d); setDynPhase("ready"); setSimId(d.simulationId || "");
-      // Feed data to flow particles
-      if (fpRef.current && d.links) {
+      if (arRef.current && d.links) {
         Object.entries(d.links).forEach(([lid, ld]: [string, any]) => {
-          fpRef.current!.setData(lid, ld.flow || [], ld.velocity || [], ld.capacity || []);
+          arRef.current!.setData(lid, ld.flow || [], ld.velocity || []);
         });
       }
     } catch (e: any) { setDynPhase("config"); if (e.name !== "AbortError") alert("仿真失败: " + e.message); }
@@ -228,7 +196,7 @@ export default function SandboxPage() {
 
   useEffect(() => { if (!dynPlay || dynPhase !== "running" || tsc === 0) return; const t = setInterval(() => { setDynStep(p => { const n = p + 1; if (n >= tsc - 1) { setDynPlay(false); setDynPhase("done"); return tsc - 1; } return n; }); }, 140 / dynSpd); return () => clearInterval(t); }, [dynPlay, dynSpd, dynPhase, tsc]);
 
-  // Update water columns
+  // Water columns
   useEffect(() => {
     if (!dynRes?.nodes || !smRef.current) return;
     const sm = smRef.current;
@@ -241,7 +209,7 @@ export default function SandboxPage() {
       let wm = sm.waterMap.get(nid);
       if (depth < 0.003) { if (wm) wm.visible = false; return; }
       if (!wm) {
-        const wg = new THREE.CylinderGeometry(0.18, 0.18, 1, 8);
+        const wg = new THREE.CylinderGeometry(0.16, 0.16, 1, 8);
         const wmt = new THREE.MeshStandardMaterial({ color: "#3388cc", roughness: 0.1, metalness: 0.05, emissive: "#001122", emissiveIntensity: 0.2, transparent: true, opacity: 0.7, depthWrite: true });
         (wmt as any)._isW = true; wm = new THREE.Mesh(wg, wmt); wm.position.set(0, iy, 0);
         (wm as any).userData = { water: true }; g.add(wm); sm.waterMap.set(nid, wm);
@@ -255,11 +223,72 @@ export default function SandboxPage() {
     });
   }, [dynStep, dynRes, ve]);
 
-  // Cleanup water on mode change
-  useEffect(() => { if (mode !== "dynamic") { const sm = smRef.current; if (sm) { sm.waterMap.forEach(wm => { if (wm.parent) wm.parent.remove(wm); wm.geometry?.dispose(); (wm.material as THREE.Material)?.dispose(); }); sm.waterMap.clear(); } fpRef.current?.clear(); } }, [mode]);
+  useEffect(() => { if (mode !== "dynamic") { const sm = smRef.current; if (sm) { sm.waterMap.forEach(wm => { if (wm.parent) wm.parent.remove(wm); wm.geometry?.dispose(); (wm.material as THREE.Material)?.dispose(); }); sm.waterMap.clear(); } arRef.current?.clear(); } }, [mode]);
 
   // ═══════════════════════════════════════════════════
-  // DYNAMIC PROPERTY HELPERS
+  // CURVES (ECharts, no errors)
+  // ═══════════════════════════════════════════════════
+  useEffect(() => {
+    if (!showCurves || !selected || !dynRes?.ok || tsc === 0) return;
+    let cancelled = false;
+    import("echarts/core").then(async core => {
+      if (cancelled) return;
+      const [charts, comps, rend] = await Promise.all([import("echarts/charts"), import("echarts/components"), import("echarts/renderers")]);
+      core.use([charts.LineChart, comps.GridComponent, comps.TooltipComponent, comps.LegendComponent, rend.CanvasRenderer]);
+
+      const ts = timestamps.map((t: number) => t.toFixed(1) + "h");
+      const mark = dynStep < ts.length ? [{ xAxis: ts[dynStep] }] : [];
+      const makeOpt = (data: number[], yLab: string, title: string, color: string) => ({
+        backgroundColor: "transparent", grid: { top: 24, right: 8, bottom: 18, left: 40 },
+        xAxis: { type: "category", data: ts, axisLabel: { color: "#888", fontSize: 8, interval: Math.max(0, Math.floor(ts.length / 6) - 1) } },
+        yAxis: { type: "value", name: yLab, nameTextStyle: { color: "#888", fontSize: 8 }, axisLabel: { color: "#888", fontSize: 8 } },
+        series: [{
+          name: title, type: "line", data, smooth: false, symbol: "none", lineStyle: { color, width: 1.2 },
+          markLine: dynStep < data.length ? { silent: true, symbol: "none", lineStyle: { color: "#ff0", width: 1, type: "dashed" }, data: mark, label: { show: true, formatter: curTime, color: "#ff0", fontSize: 8 } } : undefined,
+        }],
+      });
+
+      let configs: { data: number[]; yLab: string; title: string; color: string }[] = [];
+      if (selected.type === "node") {
+        const nd = dynRes.nodes[selected.data.id];
+        if (nd) configs = [
+          { data: nd.depth || [], yLab: "m", title: "水深", color: "#4fc3f7" },
+          { data: nd.totalInflow || [], yLab: "m³/s", title: "总入流", color: "#81c784" },
+          { data: nd.pondedVolume || [], yLab: "m³", title: "地表积水体积", color: "#ff8a65" },
+          { data: nd.floodingLosses || [], yLab: "", title: "洪泛损失", color: "#ef5350" },
+        ];
+      } else if (selected.type === "pipe") {
+        const ld = dynRes.links[selected.data.id];
+        if (ld) configs = [
+          { data: ld.flow || [], yLab: "m³/s", title: "流量", color: "#4fc3f7" },
+          { data: ld.depth || [], yLab: "m", title: "水深", color: "#81c784" },
+          { data: ld.velocity || [], yLab: "m/s", title: "流速", color: "#ff8a65" },
+          { data: ld.capacity || [], yLab: "", title: "容量利用率", color: "#ba68c8" },
+        ];
+      }
+
+      // Dispose old charts
+      curveCharts.current.forEach(ch => ch?.dispose?.());
+      curveCharts.current.clear();
+
+      configs.forEach((cfg, i) => {
+        const el = curveDivs.current[i]; if (!el || cancelled) return;
+        const ch = core.init(el);
+        ch.setOption(makeOpt(cfg.data, cfg.yLab, cfg.title, cfg.color));
+        ch.on("click", (params: any) => {
+          if (params.dataIndex !== undefined) setDynStep(params.dataIndex);
+        });
+        curveCharts.current.set(String(i), ch);
+      });
+    });
+    return () => { cancelled = true; };
+  }, [showCurves, selected?.data?.id, selected?.type, dynStep, dynRes?.simulationId]);
+
+  // Cleanup charts on hide
+  useEffect(() => { if (!showCurves) { curveCharts.current.forEach(ch => ch?.dispose?.()); curveCharts.current.clear(); } }, [showCurves]);
+
+  // ═══════════════════════════════════════════════════
+  // DYNAMIC PROPS
   // ═══════════════════════════════════════════════════
   const curNodeData = (mode === "dynamic" && selected?.type === "node" && dynRes?.nodes) ? dynRes.nodes[selected.data.id] : null;
   const curLinkData = (mode === "dynamic" && selected?.type === "pipe" && dynRes?.links) ? dynRes.links[selected.data.id] : null;
@@ -270,39 +299,37 @@ export default function SandboxPage() {
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-black relative overflow-hidden">
       {/*═══ TOP BAR ═══*/}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-black/94 backdrop-blur border-b border-gray-800 flex items-center px-3 gap-2" style={{ height: 50 }}>
+      <div className="absolute top-0 left-0 right-0 z-20 bg-black/94 backdrop-blur border-b border-gray-800 flex items-center px-3 gap-2" style={{ height: 48 }}>
         <span className="font-bold text-gray-200 text-sm mr-1">🌊 紫荆雅园</span>
         <div className="flex bg-gray-800 rounded-lg p-0.5">
           <button onClick={() => setMode("static")} className={"px-4 py-1.5 rounded-md font-bold text-sm " + (mode === "static" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white")}>📐 静态沙盘</button>
           <button onClick={() => setMode("dynamic")} className={"px-4 py-1.5 rounded-md font-bold text-sm " + (mode === "dynamic" ? "bg-cyan-600 text-white" : "text-gray-400 hover:text-white")}>▶ 动态推演</button>
         </div>
         <div className="h-5 w-px bg-gray-600" />
-        <button onClick={() => { const sm = smRef.current; if (sm) sm.defaultCamera(); }} className="px-2 py-1 text-[11px] bg-gray-800 hover:bg-gray-700 rounded text-gray-300" title="全景">🏠</button>
-        <button onClick={() => { const sm = smRef.current; if (sm) { const d = sm.data; if (d) { let cx2 = 0, cz2 = 0, cy = 0; d.nodes.forEach((n: Node3D) => { cx2 += n.x; cz2 += n.z; cy += sm.ey(n.ground); }); cx2 /= d.nodes.length; cz2 /= d.nodes.length; cy /= d.nodes.length; sm.camera.position.set(cx2, cy + sm.span * 0.8, cz2 + 5); sm.camera.lookAt(cx2, cy, cz2); } } }} className="px-2 py-1 text-[11px] bg-gray-800 hover:bg-gray-700 rounded text-gray-300" title="俯视">🔽</button>
-        <button onClick={() => { const sm = smRef.current; if (sm) { const d = sm.data; if (d) { let cx2 = 0, cz2 = 0, minY = Infinity; d.nodes.forEach((n: Node3D) => { cx2 += n.x; cz2 += n.z; const iy = sm.ey(n.invert); if (iy < minY) minY = iy; }); cx2 /= d.nodes.length; cz2 /= d.nodes.length; sm.groups.terrain.visible = false; sm.groups.sc.visible = false; sm.camera.position.set(cx2 + sm.span * 0.3, minY + sm.span * 0.2, cz2 + sm.span * 0.3); sm.camera.lookAt(cx2, minY, cz2); } } }} className="px-2 py-1 text-[11px] bg-gray-800 hover:bg-gray-700 rounded text-gray-300" title="地下">⛏</button>
-        <button onClick={() => { if (smRef.current) { const v = smRef.current.toggleClipping(); setClipOn(v); } }} className={"px-2 py-1 text-[11px] rounded text-gray-300 " + (clipOn ? "bg-cyan-800" : "bg-gray-800 hover:bg-gray-700")} title="剖切">✂</button>
+        <button onClick={() => smRef.current?.defaultView()} className="px-2 py-1 text-[11px] bg-gray-800 hover:bg-gray-700 rounded text-gray-300" title="工程剖视">🏠</button>
+        <button onClick={() => smRef.current?.topView()} className="px-2 py-1 text-[11px] bg-gray-800 hover:bg-gray-700 rounded text-gray-300" title="俯视">🔽</button>
+        <button onClick={() => smRef.current?.undergroundView()} className="px-2 py-1 text-[11px] bg-gray-800 hover:bg-gray-700 rounded text-gray-300" title="地下">⛏</button>
         <button onClick={() => { if (cr.current) { if (document.fullscreenElement) document.exitFullscreen(); else cr.current.requestFullscreen(); } }} className="px-2 py-1 text-[11px] bg-gray-800 hover:bg-gray-700 rounded text-gray-300" title="全屏">⛶</button>
         <div className="h-5 w-px bg-gray-600" />
         <span className="text-[10px] text-gray-500">垂直:</span>
-        {[1, 3, 5, 8, 12].map(v => (<button key={v} onClick={() => { setVe(v); smRef.current?.build(dataRef.current, v); smRef.current?.defaultCamera(); }} className={"px-1.5 py-0.5 rounded text-[10px] " + (ve === v ? "bg-blue-700" : "bg-gray-800 text-gray-400")}>{v}×</button>))}
-        <span className="text-[9px] text-gray-600 ml-auto">{stats.nodes}节点·{stats.pipes}管·{stats.scs}汇水区 | VE: {ve}× | 地表: 节点高程插值工程曲面</span>
+        {[1, 3, 6, 9].map(v => (<button key={v} onClick={() => { setVe(v); smRef.current?.build(dataRef.current, v); smRef.current?.defaultView(); }} className={"px-1.5 py-0.5 rounded text-[10px] " + (ve === v ? "bg-blue-700" : "bg-gray-800 text-gray-400")}>{v}×</button>))}
+        <span className="text-[9px] text-gray-600 ml-auto">工程剖视显示 | 属性值为真实数据 | VE:{ve}×</span>
       </div>
 
       {/*═══ LEFT PANEL ═══*/}
-      <div className={"absolute left-0 z-20 bg-black/93 backdrop-blur border-r border-gray-800 transition-all flex flex-col " + (leftOpen ? "w-[220px]" : "w-[28px]")} style={{ top: 50, bottom: 0 }}>
+      <div className={"absolute left-0 z-20 bg-black/93 backdrop-blur border-r border-gray-800 transition-all flex flex-col " + (leftOpen ? "w-[200px]" : "w-[26px]")} style={{ top: 48, bottom: 0 }}>
         <button onClick={() => setLeftOpen(!leftOpen)} className="absolute -right-5 top-2 w-5 h-10 bg-gray-800 rounded-r text-[10px] text-gray-400">{leftOpen ? "◀" : "▶"}</button>
         {leftOpen && <div className="p-2 overflow-y-auto flex-1">
           <div className="text-[11px] font-bold text-gray-400 mb-2">图层 & 搜索</div>
-          {[{ id: "terrain", l: "地表(TIN)" }, { id: "sc", l: "汇水区" }, { id: "pipes", l: "管道" }, { id: "nodes", l: "节点" }].map(({ id, l }) => (
+          {[{ id: "slab", l: "工程基板" }, { id: "sc", l: "汇水区" }, { id: "pipes", l: "管道" }, { id: "nodes", l: "节点" }].map(({ id, l }) => (
             <label key={id} className="flex items-center gap-2 text-[11px] text-gray-400 hover:text-gray-200 cursor-pointer"><input type="checkbox" checked={layers[id]} onChange={() => toggleLayer(id)} className="accent-cyan-500" />{l}</label>
           ))}
-          <div className="mt-2"><div className="text-[10px] text-gray-500 mb-1">剖切位置</div><input type="range" min={-200} max={200} value={clipOffset} onChange={e => { setClipOffset(+e.target.value); smRef.current?.setClipOffset(+e.target.value); }} className="w-full accent-cyan-500 h-1.5" /></div>
           <div className="mt-2"><input type="text" placeholder="搜索节点/管道…" value={searchQ} onChange={e => doSearch(e.target.value)} className="w-full bg-gray-800 rounded px-2 py-1 text-[11px] text-gray-200 border border-gray-700 focus:border-cyan-600 outline-none" /></div>
           {searchRes.length > 0 && <div className="space-y-0.5 max-h-[200px] overflow-y-auto mt-1">{searchRes.map((r, i) => (<div key={i} onClick={() => locateRes(r)} className="text-[10px] text-gray-400 hover:text-white hover:bg-gray-800 rounded px-1.5 py-0.5 cursor-pointer truncate">{r.type === "node" ? "🔹" : "▬"} {r.data.id}</div>))}</div>}
-          {isolated && <button onClick={resetIsolation} className="w-full text-[10px] bg-red-900 hover:bg-red-800 rounded px-2 py-1 text-gray-300 mt-2">恢复完整模型</button>}
+          {isolated && <button onClick={resetIso} className="w-full text-[10px] bg-red-900 hover:bg-red-800 rounded px-2 py-1 text-gray-300 mt-2">恢复完整模型</button>}
           {selected && !isolated && <button onClick={() => isolateObj(selected)} className="w-full text-[10px] bg-gray-800 hover:bg-gray-700 rounded px-2 py-1 text-gray-400 mt-1">🔍 隔离查看</button>}
-          {mode === "dynamic" && dynRes && <div className="text-[10px] text-gray-500 mt-2 space-y-1"><div className="font-bold text-[11px] text-gray-400">📊 仿真概要</div><div>maxD: {dynRes.summary?.maxDepth?.value?.toFixed(2)}m @{dynRes.summary?.maxDepth?.nodeId}</div><div>maxF: {dynRes.summary?.maxFlow?.value?.toFixed(2)} @{dynRes.summary?.maxFlow?.linkId}</div></div>}
-          <div className="text-[8px] text-gray-600 mt-2">当前地形为根据节点地表高程生成的工程TIN曲面，不代表真实DEM。</div>
+          {mode === "dynamic" && dynRes && <div className="text-[10px] text-gray-500 mt-2 space-y-1"><div className="font-bold text-[11px] text-gray-400">📊 仿真概要</div><div>maxD: {dynRes.summary?.maxDepth?.value?.toFixed(2)}m</div><div>maxF: {dynRes.summary?.maxFlow?.value?.toFixed(2)}</div></div>}
+          <div className="text-[8px] text-gray-600 mt-2">当前采用工程剖视显示，不代表真实DEM地形。设施属性与仿真数值均为真实数据。</div>
         </div>}
       </div>
 
@@ -310,7 +337,7 @@ export default function SandboxPage() {
       <div ref={cr} className="flex-1" />
 
       {/*═══ RIGHT DRAWER ═══*/}
-      <div className={"absolute right-0 z-20 bg-black/93 backdrop-blur border-l border-gray-800 transition-all flex flex-col overflow-y-auto " + (rightOpen ? "w-[320px]" : "w-[28px]")} style={{ top: 50, bottom: mode === "dynamic" && dynRes?.ok ? 120 : 0 }}>
+      <div className={"absolute right-0 z-20 bg-black/93 backdrop-blur border-l border-gray-800 transition-all flex flex-col overflow-y-auto " + (rightOpen ? "w-[320px]" : "w-[26px]")} style={{ top: 48, bottom: mode === "dynamic" && dynRes?.ok ? 120 : 0 }}>
         <button onClick={() => setRightOpen(!rightOpen)} className="absolute -left-5 top-2 w-5 h-10 bg-gray-800 rounded-l text-[10px] text-gray-400">{rightOpen ? "▶" : "◀"}</button>
         {rightOpen && <div className="p-2.5">
           {mode === "static" && selected && (<>
@@ -324,7 +351,7 @@ export default function SandboxPage() {
             <div className="text-xs font-bold text-gray-300 mb-2">{{ config: "⚙️ 场景配置", loading: "⏳ 仿真中…", ready: "📊 就绪", running: "🔵 运行中", paused: "⏸ 暂停", done: "✅ 完成" }[dynPhase]}</div>
             {(dynPhase === "config" || dynPhase === "ready" || dynPhase === "done") && (<div className="space-y-2">
               <div><div className="flex justify-between text-[11px]"><span className="text-gray-500">降雨倍率</span><span className="text-cyan-400 font-bold">{dynI}%</span></div><input type="range" min="10" max="300" value={dynI} onChange={e => setDynI(+e.target.value)} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
-              {dynRes && <div className="text-[10px] text-gray-500">步数: {dynRes.timeStepCount} | {dynRes.metadata?.startTime?.slice(0, 16)} → {dynRes.metadata?.endTime?.slice(11, 16)}</div>}
+              {dynRes && <div className="text-[10px] text-gray-500">步数: {dynRes.timeStepCount} | 时间: {dynRes.metadata?.startTime?.slice(0, 16)} → {dynRes.metadata?.endTime?.slice(11, 16)}</div>}
               <button onClick={loadSim} className="w-full py-2 bg-cyan-800 rounded font-bold text-xs hover:bg-cyan-700">{dynRes ? "🔄 重新仿真" : "📊 开始推演"}</button>
               {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-2 bg-green-800 rounded font-bold text-xs hover:bg-green-700">▶ 播放</button>}
               {dynPhase === "done" && <button onClick={() => { setDynStep(0); setDynPlay(true); setDynPhase("running"); }} className="w-full py-2 bg-green-800 rounded font-bold text-xs hover:bg-green-700">🔄 重新播放</button>}
@@ -374,96 +401,26 @@ export default function SandboxPage() {
         </div>
       )}
 
-      {/*═══ CURVES ═══*/}
+      {/*═══ CURVES PANEL ═══*/}
       {mode === "dynamic" && showCurves && selected && dynRes?.ok && tsc > 0 && (
-        <CurvePanel selected={selected} dynRes={dynRes} dynStep={dynStep} timestamps={timestamps} curTime={curTime} tsc={tsc} onClose={() => setShowCurves(false)} />
+        <div className="absolute left-2 right-2 bg-black/96 backdrop-blur rounded-lg border border-gray-700 z-10" style={{ bottom: 128, maxHeight: 320 }}>
+          <div className="flex justify-between px-3 py-1.5 text-[10px] text-gray-400 border-b border-gray-800"><span>📈 {selected.data?.id} 时间序列</span><button onClick={() => setShowCurves(false)} className="text-gray-500 hover:text-gray-200">✕</button></div>
+          <div className="grid grid-cols-2 gap-0.5 p-1">
+            {[0, 1, 2, 3].map(i => <div key={i} ref={el => { curveDivs.current[i] = el; }} style={{ height: 120 }} />)}
+          </div>
+        </div>
       )}
 
       {/*═══ OVERLAYS ═══*/}
       {!loaded && !error && <div className="absolute inset-0 flex items-center justify-center bg-gray-950 z-30"><span className="animate-spin mr-2">⏳</span><span className="text-sm text-gray-300">加载SWMM模型…</span></div>}
       {error && <div className="absolute inset-0 flex items-center justify-center bg-gray-950 z-30"><div className="text-center bg-red-900/60 rounded-xl p-6 max-w-md"><div className="text-2xl mb-2">⚠️</div><div className="text-sm mb-1 text-gray-200">{error}</div><button onClick={() => window.location.reload()} className="mt-3 px-4 py-1.5 bg-red-800 rounded text-xs hover:bg-red-700 text-white">刷新</button></div></div>}
-      {hovered && <div className="absolute z-30 pointer-events-none bg-black/88 backdrop-blur rounded px-2 py-1 text-[10px] text-gray-200 border border-gray-700" style={{ left: 230, top: 60 }}>{{ node: "🔹 节点", pipe: "▬ 管道", subcatchment: "▨ 汇水区" }[hovered.type as string] || hovered.type} {hovered.data?.id}</div>}
+      {hovered && <div className="absolute z-30 pointer-events-none bg-black/88 backdrop-blur rounded px-2 py-1 text-[10px] text-gray-200 border border-gray-700" style={{ left: 210, top: 56 }}>{{ node: "🔹 节点", pipe: "▬ 管道", subcatchment: "▨ 汇水区" }[hovered.type as string] || hovered.type} {hovered.data?.id}</div>}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════
-// MICRO COMPONENTS
+// MICRO
 // ═══════════════════════════════════════════════════
-function PB({ icon, onClick, cls }: { icon: string; onClick: () => void; cls?: string }) {
-  return <button onClick={onClick} className={"px-2 py-1 rounded text-xs font-bold " + (cls || "bg-gray-800 hover:bg-gray-700 text-gray-300")}>{icon}</button>;
-}
-function DP({ l, v, u, warn, pct, dir, l2 }: { l: string; v?: number; u?: string; warn?: boolean; pct?: boolean; dir?: boolean; l2?: string }) {
-  if (dir) return <div className="flex justify-between text-[11px]"><span className="text-gray-500">{l}</span><span className="text-gray-200">→ {l2}</span></div>;
-  return <div className="flex justify-between text-[11px]"><span className="text-gray-500">{l}</span><span className={warn ? "text-red-400" : "text-gray-200"}>{pct ? (v ?? 0).toFixed(0) + (u || "") : (v ?? 0).toFixed(3) + (u ? " " + u : "")}</span></div>;
-}
-
-// ═══════════════════════════════════════════════════
-// ECHARTS CURVE PANEL
-// ═══════════════════════════════════════════════════
-let echReady = false;
-async function initEcharts() {
-  if (echReady) return (await import("echarts/core")).default;
-  const [core, charts, comps, rend] = await Promise.all([import("echarts/core"), import("echarts/charts"), import("echarts/components"), import("echarts/renderers")]);
-  core.use([charts.LineChart, comps.GridComponent, comps.TooltipComponent, comps.LegendComponent, rend.CanvasRenderer]);
-  echReady = true; return core;
-}
-
-function CurvePanel({ selected, dynRes, dynStep, timestamps, curTime, tsc, onClose }: any) {
-  const refs = useRef<(HTMLDivElement | null)[]>([null, null, null, null]);
-
-  useEffect(() => {
-    initEcharts().then(core => {
-      const ts = timestamps.map((t: number) => t.toFixed(1) + "h");
-      const mark = dynStep < ts.length ? [{ xAxis: ts[dynStep] }] : [];
-      const makeOpt = (data: number[], yLab: string, title: string, color: string) => ({
-        backgroundColor: "transparent", grid: { top: 24, right: 8, bottom: 18, left: 40 },
-        xAxis: { type: "category", data: ts, axisLabel: { color: "#888", fontSize: 8, interval: Math.max(0, Math.floor(ts.length / 6) - 1) } },
-        yAxis: { type: "value", name: yLab, nameTextStyle: { color: "#888", fontSize: 8 }, axisLabel: { color: "#888", fontSize: 8 } },
-        series: [{ name: title, type: "line", data, smooth: false, symbol: "none", lineStyle: { color, width: 1.2 },
-          markLine: dynStep < data.length ? { silent: true, symbol: "none", lineStyle: { color: "#ff0", width: 1, type: "dashed" }, data: mark, label: { show: true, formatter: curTime, color: "#ff0", fontSize: 8 } } : undefined,
-        }],
-      });
-
-      let configs: { data: number[]; yLab: string; title: string; color: string }[] = [];
-      if (selected.type === "node") {
-        const nd = dynRes?.nodes?.[selected.data.id];
-        if (nd) configs = [
-          { data: nd.depth || [], yLab: "m", title: "水深", color: "#4fc3f7" },
-          { data: nd.totalInflow || [], yLab: "m³/s", title: "总入流", color: "#81c784" },
-          { data: nd.pondedVolume || [], yLab: "m³", title: "地表积水体积", color: "#ff8a65" },
-          { data: nd.floodingLosses || [], yLab: "", title: "洪泛损失", color: "#ef5350" },
-        ];
-      } else if (selected.type === "pipe") {
-        const ld = dynRes?.links?.[selected.data.id];
-        if (ld) configs = [
-          { data: ld.flow || [], yLab: "m³/s", title: "流量", color: "#4fc3f7" },
-          { data: ld.depth || [], yLab: "m", title: "水深", color: "#81c784" },
-          { data: ld.velocity || [], yLab: "m/s", title: "流速", color: "#ff8a65" },
-          { data: ld.capacity || [], yLab: "", title: "容量利用率", color: "#ba68c8" },
-        ];
-      }
-
-      configs.forEach((cfg, i) => {
-        const el = refs.current[i]; if (!el) return;
-        const ch = core.init(el);
-        ch.setOption(makeOpt(cfg.data, cfg.yLab, cfg.title, cfg.color));
-        ch.on("click", (params: any) => {
-          if (params.dataIndex !== undefined) {
-            const ev = new CustomEvent("sandbox:seek", { detail: { step: params.dataIndex } });
-            window.dispatchEvent(ev);
-          }
-        });
-      });
-    });
-  }, [selected.data?.id, selected.type, dynStep, dynRes?.simulationId]);
-
-  return (
-    <div className="absolute left-2 right-2 bg-black/96 backdrop-blur rounded-lg border border-gray-700 z-10" style={{ bottom: 128, maxHeight: 340 }}>
-      <div className="flex justify-between px-3 py-1.5 text-[10px] text-gray-400 border-b border-gray-800"><span>📈 {selected.data?.id} 时间序列</span><button onClick={onClose} className="text-gray-500 hover:text-gray-200">✕</button></div>
-      <div className="grid grid-cols-2 gap-0.5 p-1">
-        {[0, 1, 2, 3].map(i => <div key={i} ref={el => { refs.current[i] = el; }} style={{ height: 130 }} />)}
-      </div>
-    </div>
-  );
-}
+function PB({ icon, onClick, cls }: { icon: string; onClick: () => void; cls?: string }) { return <button onClick={onClick} className={"px-2 py-1 rounded text-xs font-bold " + (cls || "bg-gray-800 hover:bg-gray-700 text-gray-300")}>{icon}</button>; }
+function DP({ l, v, u, warn, pct, dir, l2 }: { l: string; v?: number; u?: string; warn?: boolean; pct?: boolean; dir?: boolean; l2?: string }) { if (dir) return <div className="flex justify-between text-[11px]"><span className="text-gray-500">{l}</span><span className="text-gray-200">→ {l2}</span></div>; return <div className="flex justify-between text-[11px]"><span className="text-gray-500">{l}</span><span className={warn ? "text-red-400" : "text-gray-200"}>{pct ? (v ?? 0).toFixed(0) + (u || "") : (v ?? 0).toFixed(3) + (u ? " " + u : "")}</span></div>; }
