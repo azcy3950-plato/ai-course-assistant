@@ -14,8 +14,10 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
   console.log("Opening sandbox...");
-  await page.goto(BASE, { waitUntil: "networkidle", timeout: 30000 });
-  await sleep(3000);
+  await page.goto(BASE, { waitUntil: "domcontentloaded", timeout: 30000 });
+  // Wait for Three.js canvas to appear
+  await page.waitForSelector("canvas", { timeout: 20000 });
+  await sleep(5000); // Extra time for INP fetch + scene build
 
   // Verify basics
   const canvasCount = await page.evaluate(() => document.querySelectorAll("canvas").length);
@@ -107,20 +109,23 @@ async function main() {
 
   // 08 Switch to dynamic mode
   console.log("08 dynamic-config");
-  for (const btn of allBtns) {
-    const text = await btn.textContent();
-    if (text?.includes("动态推演")) { await btn.click(); break; }
-  }
+  await sleep(3000);
+  // Click using JS to bypass overlay
+  await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll("button"));
+    const dynBtn = btns.find(b => b.textContent?.includes("动态"));
+    if (dynBtn) (dynBtn as HTMLButtonElement).click();
+  });
   await sleep(800);
   await page.screenshot({ path: path.join(OUT, "08-dynamic-config.png"), fullPage: false });
 
   // Find and click "开始推演"
   console.log("Starting simulation...");
-  const dynBtns = await page.$$("button");
-  for (const btn of dynBtns) {
-    const text = await btn.textContent();
-    if (text?.includes("开始推演")) { await btn.click(); break; }
-  }
+  await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll("button"));
+    const simBtn = btns.find(b => b.textContent?.includes("开始推演"));
+    if (simBtn) (simBtn as HTMLButtonElement).click();
+  });
   // Wait for simulation to complete (can take ~15-30s)
   await sleep(30000);
   // Check if completed
@@ -128,11 +133,11 @@ async function main() {
   console.log("Simulation status:", doneText?.includes("就绪") ? "ready" : doneText?.includes("完成") ? "done" : "?");
 
   // Click "播放" if ready
-  const readyBtns = await page.$$("button");
-  for (const btn of readyBtns) {
-    const text = await btn.textContent();
-    if (text?.includes("播放")) { await btn.click(); break; }
-  }
+  await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll("button"));
+    const playBtn = btns.find(b => b.textContent?.includes("播放"));
+    if (playBtn) (playBtn as HTMLButtonElement).click();
+  });
   await sleep(2000);
 
   // 09 step 0
@@ -214,11 +219,11 @@ async function main() {
 
   // 17-18 curves — click expand curves button
   console.log("17 dynamic-node-chart");
-  const curveBtns = await page.$$("button");
-  for (const btn of curveBtns) {
-    const text = await btn.textContent();
-    if (text?.includes("展开曲线")) { await btn.click(); break; }
-  }
+  await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll("button"));
+    const curveBtn = btns.find(b => b.textContent?.includes("展开曲线"));
+    if (curveBtn) (curveBtn as HTMLButtonElement).click();
+  });
   await sleep(1000);
   await page.screenshot({ path: path.join(OUT, "17-dynamic-node-chart.png"), fullPage: false });
 
@@ -234,10 +239,11 @@ async function main() {
     await sleep(800);
   }
   // Re-expand curves
-  for (const btn of await page.$$("button")) {
-    const text = await btn.textContent();
-    if (text?.includes("展开曲线")) { await btn.click(); break; }
-  }
+  await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll("button"));
+    const curveBtn = btns.find(b => b.textContent?.includes("展开曲线"));
+    if (curveBtn) (curveBtn as HTMLButtonElement).click();
+  });
   await sleep(1000);
   await page.screenshot({ path: path.join(OUT, "18-dynamic-pipe-chart.png"), fullPage: false });
 
