@@ -42,6 +42,10 @@ __pycache__/
 /public/beijing_buildings*.json
 /public/beijing_terrain.tif
 
+# development artifacts
+*.bak
+tsconfig.tsbuildinfo
+
 # test files with credentials
 /test-pdf.js
 /test-pipeline.js
