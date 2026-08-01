@@ -79,7 +79,7 @@ export default function InsightsPage() {
           <h3 className="text-sm font-bold mb-4">📊 学习模块分布</h3>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
-              <Pie data={moduleData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => name + " " + (percent * 100).toFixed(0) + "%"}>
+              <Pie data={moduleData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => name + " " + ((percent ?? 0) * 100).toFixed(0) + "%"}>
                 {moduleData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Pie>
               <Tooltip />

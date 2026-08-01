@@ -4,10 +4,13 @@ import { compare } from "bcryptjs";
 import { sign } from "jsonwebtoken";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const JWT_SECRET = process.env.JWT_SECRET || "aicourse-jwt-secret-key-2026";
 
 export async function POST(req: NextRequest) {
   try {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return NextResponse.json({ error: "服务端尚未配置 JWT_SECRET" }, { status: 500 });
+    }
     const { email, password } = await req.json();
     if (!email || !password) {
       return NextResponse.json({ error: "缺少邮箱或密码" }, { status: 400 });
@@ -28,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     const token = sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
-      JWT_SECRET,
+      jwtSecret,
       { expiresIn: "7d" }
     );
 
