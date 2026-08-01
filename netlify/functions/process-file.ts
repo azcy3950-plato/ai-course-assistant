@@ -64,7 +64,7 @@ function chunkText(text: string, maxLen = 500): string[] {
 // ── Extract text from PDF buffer ──
 async function extractPdfText(fileBuffer: ArrayBuffer): Promise<string> {
   // pdf-parse is CommonJS; dynamic import
-  const pdfParse = (await import("pdf-parse")).default;
+  const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default;
   const data = await pdfParse(Buffer.from(fileBuffer));
   return data.text || "";
 }

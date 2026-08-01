@@ -131,8 +131,27 @@ export interface StudentStats {
 }
 
 // ========== Agent ==========
+export type {
+  GraphContext,
+  GraphMatchSignals,
+  KnowledgeEdge,
+  KnowledgeGraph,
+  KnowledgeGraphResponse,
+  KnowledgeGraphSource,
+  KnowledgeNode,
+  KnowledgeNodeAction,
+  KnowledgeNodeCategory,
+  KnowledgeRelationType,
+  KnowledgeResource,
+  KnowledgeResourceType,
+  StudentNodeProgress,
+} from './knowledge-graph';
+
+import type { GraphContext } from './knowledge-graph';
+
 export interface AgentResponse {
   answer: string;
   references?: Reference[];
+  graphContext?: GraphContext;
   metadata?: Record<string, unknown>;
 }
