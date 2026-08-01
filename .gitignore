@@ -26,6 +26,7 @@
 # debug
 npm-debug.log*
 *.log
+*.tsbuildinfo
 
 # IDE
 .idea/

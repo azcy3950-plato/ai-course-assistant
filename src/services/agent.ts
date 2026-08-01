@@ -1,4 +1,10 @@
-import { AgentResponse, Reference } from "@/types";
+import type {
+  AgentResponse,
+  GraphContext,
+  KnowledgeGraphResponse,
+  Reference,
+  StudentNodeProgress,
+} from "@/types";
 import { guidedScenarios } from "@/data/guided-scenarios";
 
 function getToken(): string {
@@ -9,7 +15,8 @@ function getToken(): string {
 export async function queryKnowledgeAgentStream(
   question: string,
   onChunk: (text: string) => void,
-  onRefs?: (refs: Reference[]) => void
+  onRefs?: (refs: Reference[]) => void,
+  onGraphContext?: (context: GraphContext) => void,
 ): Promise<AgentResponse> {
   const token = getToken();
   const res = await fetch("/api/agent", {
@@ -22,31 +29,53 @@ export async function queryKnowledgeAgentStream(
   const decoder = new TextDecoder();
   let fullText = "";
   let refs: Reference[] = [];
+  let graphContext: GraphContext | undefined;
   let buffer = "";
+  let metadataRead = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    // Check for references prefix
-    if (buffer.startsWith("__REFS__")) {
+    if (!metadataRead) {
       const nl = buffer.indexOf("\n");
-      if (nl > 0) {
-        try {
-          const rawRefs = JSON.parse(buffer.slice(8, nl));
-          refs = rawRefs.map((r: any) => ({
-            id: r.id, docName: r.docName, chapter: r.chapter || "",
-            snippet: r.content || "", page: 0, fileUrl: r.fileUrl || "",
-          }));
-          if (onRefs) onRefs(refs);
-        } catch(e) {}
-        buffer = buffer.slice(nl + 1);
+      if (nl < 0) continue;
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      metadataRead = true;
+      try {
+        if (line.startsWith("__META__")) {
+          const metadata = JSON.parse(line.slice(8));
+          refs = mapReferences(metadata.references || []);
+          graphContext = metadata.graphContext;
+          onRefs?.(refs);
+          if (graphContext) onGraphContext?.(graphContext);
+        } else if (line.startsWith("__REFS__")) {
+          refs = mapReferences(JSON.parse(line.slice(8)));
+          onRefs?.(refs);
+        } else {
+          buffer = `${line}\n${buffer}`;
+        }
+      } catch {
+        // A malformed metadata header should not discard the answer stream.
       }
     }
     fullText += buffer;
     buffer = "";
     onChunk(fullText);
   }
-  return { answer: fullText, references: refs };
+  fullText += decoder.decode();
+  return { answer: fullText, references: refs, graphContext };
+}
+
+function mapReferences(rawReferences: any[]): Reference[] {
+  return rawReferences.map((reference) => ({
+    id: reference.id,
+    docName: reference.docName,
+    chapter: reference.chapter || "",
+    snippet: reference.content || reference.snippet || "",
+    page: Number(reference.page || 0),
+    fileUrl: reference.fileUrl || "",
+  }));
 }
 
 const AGENT_API = "/api/agent";
@@ -65,18 +94,38 @@ async function callAgent(action: string, params: Record<string, any>) {
 export async function queryKnowledgeAgent(question: string): Promise<AgentResponse> {
   try {
     const result = await callAgent("knowledge", { question });
-    const refs = (result.references || []).map((r: any) => ({
-      id: r.id,
-      docName: r.docName,
-      chapter: r.chapter || "",
-      snippet: r.content || "",
-      page: 0,
-      fileUrl: r.fileUrl || "",
-    }));
-    return { answer: result.answer, references: refs };
+    return {
+      answer: result.answer,
+      references: mapReferences(result.references || []),
+      graphContext: result.graphContext,
+    };
   } catch {
     return { answer: "抱歉，AI服务暂时不可用，请稍后再试。", references: [] };
   }
+}
+
+export async function getKnowledgeGraph(): Promise<KnowledgeGraphResponse> {
+  const res = await fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) throw new Error("知识图谱加载失败");
+  return res.json();
+}
+
+export async function recordKnowledgeNodeInteraction(
+  nodeId: string,
+  kind: "question" | "study" = "study",
+): Promise<StudentNodeProgress | undefined> {
+  const res = await fetch("/api/knowledge-graph", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ action: "record_interaction", nodeId, kind }),
+  });
+  if (!res.ok) return undefined;
+  return (await res.json()).progress;
+}
+
+export async function generateKnowledgeNodeQuiz(nodeId: string) {
+  const result = await callAgent("node_quiz", { nodeId });
+  return result.questions || [];
 }
 
 export async function startGuidedScenario(scenarioId: string) {
