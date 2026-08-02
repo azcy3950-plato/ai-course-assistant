@@ -24,6 +24,8 @@
     "bcryptjs": "^3.0.3",
     "cesium": "^1.143.0",
     "docx": "^9.7.1",
+    "echarts": "^6.1.0",
+    "echarts-for-react": "^3.0.6",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
@@ -37,7 +39,9 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.9.2",
     "remark-gfm": "^4.0.1",
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "vis-data": "^8.0.4",
+    "vis-network": "^10.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
