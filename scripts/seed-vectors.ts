@@ -3,7 +3,8 @@
  * 运行: npx tsx scripts/seed-vectors.ts
  */
 
-const API = "https://golden-moonbeam-63eabd.netlify.app/api/agent";
+const API = process.env.SEED_API_URL || "http://localhost:3000/api/agent";
+const SEED_TOKEN = process.env.SEED_API_TOKEN;
 
 // 知识库数据（来自 src/data/knowledge-base.ts）
 const documents = [
@@ -95,13 +96,16 @@ const documents = [
 ];
 
 async function seed() {
+  if (!SEED_TOKEN) {
+    throw new Error("缺少 SEED_API_TOKEN，拒绝执行会清空向量数据的初始化脚本");
+  }
   // First clear existing chunks
   console.log("清空已有向量数据...");
   await fetch(API, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: "Bearer seed-script",
+      Authorization: `Bearer ${SEED_TOKEN}`,
     },
     body: JSON.stringify({ action: "clear_chunks", params: {} }),
   });
@@ -120,7 +124,7 @@ async function seed() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: "Bearer seed-script",
+          Authorization: `Bearer ${SEED_TOKEN}`,
           },
           body: JSON.stringify({
             action: "seed_chunk",

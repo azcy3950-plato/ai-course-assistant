@@ -1,56 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Pool } from "pg";
+import { verify } from "jsonwebtoken";
+import {
+  buildSuggestedPath,
+  loadKnowledgeGraph,
+  recordNodeInteraction,
+} from "@/lib/knowledge-graph";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-const GRAPH = {
-  nodes: [
-    { id: "intro", label: "课程绪论", keywords: ["绪论", "基础设施", "城市规划", "历史"] },
-    { id: "water", label: "给水工程规划", keywords: ["给水", "供水", "水源"] },
-    { id: "drain", label: "排水工程规划", keywords: ["排水", "管网", "雨水", "污水", "重现期", "设计流量"] },
-    { id: "sponge", label: "海绵城市", keywords: ["海绵", "LID", "透水", "径流", "下渗"] },
-    { id: "resil", label: "韧性城市规划", keywords: ["韧性", "防灾", "气候适应"] },
-    { id: "green", label: "绿色基础设施", keywords: ["绿色基础设施", "GI", "生态", "可持续"] },
-    { id: "swmm", label: "SWMM内涝模型", keywords: ["SWMM", "模拟", "内涝", "耦合", "模型"] },
-    { id: "cases", label: "案例研究", keywords: ["北京", "雄安", "马鞍山", "太原", "非洲", "美国", "德国", "案例"] },
-    { id: "policy", label: "政策与标准", keywords: ["GB", "标准", "规范", "平急两用", "国土空间"] },
-  ],
-  edges: [
-    { from: "intro", to: "water", rel: "prerequisite" },
-    { from: "intro", to: "drain", rel: "prerequisite" },
-    { from: "water", to: "drain", rel: "related" },
-    { from: "drain", to: "sponge", rel: "leads_to" },
-    { from: "drain", to: "swmm", rel: "leads_to" },
-    { from: "sponge", to: "green", rel: "related" },
-    { from: "sponge", to: "resil", rel: "leads_to" },
-    { from: "green", to: "cases", rel: "applied_in" },
-    { from: "resil", to: "cases", rel: "applied_in" },
-    { from: "swmm", to: "cases", rel: "applied_in" },
-    { from: "drain", to: "policy", rel: "governed_by" },
-  ],
-};
+function getUserEmail(req: NextRequest): string {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!token || !jwtSecret) return "";
+  try {
+    const payload = verify(token, jwtSecret) as { email?: string };
+    return payload.email || "";
+  } catch {
+    return "";
+  }
+}
 
 export async function GET(req: NextRequest) {
   try {
-    const result = await pool.query("SELECT DISTINCT doc_name FROM document_chunks");
-    const topicCounts: Record<string, number> = {};
-    for (const r of result.rows) {
-      for (const node of GRAPH.nodes) {
-        for (const kw of node.keywords) {
-          if (r.doc_name.includes(kw)) {
-            topicCounts[node.id] = (topicCounts[node.id] || 0) + 1;
-            break;
-          }
-        }
-      }
-    }
+    const userEmail = getUserEmail(req);
+    const graph = await loadKnowledgeGraph(userEmail);
     return NextResponse.json({
-      graph: GRAPH,
-      topicCounts,
-      totalDocs: result.rows.length,
-      suggestedPath: ["intro", "water", "drain", "sponge", "swmm", "green", "resil", "cases", "policy"],
+      graph,
+      suggestedPath: buildSuggestedPath(graph),
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "知识图谱加载失败";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return NextResponse.json({ error: "未登录" }, { status: 401 });
+    const body = await req.json();
+    if (body.action !== "record_interaction" || !body.nodeId) {
+      return NextResponse.json({ error: "无效操作" }, { status: 400 });
+    }
+    const progress = await recordNodeInteraction(
+      userEmail,
+      String(body.nodeId),
+      body.kind === "question" ? "question" : "study",
+    );
+    return NextResponse.json({ ok: true, progress });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "学习状态更新失败";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
