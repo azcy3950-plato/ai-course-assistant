@@ -48,7 +48,7 @@ export default function GuidedPage() {
   };
 
   const send = async (value = input) => {
-    const question = value.trim(); if (!question || loading) return; abortRef.current?.abort(); const controller = new AbortController(); abortRef.current = controller; const requestId = crypto.randomUUID(); setInput(""); setLoading(true); setMessages((old) => [...old, { id: `${requestId}-q`, role: "user", content: question }, { id: `${requestId}-a`, role: "assistant", content: "正在检索课程知识并组织学习路径…", pending: true }]);
+    const question = value.trim(); if (!question || loading) return; abortRef.current?.abort(); const controller = new AbortController(); abortRef.current = controller; const requestId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`; setInput(""); setLoading(true); setMessages((old) => [...old, { id: `${requestId}-q`, role: "user", content: question }, { id: `${requestId}-a`, role: "assistant", content: "正在检索课程知识并组织学习路径…", pending: true }]);
     try {
       const res = await fetch("/api/agent", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "knowledge", params: { question } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "回答服务暂时不可用");
       const ids = setCurrentFromContext(data.graphContext); const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[]; setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.answer || "暂无回答", pending: false, nodeIds: ids, concepts } : m));
