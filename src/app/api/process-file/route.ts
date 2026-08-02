@@ -63,7 +63,7 @@ async function extractOfficeText(buffer: Buffer, ext: string): Promise<string> {
   return "";
 }
 
-const pdfParsePromise = import("pdf-parse").then((m) => m.default);
+const pdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then((m) => m.default);
 
 export async function POST(req: NextRequest) {
   if (!req.headers.get("Authorization")) {

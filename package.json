@@ -1,19 +1,24 @@
 {
   "name": "ai-course-assistant",
   "version": "1.0.0",
-  "description": "",
+  "private": true,
+  "description": "AI课程助手：智能体B与海绵城市知识图谱双向闭环学习系统",
   "main": "index.js",
   "scripts": {
     "dev": "next dev",
+    "check": "tsc --noEmit",
     "build": "npm run copy:cesium && next build",
     "start": "next start",
     "lint": "next lint",
-    "copy:cesium": "cp -r node_modules/cesium/Build/Cesium public/Cesium"
+    "copy:cesium": "node -e \"require('fs').cpSync('node_modules/cesium/Build/Cesium','public/Cesium',{recursive:true})\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1101.0",
+    "@aws-sdk/s3-request-presigner": "^3.1101.0",
+    "@supabase/supabase-js": "^2.111.0",
     "@types/leaflet": "^1.9.21",
     "@types/three": "^0.185.1",
     "bcryptjs": "^3.0.3",
@@ -24,7 +29,9 @@
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
-    "next": "^16.2.10",
+    "next": "^16.2.11",
+    "pdf-parse": "^1.1.1",
+    "pdf2json": "^4.0.3",
     "pg": "^8.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -32,15 +39,24 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.9.2",
     "remark-gfm": "^4.0.1",
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "vis-data": "^8.0.4",
+    "vis-network": "^10.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.1.1",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pg": "^8.20.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "postcss": "^8.5.19",
     "tailwindcss": "^4.3.3",
-    "typescript": "7.0.2"
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "postcss": "$postcss",
+    "sharp": "0.35.0"
   }
 }
