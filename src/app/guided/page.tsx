@@ -1,220 +1,71 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { useApp } from "@/contexts/AppContext";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 import KnowledgeGraphPanel from "@/components/KnowledgeGraphPanel";
-import KnowledgeNodeDrawer from "@/components/KnowledgeNodeDrawer";
-import QuizPanel from "@/components/QuizPanel";
-import { generateKnowledgeNodeQuiz } from "@/services/agent";
-import type { KnowledgeNode, KnowledgeNodeAction } from "@/types";
+import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from "@/types";
+
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string; nodeIds?: string[]; concepts?: KnowledgeNode[]; pending?: boolean; error?: boolean };
+const STORAGE_KEY = "guided-workspace-ratio";
+const suggested = ["海绵城市如何减少内涝？", "SWMM 模型的核心原理是什么？", "排水管网设计标准如何选择？", "LID 设施应该怎样组合使用？"];
+
+function mergeGraph(base: KnowledgeGraph, nodes: KnowledgeNode[], edges: KnowledgeEdge[]): KnowledgeGraph {
+  const nodeMap = new Map(base.nodes.map((n) => [n.id, n])); nodes.forEach((n) => nodeMap.set(n.id, nodeMap.get(n.id) || n));
+  const edgeMap = new Map(base.edges.map((e) => [e.id, e])); edges.forEach((e) => { if (nodeMap.has(e.source) && nodeMap.has(e.target)) edgeMap.set(e.id, e); });
+  return { ...base, nodes: [...nodeMap.values()], edges: [...edgeMap.values()] };
+}
 
 export default function GuidedPage() {
   const { state } = useApp();
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  const [fullGraph, setFullGraph] = useState<KnowledgeGraph>({ nodes: [], edges: [] });
+  const [cumulative, setCumulative] = useState<KnowledgeGraph>({ nodes: [], edges: [] });
+  const [currentGraph, setCurrentGraph] = useState<KnowledgeGraph>({ nodes: [], edges: [] });
+  const [focusIds, setFocusIds] = useState<string[]>([]);
+  const [selected, setSelected] = useState<KnowledgeNode | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [hints, setHints] = useState<string[]>([]);
-  const [hintLevel, setHintLevel] = useState(0);
-  const [kgData, setKgData] = useState<any>(null);
-  const [showKg, setShowKg] = useState(true);
-  const [selectedKgNode, setSelectedKgNode] = useState<KnowledgeNode | undefined>(undefined);
-  const [graphFilter, setGraphFilter] = useState("");
-  const [drawerNode, setDrawerNode] = useState<KnowledgeNode | undefined>(undefined);
-  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
-  const [quizOpen, setQuizOpen] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useState<"current" | "cumulative">("current");
+  const [depth, setDepth] = useState<1 | 2>(1);
+  const [ratio, setRatio] = useState(42);
+  const [graphCollapsed, setGraphCollapsed] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"graph" | "chat">("chat");
+  const [nodeCategory, setNodeCategory] = useState("all");
+  const [relationType, setRelationType] = useState("all");
+  const workspace = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const dragging = useRef(false);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-  useEffect(() => { fetch("/api/knowledge-graph").then(r => r.json()).then(d => setKgData(d)).catch(() => {}); }, []);
+  useEffect(() => { const saved = Number(localStorage.getItem(STORAGE_KEY)); if (saved >= 30 && saved <= 62) setRatio(saved); fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (d.graph) setFullGraph(d.graph); }).catch(() => undefined); }, []);
+  useEffect(() => { const move = (e: PointerEvent) => { if (!dragging.current || !workspace.current) return; const rect = workspace.current.getBoundingClientRect(); const next = Math.min(62, Math.max(30, ((e.clientX - rect.left) / rect.width) * 100)); setRatio(next); }; const up = () => { if (dragging.current) localStorage.setItem(STORAGE_KEY, String(ratio)); dragging.current = false; }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; }, [ratio]);
 
-  const getToken = () => localStorage.getItem("aicourse-token") || "";
-
-  const callAPI = async (action: string, params: any) => {
-    const res = await fetch("/api/agent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + getToken() },
-      body: JSON.stringify({ action, params }),
-    });
-    return res.json();
+  const graph = mode === "current" ? currentGraph : cumulative;
+  const nodeForId = useCallback((id: string) => fullGraph.nodes.find((n) => n.id === id) || cumulative.nodes.find((n) => n.id === id), [cumulative.nodes, fullGraph.nodes]);
+  const setCurrentFromContext = (ctx: any) => {
+    const ids = [ctx?.focusNode?.id, ...(ctx?.highlightNodeIds || []), ...(ctx?.prerequisites || []).map((n: KnowledgeNode) => n.id), ...(ctx?.relatedNodes || []).map((n: KnowledgeNode) => n.id), ...(ctx?.nextNodes || []).map((n: KnowledgeNode) => n.id)].filter(Boolean) as string[];
+    const unique = [...new Set(ids)]; const nodes = unique.map(nodeForId).filter(Boolean) as KnowledgeNode[]; const idSet = new Set(unique); const edges = fullGraph.edges.filter((e) => idSet.has(e.source) && idSet.has(e.target));
+    setFocusIds(ctx?.focusNode?.id ? [ctx.focusNode.id] : unique.slice(0, 1)); setCurrentGraph({ nodes, edges }); setCumulative((old) => mergeGraph(old, nodes, edges)); return unique;
   };
 
-  const handleSend = useCallback(async (content?: string) => {
-    const q = content || input.trim();
-    if (!q || loading) return;
-    setInput("");
-    setMessages(prev => [...prev, { role: "user", content: q }]);
-    setLoading(true);
-    setHintLevel(0);
-    setHints([]);
-    setGraphFilter(q);
-
+  const send = async (value = input) => {
+    const question = value.trim(); if (!question || loading) return; abortRef.current?.abort(); const controller = new AbortController(); abortRef.current = controller; const requestId = crypto.randomUUID(); setInput(""); setLoading(true); setMessages((old) => [...old, { id: `${requestId}-q`, role: "user", content: question }, { id: `${requestId}-a`, role: "assistant", content: "正在检索课程知识并组织学习路径…", pending: true }]);
     try {
-      // System prompt: guide, don't answer directly
-      const res = await callAPI("guided_start", {
-        question: q,
-        knowledgeGraph: kgData ? JSON.stringify(kgData.graph?.nodes?.slice(0, 5)) : "",
-      });
-      setMessages(prev => [...prev, { role: "assistant", content: res.greeting || "让我来引导你思考这个问题..." }]);
-      // Pre-generate hints
-      if (res.hints) setHints(res.hints);
-    } catch (e) {
-      setMessages(prev => [...prev, { role: "assistant", content: "抱歉，出了点问题，请重试。" }]);
-    }
-    setLoading(false);
-  }, [input, loading, kgData]);
-
-  const requestHint = async () => {
-    if (loading) return;
-    setLoading(true);
-    const newLevel = hintLevel + 1;
-    setHintLevel(newLevel);
-    try {
-      const res = await callAPI("guided_hint", {
-        question: messages.find(m => m.role === "user")?.content || "",
-        hintsUsed: hintLevel,
-        conversation: messages.slice(-6).map(m => m.content).join("\n"),
-      });
-      setMessages(prev => [...prev, { role: "assistant", content: "💡 提示 " + newLevel + "： " + (res.hint || "试着从课程知识中找线索") }]);
-    } catch (e) {}
-    setLoading(false);
+      const res = await fetch("/api/agent", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "knowledge", params: { question } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "回答服务暂时不可用");
+      const ids = setCurrentFromContext(data.graphContext); const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[]; setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.answer || "暂无回答", pending: false, nodeIds: ids, concepts } : m));
+    } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); } finally { setLoading(false); }
   };
 
-  const handleNodeAction = async (action: KnowledgeNodeAction, node: KnowledgeNode, targetNode?: KnowledgeNode) => {
-    if (action === "quiz") {
-      try {
-        const questions = await generateKnowledgeNodeQuiz(node.id);
-        setQuizQuestions(questions);
-        setQuizOpen(true);
-      } catch (e) {
-        alert("生成题目失败");
-      }
-    } else if (action === "learn") {
-      setInput("请讲解知识图谱中的" + node.name + "节点");
-      setDrawerNode(undefined);
-    } else if (action === "next" && targetNode) {
-      setDrawerNode(targetNode);
-      setSelectedKgNode(targetNode);
-    } else if (action === "related" && targetNode) {
-      setDrawerNode(targetNode);
-      setSelectedKgNode(targetNode);
-    }
-  };
+  const askAbout = (node: KnowledgeNode) => { setSelected(node); setInput(`请解释“${node.name}”，并说明它与城市排水和内涝防治的关系。`); setMobileTab("chat"); };
+  const expand = (node: KnowledgeNode) => { const related = fullGraph.edges.filter((e) => e.source === node.id || e.target === node.id).flatMap((e) => [e.source, e.target]).filter((id) => id !== node.id); const ids = [...new Set([...focusIds, node.id, ...related])]; const nodes = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[]; const idSet = new Set(ids); const edges = fullGraph.edges.filter((e) => idSet.has(e.source) && idSet.has(e.target)); setCurrentGraph((old) => mergeGraph(old, nodes, edges)); setCumulative((old) => mergeGraph(old, nodes, edges)); setFocusIds((old) => [...new Set([...old, node.id])]); };
+  const fullscreen = async () => { const el = workspace.current?.querySelector("[aria-label='交互式知识图谱']")?.parentElement; if (!document.fullscreenElement) await el?.requestFullscreen?.(); else await document.exitFullscreen(); };
+  const graphForMessage = (m: ChatMessage) => { if (!m.nodeIds?.length) return; const nodes = m.nodeIds.map(nodeForId).filter(Boolean) as KnowledgeNode[]; const ids = new Set(m.nodeIds); setCurrentGraph({ nodes, edges: fullGraph.edges.filter((e) => ids.has(e.source) && ids.has(e.target)) }); setFocusIds(m.nodeIds.slice(0, 1)); setMode("current"); setMobileTab("graph"); };
+  const selectedNeighbors = selected ? fullGraph.edges.filter((e) => e.source === selected.id || e.target === selected.id).map((e) => nodeForId(e.source === selected.id ? e.target : e.source)).filter(Boolean) as KnowledgeNode[] : [];
 
-  if (!state.role) return <div className="p-8 text-center">请先登录</div>;
-
-  return (
-    <div className="flex h-[calc(100vh-3.5rem)]">
-      {/* Knowledge Graph Sidebar */}
-      {showKg && kgData && (
-        <aside className="w-[380px] bg-white border-r border-[var(--color-border)] shrink-0 flex flex-col">
-          <div className="p-3 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
-            <div>
-              <h3 className="text-sm font-bold">📊 知识图谱</h3>
-              <p className="text-[10px] text-[var(--color-text-muted)]">点击节点开始学习</p>
-            </div>
-            {graphFilter && <button onClick={() => setGraphFilter("")} className="text-[10px] text-[var(--color-primary)] hover:underline mr-2">显示全部</button>}<button onClick={() => setShowKg(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
-          </div>
-          <div className="flex-1 min-h-0">
-            <KnowledgeGraphPanel
-              graph={(() => { const g = kgData.graph || { nodes: [], edges: [] }; if (!graphFilter) return g; const q = graphFilter.toLowerCase(); const hitIds = new Set(g.nodes.filter(function(n) { const name = (n.name || "").toLowerCase(); const kws = (n.keywords || []).map(function(k) { return k.toLowerCase(); }); return q.includes(name) || name.includes(q) || kws.some(function(k) { return q.includes(k) || k.includes(q); }); }).map(function(n) { return n.id; })); if (hitIds.size === 0) return g; const allIds = new Set(hitIds); g.edges.forEach(function(e) { if (hitIds.has(e.source)) allIds.add(e.target); if (hitIds.has(e.target)) allIds.add(e.source); }); return { nodes: g.nodes.filter(function(n) { return allIds.has(n.id); }), edges: g.edges.filter(function(e) { return allIds.has(e.source) && allIds.has(e.target); }) }; })()}
-              selectedNodeId={selectedKgNode?.id}
-              depth={1}
-              onDepthChange={() => {}}
-              onNodeClick={(node: KnowledgeNode) => {
-                setSelectedKgNode(node);
-                setDrawerNode(node);
-              }}
-            />
-          </div>
-        </aside>
-      )}
-
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col max-w-3xl mx-auto w-full">
-        <div className="px-6 py-3 border-b bg-white flex items-center justify-between shrink-0">
-          <div>
-            <h1 className="text-base font-bold">🧭 引导学习</h1>
-            <p className="text-xs text-[var(--color-text-secondary)]">提出一个问题，AI 会引导你自己找到答案</p>
-          </div>
-          <button onClick={() => setShowKg(!showKg)}
-            className={"text-xs px-3 py-1.5 rounded-lg border " + (showKg ? "bg-[var(--color-primary-bg)] text-[var(--color-primary)]" : "")}>
-            📊 知识图谱
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {messages.length === 0 && (
-            <div className="text-center py-20">
-              <div className="text-5xl mb-4">🧭</div>
-              <h2 className="text-lg font-bold mb-2">引导式学习</h2>
-              <p className="text-sm text-[var(--color-text-secondary)] mb-6">
-                我不会直接给你答案。我会通过提问和提示，帮助你一步步自己找到答案。
-              </p>
-              <div className="flex flex-wrap gap-2 justify-center max-w-lg mx-auto">
-                {["海绵城市怎么减少内涝的？","排水管网设计标准怎么选？","SWMM模型的核心原理是什么？","LID设施有哪些？怎么组合使用？"].map(q => (
-                  <button key={q} onClick={() => handleSend(q)} className="text-sm px-4 py-2 bg-blue-50 text-[var(--color-primary)] rounded-full hover:bg-blue-100">{q}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {messages.map((m, i) => (
-            <div key={i} className={"flex gap-3 " + (m.role === "user" ? "flex-row-reverse" : "")}>
-              <div className={"w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm " + (m.role === "user" ? "bg-[var(--color-primary)] text-white" : "bg-green-500 text-white")}>
-                {m.role === "user" ? "你" : "🧭"}
-              </div>
-              <div className={"max-w-[75%] rounded-2xl px-4 py-3 text-sm " + (m.role === "user" ? "bg-[var(--color-primary)] text-white" : "bg-white border text-[var(--color-text)]")}>
-                {m.content}
-              </div>
-            </div>
-          ))}
-          {loading && <div className="text-center text-sm text-[var(--color-text-muted)]">思考中...</div>}
-          <div ref={endRef} />
-        </div>
-
-        {/* Input Area */}
-        <div className="border-t bg-white p-4 shrink-0">
-          <div className="flex gap-2 max-w-3xl mx-auto">
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleSend()}
-              placeholder="提出你想学习的问题..."
-              disabled={loading}
-              className="flex-1 px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] disabled:opacity-50"
-            />
-            <button onClick={() => handleSend()} disabled={loading || !input.trim()}
-              className="px-5 py-3 bg-[var(--color-primary)] text-white rounded-xl text-sm font-medium disabled:opacity-50">
-              发送
-            </button>
-            <button onClick={requestHint} disabled={loading || hintLevel >= 4}
-              className="px-4 py-3 border rounded-xl text-sm text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] disabled:opacity-30"
-              title={hintLevel >= 4 ? "最多4级提示" : "获取提示"}>
-              💡{hintLevel > 0 ? hintLevel : ""}
-            </button>
-          </div>
-          <p className="text-[10px] text-[var(--color-text-muted)] text-center mt-2">💡 按钮 = 获取逐级提示（共 4 级）</p>
-        </div>
-      </div>
-      {drawerNode && kgData?.graph && (
-        <KnowledgeNodeDrawer
-          node={drawerNode}
-          graph={kgData.graph}
-          onClose={() => setDrawerNode(undefined)}
-          onNodeClick={(node: KnowledgeNode) => {
-            setDrawerNode(node);
-            setSelectedKgNode(node);
-          }}
-          onAction={handleNodeAction}
-        />
-      )}
-      {quizOpen && (
-        <QuizPanel
-          questions={quizQuestions}
-          onClose={() => setQuizOpen(false)}
-          onComplete={() => { setQuizOpen(false); }}
-        />
-      )}
-    </div>
-  );
+  if (state.authLoading) return <div className="p-8 text-center">正在加载学习空间…</div>;
+  if (!state.role) return <div className="p-8 text-center">请先登录后进入引导学习。</div>;
+  return <div className="h-[calc(100vh-3.5rem)] min-h-[620px] bg-slate-100 p-3 md:p-4"><div className="mx-auto flex h-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><header className="flex shrink-0 items-center justify-between border-b px-4 py-3"><div><h1 className="text-base font-bold text-slate-900">引导学习工作台</h1><p className="text-xs text-slate-500">AI 对话 · 动态知识图谱 · 学习路径</p></div><div className="hidden gap-2 text-xs text-slate-500 md:flex"><span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">累计 {cumulative.nodes.length} 个概念</span><span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">稳定布局</span></div></header><div className="flex border-b md:hidden"><button onClick={() => setMobileTab("graph")} className={`flex-1 py-2 text-sm ${mobileTab === "graph" ? "border-b-2 border-blue-600 text-blue-700" : "text-slate-500"}`}>知识图谱</button><button onClick={() => setMobileTab("chat")} className={`flex-1 py-2 text-sm ${mobileTab === "chat" ? "border-b-2 border-blue-600 text-blue-700" : "text-slate-500"}`}>AI 对话</button></div><div ref={workspace} className="min-h-0 flex-1 md:grid" style={{ gridTemplateColumns: graphCollapsed ? "0 1fr" : `${ratio}% 1fr` }}>
+    <section className={`relative min-h-0 overflow-hidden border-r bg-slate-950 ${mobileTab === "graph" ? "block" : "hidden md:block"}`}><KnowledgeGraphPanel graph={graph} focusIds={focusIds} selectedNodeId={selected?.id} depth={depth} mode={mode} nodeCategory={nodeCategory} relationType={relationType} onModeChange={setMode} onDepthChange={setDepth} onNodeClick={setSelected} onAsk={askAbout} onExpand={expand} onCollapse={() => setGraphCollapsed(true)} onFullscreen={fullscreen} onCollapsePanel={() => setGraphCollapsed(true)} {...({ onNodeCategory: setNodeCategory, onRelationType: setRelationType } as any)} />{selected && <aside className="absolute right-3 top-20 z-20 flex max-h-[calc(100%-120px)] w-[min(330px,calc(100%-24px))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl"><div className="flex items-start justify-between border-b p-4"><div><div className="text-[11px] text-blue-600">{selected.category} · {selected.chapter || "未配置章节"}</div><h2 className="mt-1 text-base font-bold">{selected.name}</h2></div><button onClick={() => setSelected(null)} aria-label="关闭节点详情">×</button></div><div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 text-xs"><p className="leading-5 text-slate-600">{selected.description || "暂无详细定义"}</p><div className="rounded-lg bg-slate-50 p-3"><div className="font-semibold">学习状态</div><div className="mt-2 text-slate-500">掌握度 {selected.progress?.mastery ?? 0}% · 提问 {selected.progress?.questionCount ?? 0} 次</div></div><div><div className="mb-2 font-semibold">先修与相关知识</div><div className="flex flex-wrap gap-1.5">{selectedNeighbors.slice(0, 8).map((n) => <button key={n.id} onClick={() => setSelected(n)} className="rounded-full border px-2 py-1 text-[11px] hover:border-blue-500 hover:text-blue-600">{n.name}</button>)}</div></div><div><div className="mb-2 font-semibold">学习路径</div><div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-emerald-800">先修知识 → 当前概念 → 应用与后续推导</div></div></div><div className="grid grid-cols-2 gap-2 border-t p-3"><button onClick={() => askAbout(selected)} className="rounded-lg bg-blue-600 px-2 py-2 text-xs text-white">围绕此概念提问</button><button onClick={() => expand(selected)} className="rounded-lg border px-2 py-2 text-xs">展开邻居</button><button onClick={() => { setSelected(null); }} className="rounded-lg border px-2 py-2 text-xs">加入复习</button><button onClick={() => setSelected(null)} className="rounded-lg border px-2 py-2 text-xs">标记已掌握</button></div></aside>}</section>
+    {!graphCollapsed && <div role="separator" aria-label="调整图谱与对话宽度" tabIndex={0} onPointerDown={() => { dragging.current = true; }} onDoubleClick={() => { setRatio(42); localStorage.setItem(STORAGE_KEY, "42"); }} onKeyDown={(e) => { if (e.key === "ArrowLeft") setRatio((v) => Math.max(30, v - 2)); if (e.key === "ArrowRight") setRatio((v) => Math.min(62, v + 2)); }} className="group relative z-10 hidden w-2 cursor-col-resize bg-slate-200 transition hover:bg-blue-400 md:block"><span className="absolute left-0 top-1/2 h-12 w-1 -translate-y-1/2 rounded-full bg-slate-400 group-hover:bg-white" /></div>}
+    <section className={`flex min-w-0 flex-col bg-slate-50 ${mobileTab === "chat" ? "flex" : "hidden md:flex"}`}>{graphCollapsed && <button onClick={() => setGraphCollapsed(false)} className="m-3 self-start rounded-lg border bg-white px-3 py-1.5 text-xs text-blue-700">展开知识图谱</button>}<div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6"><div className="mx-auto max-w-3xl space-y-4">{messages.length === 0 && <div className="py-10 text-center md:py-20"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-100 text-2xl">✦</div><h2 className="text-lg font-bold text-slate-900">从一个问题开始建立学习路径</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">我会结合课程知识图谱回答问题，并把核心概念、先修知识和后续内容呈现在左侧。</p><div className="mt-6 flex flex-wrap justify-center gap-2">{suggested.map((q) => <button key={q} onClick={() => send(q)} className="rounded-full border bg-white px-3 py-2 text-xs text-slate-600 hover:border-blue-400 hover:text-blue-700">{q}</button>)}</div></div>}{messages.map((m) => <article key={m.id} className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}><div className={`max-w-[min(88%,720px)] rounded-2xl px-4 py-3 text-sm leading-7 shadow-sm ${m.role === "user" ? "bg-blue-600 text-white" : "border bg-white text-slate-700"}`}><div>{m.content}</div>{m.pending && <div className="mt-2 text-xs text-blue-500">● ● ●</div>}{m.role === "assistant" && m.concepts?.length ? <div className="mt-3 border-t pt-3"><div className="mb-2 text-xs font-semibold text-slate-500">本轮核心概念</div><div className="flex flex-wrap gap-1.5">{m.concepts.slice(0, 6).map((n) => <button key={n.id} onClick={() => { setSelected(n); setFocusIds([n.id]); }} className="rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-700 hover:bg-blue-100">{n.name}</button>)}</div><button onClick={() => graphForMessage(m)} className="mt-3 text-xs text-blue-600 hover:underline">查看本轮知识路径 →</button></div> : null}</div></article>)}</div></div><div className="shrink-0 border-t bg-white p-3 md:p-4"><div className="mx-auto flex max-w-3xl items-end gap-2"><textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="输入你想学习的问题…（Enter 发送，Shift+Enter 换行）" rows={2} disabled={loading} className="min-h-[52px] flex-1 resize-none rounded-xl border px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100" /><button onClick={() => send()} disabled={loading || !input.trim()} className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-40">{loading ? "生成中" : "发送"}</button></div><div className="mx-auto mt-2 flex max-w-3xl items-center justify-between text-[10px] text-slate-400"><span>{focusIds.length ? `当前聚焦：${focusIds.map((id) => nodeForId(id)?.name).filter(Boolean).join("、")}` : "选择左侧节点可以带入追问"}</span>{loading && <button onClick={() => abortRef.current?.abort()} className="text-blue-600">停止生成</button>}</div></div></section>
+  </div></div></div>;
 }
