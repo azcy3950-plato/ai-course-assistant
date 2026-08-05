@@ -220,10 +220,11 @@ function buildSocraticFacts(graphContext: GraphContext, chunks: RetrievedChunk[]
   return `${graphFacts}\n\n【课程资料】\n${courseFacts}`;
 }
 
-/** 过滤对话历史：只保留 user/assistant 角色，防止客户端注入 system 消息。 */
+/** 过滤对话历史：只保留 user/assistant 角色，丢弃其余（含 system 注入），防止客户端注入系统消息。 */
 function sanitizeHistory(raw: Array<{ role?: string; content?: string }>): Array<{ role: string; content: string }> {
   return (raw || [])
-    .map((message) => ({ role: message.role === "user" ? "user" : "assistant", content: String(message.content || "") }))
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .map((message) => ({ role: message.role as "user" | "assistant", content: String(message.content || "") }))
     .filter((message) => message.content.length > 0);
 }
 
