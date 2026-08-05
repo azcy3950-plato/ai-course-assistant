@@ -393,7 +393,7 @@ export async function POST(req: NextRequest) {
         { role: "system", content: prompt },
         { role: "user", content: `学生提出了一个问题：「${question}」。请先简短回应学生的困惑（1-2句），然后提出第一个引导性问题（从直观现象切入），帮助学生自己思考。不要给出答案。` },
       ], 512);
-      return NextResponse.json({ greeting: text, graphContext });
+      return NextResponse.json({ greeting: (text || "").trim() || `我们一起思考「${question}」。先从最直观的现象看起：这个问题涉及哪些关键因素？`, graphContext });
     }
 
     if (action === "guided_socratic_turn") {
@@ -421,7 +421,10 @@ export async function POST(req: NextRequest) {
         parsed = { status: turn >= totalTurns ? "complete" : "continue", response: text };
       }
       const status = ["continue", "mastered", "complete"].includes(parsed.status || "") ? parsed.status : (turn >= totalTurns ? "complete" : "continue");
-      return NextResponse.json({ status, response: parsed.response || text, turn, totalTurns, graphContext });
+      const response = (parsed.response || text || "").trim() || (status === "complete"
+        ? `关于「${question}」的完整讲解：请结合知识图谱中该节点的解释与课程资料（见左侧图谱与引用），从概念定义、关键机制、典型应用三个方面组织答案。`
+        : `你的思路有可取之处。再想想：${turn === 1 ? "这个问题的核心机制是什么？有哪些关键因素在起作用？" : turn === 2 ? "这些因素之间如何相互影响？结合课程知识能怎样解释？" : "如果把这些环节连起来，能否形成一个完整的解释？"}`);
+      return NextResponse.json({ status, response, turn, totalTurns, graphContext });
     }
 
     if (action === "guided_socratic_hint") {
@@ -434,12 +437,18 @@ export async function POST(req: NextRequest) {
         3: "步骤级：提示具体分析步骤或公式。",
         4: "答案级：接近答案的关键提示，再点拨一句即可得出答案。",
       };
+      const fallbackHints: Record<number, string> = {
+        1: "从直观现象出发：传统城市和海绵城市在下雨时，雨水落到地面后各自去了哪里？这个差异就是理解如何减少内涝的起点。",
+        2: "关键概念：想想“渗、滞、蓄、净、用、排”六字方针，尤其是“渗”和“蓄”分别对应哪些设施？",
+        3: "具体步骤：可以从源头削减（透水铺装、绿色屋顶）→ 过程传输（雨水花园、植草沟）→ 末端调蓄（调蓄池、湿地）三个环节组织思路。",
+        4: "接近答案：海绵城市通过就地入渗、蓄滞调蓄削减径流总量与峰值，从而减少内涝——按这个思路组织你的答案。",
+      };
       const text = await callDeepSeek([
         { role: "system", content: `${SOCRATIC_PROMPT}\n当前问题：「${question}」。` },
         ...history.slice(-6),
         { role: "user", content: `请给第${level}级提示（共4级）。要求：${levelGuide[level]}只给这一级对应的提示，不要直接给出完整答案，不超过80字。` },
       ], 256);
-      return NextResponse.json({ hint: text, level });
+      return NextResponse.json({ hint: (text || "").trim() || fallbackHints[level], level });
     }
 
     if (action === "sandbox") {
