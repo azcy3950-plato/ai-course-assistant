@@ -199,6 +199,34 @@ function buildTurnPrompt(_question: string, graphContext: GraphContext, chunks: 
   return `${KNOWLEDGE_GRAPH_TEACHING_PROMPT}\n\n【知识图谱上下文】\n${graphFacts}\n\n【课程资料】\n${courseFacts}`;
 }
 
+/**
+ * 苏格拉底引导专用的图谱事实段（不含 TEACHING_PROMPT 的"先直接回答"指令，
+ * 只提供节点与课程资料事实，避免与"不直接给答案"的铁律冲突）。
+ */
+function buildSocraticFacts(graphContext: GraphContext, chunks: RetrievedChunk[]): string {
+  const graphFacts = [
+    `当前核心节点：${graphContext.focusNode.name}(ID=${graphContext.focusNode.id})`,
+    `节点解释：${graphContext.focusNode.description}`,
+    `所属章节：${graphContext.focusNode.chapter}`,
+    `当前掌握度：${graphContext.focusNode.progress?.mastery || 0}%`,
+    `前置节点：${nodeList(graphContext.prerequisites)}`,
+    `相关节点：${nodeList(graphContext.relatedNodes)}`,
+    `后续节点：${nodeList(graphContext.nextNodes)}`,
+    `系统推荐下一节点：${graphContext.suggestedNextNode?.name || "无"}`,
+  ].join("\n");
+  const courseFacts = chunks.length
+    ? chunks.map((chunk, index) => `[${index + 1}] ${chunk.doc_name}｜${chunk.chapter || "未标章节"}\n${chunk.content || ""}`).join("\n\n")
+    : "课程知识库中没有检索到可引用片段。";
+  return `${graphFacts}\n\n【课程资料】\n${courseFacts}`;
+}
+
+/** 过滤对话历史：只保留 user/assistant 角色，防止客户端注入 system 消息。 */
+function sanitizeHistory(raw: Array<{ role?: string; content?: string }>): Array<{ role: string; content: string }> {
+  return (raw || [])
+    .map((message) => ({ role: message.role === "user" ? "user" : "assistant", content: String(message.content || "") }))
+    .filter((message) => message.content.length > 0);
+}
+
 async function prepareKnowledgeTurn(question: string, userEmail: string) {
   const embeddings = await getEmbeddings([question]).catch(() => []);
   const questionEmbedding = embeddings[0];
@@ -381,13 +409,13 @@ export async function POST(req: NextRequest) {
       if (!question) return NextResponse.json({ error: "问题不能为空" }, { status: 400 });
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
       const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
-      const graphContext = await matchGraphContext(question, embedding, chunks, userEmail);
-      if (userEmail) {
-        const progress = await recordNodeInteraction(userEmail, graphContext.focusNode.id, "question");
+      const graphContext = await matchGraphContext(question, embedding, chunks, userEmail).catch(() => null);
+      if (userEmail && graphContext) {
+        const progress = await recordNodeInteraction(userEmail, graphContext.focusNode.id, "question").catch(() => undefined);
         if (progress) graphContext.focusNode = { ...graphContext.focusNode, progress };
       }
       const prompt = SOCRATIC_PROMPT
-        .replace("{{GRAPH_CONTEXT}}", buildTurnPrompt(question, graphContext, chunks))
+        .replace("{{GRAPH_CONTEXT}}", graphContext ? buildSocraticFacts(graphContext, chunks) : "（图谱上下文暂不可用，请基于课程常识引导，不得编造具体节点）")
         .replace("{{COURSE_FACTS}}", "（已包含在知识图谱上下文中）");
       const text = await callDeepSeek([
         { role: "system", content: prompt },
@@ -399,13 +427,14 @@ export async function POST(req: NextRequest) {
     if (action === "guided_socratic_turn") {
       const question = String(params.question || "");
       const answer = String(params.answer || "");
-      const turn = Number(params.turn || 1);
+      const rawTurn = Number(params.turn || 1);
+      const turn = Number.isFinite(rawTurn) ? Math.max(1, Math.min(3, rawTurn)) : 1;
       const totalTurns = 3;
-      const history = (params.history || []).map((message: { role: string; content: string }) => ({ role: message.role, content: message.content }));
+      const history = sanitizeHistory(params.history || []);
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
       const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
       const graphContext = await matchGraphContext(question, embedding, chunks, userEmail).catch(() => null);
-      const graphFacts = graphContext ? buildTurnPrompt(question, graphContext, chunks) : "（图谱上下文暂不可用，请基于课程常识引导，不得编造具体节点）";
+      const graphFacts = graphContext ? buildSocraticFacts(graphContext, chunks) : "（图谱上下文暂不可用，请基于课程常识引导，不得编造具体节点）";
       const prompt = SOCRATIC_PROMPT
         .replace("{{GRAPH_CONTEXT}}", graphFacts)
         .replace("{{COURSE_FACTS}}", "（已包含在知识图谱上下文中）");
@@ -415,22 +444,33 @@ export async function POST(req: NextRequest) {
         { role: "user", content: `学生回答：${answer}\n\n请判断学生的理解程度并只输出JSON：{"status":"continue|mastered|complete","response":"对学生的反馈与下一步内容"}\n- status=continue：学生理解不到位且追问未满${totalTurns}轮，response 先肯定正确部分，再给出下一轮更深入的引导问题（不要给答案）。\n- status=mastered：学生理解到位或接近到位，response 肯定其回答并给出简洁总结讲解，然后沿知识图谱的后续节点提出一个新的引导问题。\n- status=complete：这是第${totalTurns}轮且学生仍未答出，response 给出完整、清晰的讲解（此时才允许直接给答案）。` },
       ], 1024);
       let parsed: { status?: string; response?: string } = {};
+      let parsedOk = false;
       try {
         parsed = JSON.parse(text.replace(/```json|```/gi, "").trim());
+        parsedOk = typeof parsed === "object" && parsed !== null;
       } catch {
-        parsed = { status: turn >= totalTurns ? "complete" : "continue", response: text };
+        parsedOk = false;
       }
-      const status = ["continue", "mastered", "complete"].includes(parsed.status || "") ? parsed.status : (turn >= totalTurns ? "complete" : "continue");
-      const response = (parsed.response || text || "").trim() || (status === "complete"
+      // 第三轮无论如何必须收束：LLM 返回 continue 也强制 complete，避免对话卡在最后一轮
+      const status = turn >= totalTurns
+        ? "complete"
+        : (parsedOk && ["continue", "mastered", "complete"].includes(parsed.status || "")) ? parsed.status : "continue";
+      const fallbackResponse = status === "complete"
         ? `关于「${question}」的完整讲解：请结合知识图谱中该节点的解释与课程资料（见左侧图谱与引用），从概念定义、关键机制、典型应用三个方面组织答案。`
-        : `你的思路有可取之处。再想想：${turn === 1 ? "这个问题的核心机制是什么？有哪些关键因素在起作用？" : turn === 2 ? "这些因素之间如何相互影响？结合课程知识能怎样解释？" : "如果把这些环节连起来，能否形成一个完整的解释？"}`);
+        : `你的思路有可取之处。再想想：${turn === 1 ? "这个问题的核心机制是什么？有哪些关键因素在起作用？" : turn === 2 ? "这些因素之间如何相互影响？结合课程知识能怎样解释？" : "如果把这些环节连起来，能否形成一个完整的解释？"}`;
+      const response = parsedOk && (parsed.response || "").trim()
+        ? (parsed.response as string).trim()
+        : parsedOk
+          ? fallbackResponse
+          : (text || "").trim() || fallbackResponse;
       return NextResponse.json({ status, response, turn, totalTurns, graphContext });
     }
 
     if (action === "guided_socratic_hint") {
       const question = String(params.question || "");
-      const level = Math.min(4, Math.max(1, Number(params.level || 1)));
-      const history = (params.history || []).map((message: { role: string; content: string }) => ({ role: message.role, content: message.content }));
+      const rawLevel = Number(params.level || 1);
+      const level = Number.isFinite(rawLevel) ? Math.min(4, Math.max(1, rawLevel)) : 1;
+      const history = sanitizeHistory(params.history || []);
       const levelGuide: Record<number, string> = {
         1: "方向级：指出思考方向或相关课程知识点，不涉及具体内容。",
         2: "思路级：提示关键思路或核心概念。",
@@ -443,8 +483,14 @@ export async function POST(req: NextRequest) {
         3: "具体步骤：可以从源头削减（透水铺装、绿色屋顶）→ 过程传输（雨水花园、植草沟）→ 末端调蓄（调蓄池、湿地）三个环节组织思路。",
         4: "接近答案：海绵城市通过就地入渗、蓄滞调蓄削减径流总量与峰值，从而减少内涝——按这个思路组织你的答案。",
       };
+      const embedding = (await getEmbeddings([question]).catch(() => []))[0];
+      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
+      const graphContext = await matchGraphContext(question, embedding, chunks, userEmail).catch(() => null);
+      const prompt = SOCRATIC_PROMPT
+        .replace("{{GRAPH_CONTEXT}}", graphContext ? buildSocraticFacts(graphContext, chunks) : "（图谱上下文暂不可用，请基于课程常识引导，不得编造具体节点）")
+        .replace("{{COURSE_FACTS}}", "（已包含在知识图谱上下文中）");
       const text = await callDeepSeek([
-        { role: "system", content: `${SOCRATIC_PROMPT}\n当前问题：「${question}」。` },
+        { role: "system", content: `${prompt}\n当前问题：「${question}」。` },
         ...history.slice(-6),
         { role: "user", content: `请给第${level}级提示（共4级）。要求：${levelGuide[level]}只给这一级对应的提示，不要直接给出完整答案，不超过80字。` },
       ], 256);
