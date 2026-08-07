@@ -91,7 +91,7 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
         // [SUBAREAS] Subcatchment N-Imperv N-Perv ... (第2列 N-Imperv)
         const nImp = parseFloat(parts[1]);
         if (!isNaN(nImp) && nImp > 0) {
-          parts[1] = (landcover === "gray" ? Math.min(0.05, nImp * 0.8) : Math.max(0.12, nImp * 1.6)).toFixed(4);
+          parts[1] = (landcover === "gray" ? Math.min(0.05, nImp * 0.8) : Math.min(1, Math.max(0.12, nImp * 1.6))).toFixed(4);
           out.push(parts.join('\t'));
           continue;
         }
