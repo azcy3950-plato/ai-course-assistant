@@ -120,6 +120,9 @@ html { scroll-behavior: smooth; }
     animation: none !important;
     transition: none !important;
   }
+  .node-shell, .node-shell * {
+    transition: none !important;
+  }
 }
 
 /* Custom scrollbar */
