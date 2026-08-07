@@ -392,6 +392,8 @@ export default function SandboxPage() {
   const [dynI, setDynI] = useState(80);
   const [landcover, setLandcover] = useState<"default" | "gray" | "green">("default");
   const [dynRes, setDynRes] = useState<any>(null);
+  const [compareRes, setCompareRes] = useState<Record<string, any> | null>(null);
+  const [comparing, setComparing] = useState(false);
   const [dynStep, setDynStep] = useState(0);
   const [dynPlay, setDynPlay] = useState(false);
   const [dynSpd, setDynSpd] = useState(1);
@@ -661,6 +663,32 @@ export default function SandboxPage() {
     } catch (e: any) { if (reqSeq !== simSeqRef.current) return; if (abortRef.current === ctrl) abortRef.current = null; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
   }, [dynI, landcover]);
 
+  // 三方案对比:并发仿真 现状/绿色/灰色,展示峰值差异
+  const runCompare = useCallback(async () => {
+    if (comparing) return;
+    const seq = ++simSeqRef.current;
+    abortRef.current?.abort();
+    setComparing(true); setCompareRes(null); setDynPhase("loading"); setDynStep(0);
+    const results: Record<string, any> = {};
+    const schemes: Array<["default" | "green" | "gray", string]> = [["default", "现状"], ["green", "绿色海绵"], ["gray", "灰色强开发"]];
+    try {
+      for (const [lc, label] of schemes) {
+        if (seq !== simSeqRef.current) return;
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 90000);
+        const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intensity: dynI, landcover: lc }), signal: ctrl.signal });
+        clearTimeout(tid);
+        const d = await res.json();
+        if (!d.ok) throw new Error(`${label}方案: ${d.error || "API error"}`);
+        results[lc] = d;
+      }
+      if (seq !== simSeqRef.current) return;
+      setCompareRes(results);
+      setDynRes(results.default); setSimId(results.default.simulationId || ""); setDynPhase("ready");
+    } catch (e: any) { if (seq !== simSeqRef.current) return; setDynPhase("config"); alert("对比仿真失败: " + e.message); }
+    finally { if (seq === simSeqRef.current) setComparing(false); }
+  }, [dynI, comparing]);
+
   const clearWaterMeshes = useCallback(() => {
     waterMeshMap.current.forEach(m => { if (m.parent) m.parent.remove(m); m.geometry?.dispose(); (m.material as THREE.Material)?.dispose(); });
     waterMeshMap.current.clear();
@@ -817,6 +845,28 @@ export default function SandboxPage() {
                 {landcover !== "default" && <div className="mt-1 text-[9px] leading-3.5 text-gray-500">{landcover === "green" ? "增加透水铺装与绿地,降低不透水率" : "增加硬化地面,提高不透水率"}</div>}
               </div>
               <button onClick={loadSim} className="w-full py-1.5 bg-cyan-800 rounded font-bold text-xs hover:bg-cyan-700 transition-colors">{dynRes ? "🔄 重新仿真" : "📊 加载仿真结果"}</button>
+              <button onClick={runCompare} disabled={comparing} className="w-full py-1.5 bg-violet-900 rounded font-bold text-xs hover:bg-violet-800 transition-colors disabled:opacity-40">{comparing ? "⏳ 对比中…" : "⚖️ 三方案对比"}</button>
+              {compareRes && (
+                <div className="border-t border-gray-700 pt-1.5 mt-1 space-y-1">
+                  <div className="text-[10px] text-gray-500">降雨 {dynI}% · 峰值流量对比</div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {([["default", "现状", "text-gray-300"], ["green", "绿色", "text-green-400"], ["gray", "灰色", "text-orange-400"]] as const).map(([lc, label, color]) => {
+                      const v = compareRes[lc]?.summary?.maxFlow?.value;
+                      const base = compareRes.default?.summary?.maxFlow?.value;
+                      const diff = (v != null && base > 0) ? ((v - base) / base) * 100 : 0;
+                      return (
+                        <div key={lc} className="rounded bg-gray-800/80 p-1.5 text-center">
+                          <div className={`text-[9px] ${color}`}>{label}</div>
+                          <div className="text-[10px] font-bold text-gray-100">{v != null ? v.toFixed(2) : "—"}</div>
+                          {lc !== "default" && <div className={`text-[9px] font-bold ${diff <= 0 ? "text-green-400" : "text-orange-400"}`}>{diff <= 0 ? "▼" : "▲"}{Math.abs(diff).toFixed(0)}%</div>}
+                          {lc === "default" && <div className="text-[9px] text-gray-500">基准</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[9px] leading-3 text-gray-500">绿色海绵降低峰值 {compareRes.green && compareRes.default ? Math.max(0, ((compareRes.default.summary?.maxFlow?.value - compareRes.green.summary?.maxFlow?.value) / compareRes.default.summary?.maxFlow?.value) * 100).toFixed(0) : "—"}%，灰色强开发抬高峰值 {compareRes.gray && compareRes.default ? Math.max(0, ((compareRes.gray.summary?.maxFlow?.value - compareRes.default.summary?.maxFlow?.value) / compareRes.default.summary?.maxFlow?.value) * 100).toFixed(0) : "—"}%</div>
+                </div>
+              )}
               {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">▶ 开始推演</button>}
               {dynPhase === "done" && <button onClick={() => { setDynStep(0); setDynPlay(true); setDynPhase("running"); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">🔄 重新推演</button>}
               {dynRes && (<div className="border-t border-gray-700 pt-1.5 mt-1 space-y-0.5 text-[10px]">
@@ -912,6 +962,7 @@ export default function SandboxPage() {
             {dynPhase==="running"
               ? <button onClick={()=>{setDynPlay(false);setDynPhase("paused");}} className="bg-yellow-800 hover:bg-yellow-700 px-2 py-1 rounded text-xs font-bold">⏸</button>
               : <button onClick={()=>{if(dynStep>=timeStepCount-1)setDynStep(0);setDynPlay(true);setDynPhase("running");}} className="bg-green-800 hover:bg-green-700 px-2 py-1 rounded text-xs font-bold">▶</button>}
+            <span className="hidden text-[9px] text-gray-600 sm:inline">空格 播放/暂停 · ←→ 步进</span>
           </div>
         </div>
       )}
