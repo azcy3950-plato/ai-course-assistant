@@ -126,7 +126,7 @@ function parseInp(text: string) {
     const m = line.trim().match(/^(\S+)\s+([\d.]+)\s+([\d.]+)/);
     if (m) {
       if (m[1] !== curId) {
-        if (curPts.length >= 3) scs.push({ id: curId, pts: curPts, imperv: impervMap.get(curId) || 50, area: scArea.get(curId) || 0, outlet: scOutlet.get(curId) || "", width: scWidth.get(curId) || 0, slope: scSlope.get(curId) || 0 });
+        if (curPts.length >= 3) scs.push({ id: curId, pts: curPts, imperv: impervMap.get(curId) ?? 50, area: scArea.get(curId) ?? 0, outlet: scOutlet.get(curId) || "", width: scWidth.get(curId) ?? 0, slope: scSlope.get(curId) ?? 0 });
         curId = m[1]; curPts = [];
       }
       curPts.push([toX(parseFloat(m[2])), toZ(parseFloat(m[3]))]);
