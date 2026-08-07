@@ -83,7 +83,7 @@ function computeLayout(nodes: KnowledgeNode[], edges: { source: string; target: 
   } else {
     const orphans = nodes.filter((n) => !placed.has(n.id));
     const countO = orphans.length || 1;
-    const radiusO = minSize * 0.30;
+    const radiusO = minSize * 0.42;
     orphans.forEach((n, i) => {
       const angle = startAngle + (Math.PI * 2 * i) / countO;
       const wobble = seededOffset(hashString(n.id) + 5, minSize * 0.012);
@@ -111,7 +111,7 @@ export default function KnowledgeGraphPanel(p: Props) {
   const [legend, setLegend] = useState(false);
   const [hover, setHover] = useState<KnowledgeNode | null>(null);
   const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
-  const dragRef = useRef<{ startX: number; startY: number; tx: number; ty: number; active: boolean }>({ startX: 0, startY: 0, tx: 0, ty: 0, active: false });
+  const dragRef = useRef<{ startX: number; startY: number; tx: number; ty: number; active: boolean; moved: boolean }>({ startX: 0, startY: 0, tx: 0, ty: 0, active: false, moved: false });
 
   const visible = useMemo(() => {
     const focus = new Set(p.focusIds || []);
@@ -123,7 +123,7 @@ export default function KnowledgeGraphPanel(p: Props) {
       if (p.depth === 2) p.graph.edges.forEach((e) => { if (ids.has(e.source) || ids.has(e.target)) { ids.add(e.source); ids.add(e.target); } });
     }
     const q = query.trim().toLowerCase();
-    const nodes = p.graph.nodes.filter((n) => ids.has(n.id) && (p.nodeCategory === "all" || !p.nodeCategory || n.category === p.nodeCategory) && (!q || `${n.name} ${n.description} ${n.keywords.join(" ")}`.toLowerCase().includes(q)));
+    const nodes = p.graph.nodes.filter((n) => ids.has(n.id) && (p.nodeCategory === "all" || !p.nodeCategory || (p.nodeCategory === "__other" ? !KIND_META[n.category] : n.category === p.nodeCategory)) && (!q || `${n.name} ${n.description} ${n.keywords.join(" ")}`.toLowerCase().includes(q)));
     const nodeIds = new Set(nodes.map((n) => n.id));
     const edges = p.graph.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target) && (p.relationType === "all" || !p.relationType || e.relation === p.relationType));
     return { nodes, edges };
@@ -149,34 +149,54 @@ export default function KnowledgeGraphPanel(p: Props) {
     setView({ scale: Math.max(0.15, scale), tx, ty });
   }, [placed, placedById]);
 
-  useEffect(() => { const t = window.setTimeout(() => fit(p.focusIds), 60); return () => window.clearTimeout(t); }, [fit, p.focusIds, visible.nodes.length]);
+  // 仅在内容结构变化(focusIds 或节点数量)时重置视图,搜索/筛选导致的 visible 变化不覆盖用户手动视图
+  const fitKey = `${p.focusIds?.join(",") || ""}|${visible.nodes.length}`;
+  const fitKeyRef = useRef("");
+  useEffect(() => {
+    if (fitKeyRef.current === fitKey) return;
+    fitKeyRef.current = fitKey;
+    const t = window.setTimeout(() => fit(p.focusIds), 60);
+    return () => window.clearTimeout(t);
+  }, [fit, fitKey, p.focusIds]);
 
   // wheel zoom + pointer drag pan
   useEffect(() => {
     const el = hostRef.current;
     if (!el) return;
+    const renderScale = () => {
+      const rect = el.getBoundingClientRect();
+      return { rs: Math.min(rect.width / 1400, rect.height / 900) || 1, rect };
+    };
+    const toViewBox = (clientX: number, clientY: number) => {
+      const { rs, rect } = renderScale();
+      const offsetX = (rect.width - 1400 * rs) / 2;
+      const offsetY = (rect.height - 900 * rs) / 2;
+      return { vx: (clientX - rect.left - offsetX) / rs, vy: (clientY - rect.top - offsetY) / rs };
+    };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      const { vx, vy } = toViewBox(e.clientX, e.clientY);
       setView((v) => {
-        const rect = el.getBoundingClientRect();
-        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
         const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
         const scale = Math.min(3, Math.max(0.15, v.scale * factor));
         const k = scale / v.scale;
-        return { scale, tx: mx - (mx - v.tx) * k, ty: my - (my - v.ty) * k };
+        return { scale, tx: vx - (vx - v.tx) * k, ty: vy - (vy - v.ty) * k };
       });
     };
-    const onPointerDown = (e: PointerEvent) => { dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true }; };
+    const onPointerDown = (e: PointerEvent) => { dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false }; };
     const onPointerMove = (e: PointerEvent) => {
       if (!dragRef.current.active) return;
-      setView((v) => ({ ...v, tx: dragRef.current.tx + (e.clientX - dragRef.current.startX), ty: dragRef.current.ty + (e.clientY - dragRef.current.startY) }));
+      const { rs } = renderScale();
+      if (Math.abs(e.clientX - dragRef.current.startX) + Math.abs(e.clientY - dragRef.current.startY) > 5) dragRef.current.moved = true;
+      setView((v) => ({ ...v, tx: dragRef.current.tx + (e.clientX - dragRef.current.startX) / rs, ty: dragRef.current.ty + (e.clientY - dragRef.current.startY) / rs }));
     };
     const onPointerUp = () => { dragRef.current.active = false; };
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
-    return () => { el.removeEventListener("wheel", onWheel); el.removeEventListener("pointerdown", onPointerDown); window.removeEventListener("pointermove", onPointerMove); window.removeEventListener("pointerup", onPointerUp); };
+    window.addEventListener("pointercancel", onPointerUp);
+    return () => { el.removeEventListener("wheel", onWheel); el.removeEventListener("pointerdown", onPointerDown); window.removeEventListener("pointermove", onPointerMove); window.removeEventListener("pointerup", onPointerUp); window.removeEventListener("pointercancel", onPointerUp); };
   }, []);
 
   const viewRef = useRef(view);
@@ -191,14 +211,18 @@ export default function KnowledgeGraphPanel(p: Props) {
     const direct = new Set<string>();
     visible.edges.forEach((e) => { if (e.source === selected) direct.add(e.target); if (e.target === selected) direct.add(e.source); });
     direct.forEach((id) => set.add(id));
-    visible.edges.forEach((e) => { if (direct.has(e.source) && set.has(e.target)) set.add(e.source); if (direct.has(e.target) && set.has(e.source)) set.add(e.target); });
+    // 二阶邻居:与一阶节点相连、但非选中节点本身/一阶节点的节点
+    visible.edges.forEach((e) => {
+      if (direct.has(e.source) && !set.has(e.target)) set.add(e.target);
+      if (direct.has(e.target) && !set.has(e.source)) set.add(e.source);
+    });
     return set;
   }, [p.selectedNodeId, visible.edges]);
   const focusSet = useMemo(() => new Set(p.focusIds || []), [p.focusIds]);
 
   const kindOf = (n: KnowledgeNode) => KIND_META[n.category] || DEFAULT_KIND;
   const radiusOf = (depth: number) => (depth === 0 ? 36 : depth === 1 ? 25 : 19);
-  const edgeFocus = (e: { source: string; target: string }) => (focusSet.has(e.source) && focusSet.has(e.target)) || (selectedId !== null && selectedId !== undefined && (e.source === selectedId || e.target === selectedId));
+  const edgeFocus = (e: { source: string; target: string }) => (focusSet.has(e.source) && focusSet.has(e.target)) || (e.source === selectedId || e.target === selectedId);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: "radial-gradient(circle at 50% 42%, rgba(22,93,255,0.08), transparent 26%), radial-gradient(circle at 18% 18%, rgba(24,184,216,0.06), transparent 18%), radial-gradient(circle at 78% 72%, rgba(138,99,255,0.07), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.52), rgba(250,252,255,0.84))" }}>
@@ -265,7 +289,7 @@ export default function KnowledgeGraphPanel(p: Props) {
                 const radius = radiusOf(depth);
                 const lines = wrapLabel(node.name);
                 return <g key={node.id} transform={`translate(${x},${y})`} className={`node-shell${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.22 : 1, transition: "opacity .18s ease, transform .18s ease", cursor: "pointer" }}
-                  onClick={(e) => { e.stopPropagation(); p.onNodeClick(node); }}
+                  onClick={(e) => { e.stopPropagation(); if (dragRef.current.moved) { dragRef.current.moved = false; return; } p.onNodeClick(node); }}
                   onDoubleClick={(e) => { e.stopPropagation(); p.onExpand(node); }}
                   onMouseEnter={() => setHover(node)}
                   onMouseLeave={() => setHover(null)}>
