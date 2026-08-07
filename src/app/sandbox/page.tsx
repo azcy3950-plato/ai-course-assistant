@@ -38,8 +38,12 @@ interface SC3D {
 // 提取 SWMM 段落:从 [S] 段头之后开始,遇到下一个以 [ 开头的段头即停
 // (不依赖结束段名——[XSECTIONS] 与 [TIMESERIES] 之间可能隔着
 //  [POLLUTANTS]/[LANDUSES]/[COVERAGES] 等段,按名截取会污染解析)
-function sec(t: string, s: string, _e: string) {
-  const si = t.indexOf(s); if (si < 0) return "";
+// 段头匹配大小写不敏感([Polygons]/[POLYGONS] 均可)
+function sec(t: string, s: string) {
+  const up = t.toUpperCase();
+  const us = s.toUpperCase();
+  const si = up.indexOf(us);
+  if (si < 0) return "";
   const rest = t.substring(si + s.length);
   const lines = rest.split("\n");
   const out: string[] = [];
@@ -54,15 +58,14 @@ function toX(x: number) { return (x - CENTER_X); }
 function toZ(y: number) { return -(y - CENTER_Y); }
 
 function parseInp(text: string) {
-  const coordSec = sec(text, "[COORDINATES]", "[VERTICES]");
-  const juncSec  = sec(text, "[JUNCTIONS]",  "[OUTFALLS]");
-  const outfSec  = sec(text, "[OUTFALLS]",   "[CONDUITS]");
-  const condSec  = sec(text, "[CONDUITS]",   "[XSECTIONS]");
-  const xsecSec  = sec(text, "[XSECTIONS]",  "[TIMESERIES]");
-  const subcSec  = sec(text, "[SUBCATCHMENTS]", "[SUBAREAS]");
-  const vertSec  = sec(text, "[VERTICES]",   "[Polygons]");
-  const polyIdx  = text.indexOf("[Polygons]");
-  const polySec  = polyIdx >= 0 ? sec(text.substring(polyIdx), "[Polygons]", "") : "";
+  const coordSec = sec(text, "[COORDINATES]");
+  const juncSec  = sec(text, "[JUNCTIONS]");
+  const outfSec  = sec(text, "[OUTFALLS]");
+  const condSec  = sec(text, "[CONDUITS]");
+  const xsecSec  = sec(text, "[XSECTIONS]");
+  const subcSec  = sec(text, "[SUBCATCHMENTS]");
+  const vertSec  = sec(text, "[VERTICES]");
+  const polySec  = sec(text, "[Polygons]");
 
   type RawNode = { x: number; z: number; invert: number; maxD: number; initD: number; type: string };
   const rawNodes = new Map<string, RawNode>();
@@ -648,7 +651,6 @@ export default function SandboxPage() {
       clearTimeout(tid);
       const d = await res.json();
       if (!d.ok) throw new Error(d.error || "API error");
-      if (d.pending) throw new Error("仿真仍在计算中");
       // 竞态防护:若期间已切换方案发起新请求,丢弃本次过期结果
       if (reqSeq !== simSeqRef.current) return;
       setDynRes(d); setDynPhase("ready"); setSimId(d.simulationId || "");
@@ -781,7 +783,7 @@ export default function SandboxPage() {
           {(dynPhase === "config" || dynPhase === "ready" || dynPhase === "done") && (
             <div className="space-y-2">
               <div><div className="flex justify-between text-[10px]"><span className="text-gray-500">降雨倍率</span><span className="text-cyan-400 font-bold">{dynI}%</span></div>
-              <input type="range" min="10" max="300" value={dynI} onChange={e => { simSeqRef.current++; setDynI(+e.target.value); setDynPhase("config"); if (dynRes) setDynRes(null); }} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
+              <input type="range" min="10" max="300" value={dynI} onChange={e => { simSeqRef.current++; setDynI(+e.target.value); setDynPhase("config"); clearWaterMeshes(); if (dynRes) setDynRes(null); }} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
               {/* 下垫面方案切换(方案2):点击改变下垫面→重新仿真→横截面水量变化 */}
               <div>
                 <div className="mb-1 text-[10px] text-gray-500">下垫面方案</div>
