@@ -65,7 +65,6 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
   // ── 下垫面方案:调整各汇水区不透水率(%Imperv)与不透水糙率(N-Imperv) ──
   // landcover: "gray" = 灰色强开发(提高不透水率) / "green" = 绿色海绵(降低不透水率)
   if (landcover === "gray" || landcover === "green") {
-    const factor = landcover === "gray" ? 1.6 : 0.5; // 不透水率乘数(上限 95%)
     const lines2 = text.split('\n');
     const out: string[] = [];
     let inSub = false, inSubarea = false;
@@ -81,7 +80,11 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
         // [SUBCATCHMENTS] Name Rain-Gage Outlet Area %Imperv Width %Slope ...
         const imperv = parseFloat(parts[4]);
         if (!isNaN(imperv)) {
-          const adjusted = Math.max(0, Math.min(95, imperv * factor));
+          // gray 灰色强开发:向 100% 不透水收敛(0%→60%,100% 保持 100%)
+          // green 绿色海绵:不透水率减半(100%→50%,0% 保持 0%)
+          const adjusted = landcover === "gray"
+            ? Math.min(100, imperv + (100 - imperv) * 0.6)
+            : Math.max(0, imperv * 0.5);
           parts[4] = adjusted.toFixed(2);
           out.push(parts.join('\t'));
           continue;
