@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import * as THREE from "three";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
@@ -754,6 +754,23 @@ export default function SandboxPage() {
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
+  // 当前时间步风险统计:满管管道 / 溢流节点
+  const riskStats = useMemo(() => {
+    if (!dynRes?.links || !dynRes?.nodes || !dataRef.current) return null;
+    const fullPipes: string[] = [];
+    Object.entries(dynRes.links as Record<string, any>).forEach(([id, ld]) => {
+      const cap = ld?.capacity; const c = (cap && dynStep < cap.length) ? cap[dynStep] : 0;
+      if (c > 0.98) fullPipes.push(id);
+    });
+    const overflowNodes: string[] = [];
+    Object.entries(dynRes.nodes as Record<string, any>).forEach(([id, nd]) => {
+      const nodeInfo = dataRef.current?.nodes.find((n: Node3D) => n.id === id);
+      const depths = nd?.depth; const depth = (depths && dynStep < depths.length) ? depths[dynStep] : 0;
+      if (nodeInfo && depth > (nodeInfo.maxD || 99)) overflowNodes.push(id);
+    });
+    return { fullPipes, overflowNodes };
+  }, [dynRes, dynStep]);
+
   // 键盘快捷键:空格 = 播放/暂停,←/→ = 步进(仅动态模式且有结果,且焦点不在输入控件)
   // 用 ref 保存最新状态,监听器只绑定一次,避免推演播放时每步重建
   const kbState = useRef({ mode, dynRes, timeStepCount, dynPhase, dynPlay, dynStep });
@@ -877,6 +894,14 @@ export default function SandboxPage() {
                 <div className="flex justify-between"><span className="text-gray-500">最大水深</span><span className="text-gray-300">{dynRes.summary?.maxDepth?.value?.toFixed(2)} m</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">最大流量</span><span className="text-gray-300">{dynRes.summary?.maxFlow?.value?.toFixed(2)} m³/s</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">活跃</span><span className="text-gray-300">{dynRes.summary?.activeNodes}n / {dynRes.summary?.activeLinks}l</span></div>
+                {riskStats && (riskStats.fullPipes.length > 0 || riskStats.overflowNodes.length > 0) && (
+                  <div className="mt-1 rounded bg-red-950/50 border border-red-900/60 p-1.5 space-y-0.5">
+                    <div className="text-[10px] font-bold text-red-400">⚠️ 当前风险</div>
+                    {riskStats.fullPipes.length > 0 && <div className="flex justify-between"><span className="text-red-300/80">满管管道</span><span className="text-red-300 font-bold">{riskStats.fullPipes.length} 条</span></div>}
+                    {riskStats.overflowNodes.length > 0 && <div className="flex justify-between"><span className="text-red-300/80">溢流节点</span><span className="text-red-300 font-bold">{riskStats.overflowNodes.length} 个</span></div>}
+                    <div className="text-[9px] leading-3 text-red-400/70">满管: {riskStats.fullPipes.slice(0, 5).join(", ")}{riskStats.fullPipes.length > 5 ? ` 等${riskStats.fullPipes.length}条` : ""} · 溢流: {riskStats.overflowNodes.slice(0, 5).join(", ")}{riskStats.overflowNodes.length > 5 ? ` 等${riskStats.overflowNodes.length}个` : ""}</div>
+                  </div>
+                )}
               </div>)}
             </div>
           )}
