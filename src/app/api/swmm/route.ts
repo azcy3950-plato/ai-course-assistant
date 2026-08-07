@@ -51,7 +51,7 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
       if (parts.length >= 3) {
         const lastIdx = parts.length - 1;
         const val = parseFloat(parts[lastIdx]);
-        if (!isNaN(val) && val > 0.0001) {
+        if (Number.isFinite(val) && val > 0.0001) {
           parts[lastIdx] = (val * (intensity / 100)).toFixed(6);
           result.push(parts.join('\t'));
           continue;
@@ -93,7 +93,7 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
       if (inSubarea && parts.length >= 3) {
         // [SUBAREAS] Subcatchment N-Imperv N-Perv ... (第2列 N-Imperv)
         const nImp = parseFloat(parts[1]);
-        if (!isNaN(nImp) && nImp > 0) {
+        if (Number.isFinite(nImp) && nImp > 0) {
           parts[1] = (landcover === "gray" ? Math.max(0.01, Math.min(0.05, nImp * 0.8)) : Math.min(0.2, Math.max(0.05, nImp * 4))).toFixed(4);
           out.push(parts.join('\t'));
           continue;
