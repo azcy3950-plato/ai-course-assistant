@@ -49,17 +49,6 @@ body {
   font-size: 0.875em;
 }
 
-/* Reference highlight animation */
-@keyframes highlight-pulse {
-  0%, 100% { background-color: #fef3c7; }
-  50% { background-color: #fde68a; }
-}
-
-.reference-highlight {
-  animation: highlight-pulse 1.5s ease-in-out 2;
-  border-radius: 0.25rem;
-}
-
 /* ── 引导学习工作台动效 ── */
 @keyframes msg-fade-up {
   from { opacity: 0; transform: translateY(10px) scale(0.985); }
@@ -102,9 +91,10 @@ html { scroll-behavior: smooth; }
 /* 用户偏好减少动效时关闭动画 */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .msg-enter, .pop-in, .slide-in-right, .fade-in, .glow-breathe, .typing-dot {
-    animation: none !important;
-    transition: none !important;
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
   .node-shell, .node-shell *, svg path, svg text {
     transition: none !important;
