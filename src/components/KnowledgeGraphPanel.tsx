@@ -274,8 +274,8 @@ export default function KnowledgeGraphPanel(p: Props) {
                 if (!s || !t) return null;
                 const focused = edgeFocus(e);
                 return <g key={e.id}>
-                  <path d={buildPath(s.x, s.y, t.x, t.y)} fill="none" strokeLinecap="round" stroke={focused ? "rgba(22,93,255,0.40)" : "rgba(123,142,172,0.26)"} strokeWidth={focused ? 2.4 : 1.8} />
-                  {labels && <text x={(s.x + t.x) / 2} y={(s.y + t.y) / 2 - 6} textAnchor="middle" fontSize="10" fill={focused ? "#2450a5" : "#6f7e97"} style={{ paintOrder: "stroke", stroke: "rgba(255,255,255,0.85)", strokeWidth: 3, strokeLinejoin: "round", fontWeight: 600 }}>{e.label || rels[e.relation] || e.relation}</text>}
+                  <path d={buildPath(s.x, s.y, t.x, t.y)} fill="none" strokeLinecap="round" stroke={focused ? "rgba(22,93,255,0.40)" : "rgba(123,142,172,0.26)"} strokeWidth={focused ? 2.4 : 1.8} style={{ transition: "stroke .25s ease, stroke-width .25s ease" }} />
+                  {labels && <text x={(s.x + t.x) / 2} y={(s.y + t.y) / 2 - 6} textAnchor="middle" fontSize="10" fill={focused ? "#2450a5" : "#6f7e97"} style={{ paintOrder: "stroke", stroke: "rgba(255,255,255,0.85)", strokeWidth: 3, strokeLinejoin: "round", fontWeight: 600, transition: "fill .25s ease" }}>{e.label || rels[e.relation] || e.relation}</text>}
                 </g>;
               })}
             </g>
@@ -288,12 +288,12 @@ export default function KnowledgeGraphPanel(p: Props) {
                 const dimmed = selectedId !== null && selectedId !== undefined && selectedId !== node.id && !isRelated;
                 const radius = radiusOf(depth);
                 const lines = wrapLabel(node.name);
-                return <g key={node.id} transform={`translate(${x},${y})`} className={`node-shell${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.22 : 1, transition: "opacity .18s ease, transform .18s ease", cursor: "pointer" }}
+                return <g key={node.id} className={`node-shell${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.22 : 1, transition: "opacity .25s ease, transform .55s cubic-bezier(0.22, 0.61, 0.36, 1)", cursor: "pointer", transform: `translate(${x}px, ${y}px)` }}
                   onClick={(e) => { e.stopPropagation(); if (dragRef.current.moved) { dragRef.current.moved = false; return; } p.onNodeClick(node); }}
                   onDoubleClick={(e) => { e.stopPropagation(); p.onExpand(node); }}
                   onMouseEnter={() => setHover(node)}
                   onMouseLeave={() => setHover(null)}>
-                  <circle cx="0" cy="0" r={radius} fill={kind.color} fillOpacity={depth === 0 ? 1 : 0.92} stroke="rgba(255,255,255,0.88)" strokeWidth={isSelected ? 3 : 2} filter={isSelected ? "url(#kgHoverGlow)" : "url(#kgSoftGlow)"} />
+                  <circle cx="0" cy="0" r={radius} fill={kind.color} fillOpacity={depth === 0 ? 1 : 0.92} stroke="rgba(255,255,255,0.88)" strokeWidth={isSelected ? 3 : 2} filter={isSelected ? "url(#kgHoverGlow)" : "url(#kgSoftGlow)"} style={{ transition: "r .3s ease, stroke-width .25s ease, filter .25s ease" }} />
                   {isFocus && !isSelected && <circle cx="0" cy="0" r={radius + 7} fill="none" stroke={kind.color} strokeOpacity="0.35" strokeWidth="2" strokeDasharray="4 4" />}
                   <text className={`node-label ${depth === 0 ? "root" : depth === 2 ? "small" : ""}`} x="0" y={radius + 16} textAnchor="middle" fontSize={depth === 0 ? 13 : depth === 2 ? 11 : 12} fontWeight="700" fill={isSelected ? "#0f2d76" : "#30415f"} style={{ paintOrder: "stroke", stroke: "rgba(255,255,255,0.78)", strokeWidth: 3, strokeLinejoin: "round", pointerEvents: "none" }}>
                     {lines.map((line, li) => <tspan key={li} x="0" dy={li === 0 ? 0 : "1.2em"}>{line}</tspan>)}
@@ -304,7 +304,7 @@ export default function KnowledgeGraphPanel(p: Props) {
           </g>
         </svg>
         {hover && (
-          <div className="pointer-events-none absolute left-3 top-20 z-20 max-w-xs rounded-2xl border border-[rgba(105,126,165,0.14)] bg-white/95 p-4 text-xs shadow-xl backdrop-blur">
+          <div className="fade-in pointer-events-none absolute left-3 top-20 z-20 max-w-xs rounded-2xl border border-[rgba(105,126,165,0.14)] bg-white/95 p-4 text-xs shadow-xl backdrop-blur">
             <div className="text-base font-bold text-[#183b8f]">{hover.name}</div>
             <div className="mt-1 text-[11px] font-semibold" style={{ color: kindOf(hover).color }}>{kindOf(hover).label}</div>
             <p className="mt-2 leading-5 text-[#42506b]">{hover.description || "暂无定义"}</p>
@@ -312,7 +312,7 @@ export default function KnowledgeGraphPanel(p: Props) {
           </div>
         )}
         {legend && (
-          <div className="absolute bottom-9 left-3 z-20 rounded-2xl border border-[rgba(105,126,165,0.14)] bg-white/90 p-4 text-xs shadow-xl backdrop-blur">
+          <div className="fade-in absolute bottom-9 left-3 z-20 rounded-2xl border border-[rgba(105,126,165,0.14)] bg-white/90 p-4 text-xs shadow-xl backdrop-blur">
             <div className="mb-2 font-bold text-[#183b8f]">图例</div>
             {Object.entries(KIND_META).map(([k, v]) => <div key={k} className="flex items-center gap-2 py-0.5 font-medium text-[#3f4e68]"><span className="h-2.5 w-2.5 rounded-full" style={{ background: v.color, boxShadow: `0 0 0 4px ${v.tint}` }} />{v.label}</div>)}
             <div className="flex items-center gap-2 py-0.5 font-medium text-[#3f4e68]"><span className="h-2.5 w-2.5 rounded-full" style={{ background: DEFAULT_KIND.color, boxShadow: `0 0 0 4px ${DEFAULT_KIND.tint}` }} />{DEFAULT_KIND.label}</div>
