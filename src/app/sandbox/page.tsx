@@ -781,7 +781,7 @@ export default function SandboxPage() {
           {(dynPhase === "config" || dynPhase === "ready" || dynPhase === "done") && (
             <div className="space-y-2">
               <div><div className="flex justify-between text-[10px]"><span className="text-gray-500">降雨倍率</span><span className="text-cyan-400 font-bold">{dynI}%</span></div>
-              <input type="range" min="10" max="300" value={dynI} onChange={e => { simSeqRef.current++; setDynI(+e.target.value); if (dynRes) { setDynRes(null); setDynPhase("config"); } }} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
+              <input type="range" min="10" max="300" value={dynI} onChange={e => { simSeqRef.current++; setDynI(+e.target.value); setDynPhase("config"); if (dynRes) setDynRes(null); }} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
               {/* 下垫面方案切换(方案2):点击改变下垫面→重新仿真→横截面水量变化 */}
               <div>
                 <div className="mb-1 text-[10px] text-gray-500">下垫面方案</div>
