@@ -232,13 +232,8 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
         ctx.beginPath();
         ctx.moveTo(cx - chordHalf, waterY);
         ctx.lineTo(cx + chordHalf, waterY);
-        if (dist >= 0) {
-          // 水面在圆心下方:经过底部的小弧
-          ctx.arc(cx, cy, r - 4, endAngle, startAngle, false);
-        } else {
-          // 水面在圆心上方:经过顶部的大弧
-          ctx.arc(cx, cy, r - 4, endAngle, startAngle, true);
-        }
+        // 统一顺时针经底部(屏幕角度增大方向):dist≥0 时是底部小弧,dist<0 时是 240° 大弧
+        ctx.arc(cx, cy, r - 4, endAngle, startAngle, false);
         ctx.closePath();
         ctx.fill();
         // 水面高光
