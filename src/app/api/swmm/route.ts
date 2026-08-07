@@ -278,7 +278,8 @@ with Output(out_path) as out:
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const intensity = Math.max(10, Math.min(500, body.intensity || 80));
+    const rawIntensity = Number(body.intensity);
+    const intensity = Number.isFinite(rawIntensity) ? Math.max(10, Math.min(500, rawIntensity)) : 80;
     const landcover = ["gray", "green"].includes(body.landcover) ? body.landcover : undefined;
     cleanupStaleTasks();
 
