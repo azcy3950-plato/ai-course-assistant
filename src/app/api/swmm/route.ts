@@ -79,7 +79,7 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
       if (inSub && parts.length >= 5) {
         // [SUBCATCHMENTS] Name Rain-Gage Outlet Area %Imperv Width %Slope ...
         const imperv = parseFloat(parts[4]);
-        if (!isNaN(imperv)) {
+        if (Number.isFinite(imperv)) {
           // gray 灰色强开发:向 100% 不透水收敛(0%→60%,100% 保持 100%)
           // green 绿色海绵:不透水率减半(100%→50%,0% 保持 0%)
           const adjusted = landcover === "gray"
@@ -319,7 +319,8 @@ export async function POST(req: NextRequest) {
       throw err;
     }
   } catch (err: any) {
-    console.error('[SWMM] Fatal:', err.message);
-    return NextResponse.json({ ok: false, error: err.message || 'Unknown error' }, { status: 500 });
+    console.error('[SWMM] Fatal:', err?.message || err);
+    // 不向前端回显内部错误细节(可能含服务器路径/INP 片段),仅返回通用提示
+    return NextResponse.json({ ok: false, error: '仿真服务暂时不可用,请稍后重试' }, { status: 500 });
   }
 }
