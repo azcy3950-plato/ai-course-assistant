@@ -363,6 +363,7 @@ export default function SandboxPage() {
   const pipeMeshMap = useRef<Map<string, THREE.Mesh>>(new Map());
   const waterMeshMap = useRef<Map<string, THREE.Mesh>>(new Map());
   const spanRef = useRef(300);
+  const simSeqRef = useRef(0);
 
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
@@ -627,6 +628,7 @@ export default function SandboxPage() {
   // DYNAMIC MODE — kept from working backend, visuals cleaned
   // ═══════════════════════════════════════════════════════════
   const loadSim = useCallback(async () => {
+    const reqSeq = ++simSeqRef.current;
     setDynPhase("loading"); setDynStep(0);
     try {
       const ctrl = new AbortController();
@@ -636,8 +638,10 @@ export default function SandboxPage() {
       const d = await res.json();
       if (!d.ok) throw new Error(d.error || "API error");
       if (d.pending) throw new Error("仿真仍在计算中");
+      // 竞态防护:若期间已切换方案发起新请求,丢弃本次过期结果
+      if (reqSeq !== simSeqRef.current) return;
       setDynRes(d); setDynPhase("ready"); setSimId(d.simulationId || "");
-    } catch (e: any) { setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
+    } catch (e: any) { if (reqSeq !== simSeqRef.current) return; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
   }, [dynI, landcover]);
 
   const clearWaterMeshes = useCallback(() => {
