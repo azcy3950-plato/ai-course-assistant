@@ -177,6 +177,99 @@ function fmtTime(hoursDecimal: number): string {
 }
 
 // ═══════════════════════════════════════════════════════════
+// PIPE CROSS-SECTION PANEL — 管网横截面水量展示(方案1)
+// ═══════════════════════════════════════════════════════════
+function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover }: {
+  diam: number; depth: number; depthFraction: number; flow: number; flowDir: string; landcover: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = 180, h = 150;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    canvas.style.width = w + "px"; canvas.style.height = h + "px";
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+
+    const cx = w / 2, cy = h / 2;
+    const r = Math.min(w, h) / 2 - 16;
+    const fillRatio = Math.min(1, Math.max(0, depthFraction || 0));
+
+    // 管壁
+    ctx.clearRect(0, 0, w, h);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "#6b7f8f";
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#3a4a58";
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+
+    // 内部阴影
+    ctx.fillStyle = "#0d1419";
+    ctx.beginPath(); ctx.arc(cx, cy, r - 4, 0, Math.PI * 2); ctx.fill();
+
+    // 水量(圆管截面:按充满度填充弓形区域)
+    if (fillRatio > 0.001) {
+      // 弓形:圆心到水面的垂线距离 d = r - 2*r*ratio(水面以下占直径比例)
+      const waterDepthPx = 2 * (r - 4) * fillRatio;
+      const waterSurfaceY = cy + (r - 4) - waterDepthPx;
+      const dist = cy + (r - 4) - waterSurfaceY; // 圆心到水面距离(向下为正)
+      const chordHalf = Math.sqrt(Math.max(0, Math.pow(r - 4, 2) - Math.pow(dist, 2)));
+      const isFull = fillRatio > 0.985;
+      if (isFull) {
+        ctx.fillStyle = "rgba(51,136,204,0.85)";
+        ctx.beginPath(); ctx.arc(cx, cy, r - 4, 0, Math.PI * 2); ctx.fill();
+      } else {
+        const startAngle = Math.atan2(dist, chordHalf);
+        const endAngle = Math.PI - startAngle;
+        ctx.fillStyle = "rgba(51,136,204,0.75)";
+        ctx.beginPath();
+        ctx.moveTo(cx - chordHalf, waterSurfaceY);
+        ctx.lineTo(cx + chordHalf, waterSurfaceY);
+        ctx.arc(cx, cy, r - 4, -endAngle, -startAngle, true);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // 水面高光
+      if (!isFull) {
+        ctx.strokeStyle = "rgba(180,220,255,0.7)";
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cx - chordHalf, waterSurfaceY); ctx.lineTo(cx + chordHalf, waterSurfaceY); ctx.stroke();
+      }
+      // 满管警告
+      if (fillRatio > 0.9) {
+        ctx.strokeStyle = "rgba(255,120,60,0.85)";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(cx, cy, r - 2, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+
+    // 标注
+    ctx.fillStyle = "#9fb2c0";
+    ctx.font = "9px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`d=${diam.toFixed(2)}m 充满度=${(fillRatio * 100).toFixed(0)}%`, cx, h - 6);
+    ctx.fillStyle = "rgba(80,170,230,0.9)";
+    ctx.fillText(`水深 ${depth.toFixed(2)}m · ${flow >= 0 ? "→" : "←"} ${Math.abs(flow).toFixed(2)}m³/s`, cx, 10);
+  }, [diam, depth, depthFraction, flow]);
+
+  return (
+    <div className="rounded-lg border border-gray-700 bg-black/80 p-1.5">
+      <div className="flex items-center justify-between px-1 pb-1">
+        <span className="text-[10px] font-bold text-gray-300">🔵 管道横截面</span>
+        <span className="text-[9px] text-gray-500">{landcover === "green" ? "🟢 绿色海绵" : landcover === "gray" ? "🟠 灰色强开发" : "⚪ 现状"}</span>
+      </div>
+      <canvas ref={canvasRef} className="block" />
+      <div className="px-1 pt-1 text-[9px] leading-4 text-gray-500">{flowDir}</div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
 // TIME-SERIES CHART PANEL
 // ═══════════════════════════════════════════════════════════
 function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel }: {
@@ -276,6 +369,7 @@ export default function SandboxPage() {
 
   // Dynamic state
   const [dynI, setDynI] = useState(80);
+  const [landcover, setLandcover] = useState<"default" | "gray" | "green">("default");
   const [dynRes, setDynRes] = useState<any>(null);
   const [dynStep, setDynStep] = useState(0);
   const [dynPlay, setDynPlay] = useState(false);
@@ -532,14 +626,14 @@ export default function SandboxPage() {
     try {
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 90000);
-      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intensity: dynI }), signal: ctrl.signal });
+      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intensity: dynI, landcover }), signal: ctrl.signal });
       clearTimeout(tid);
       const d = await res.json();
       if (!d.ok) throw new Error(d.error || "API error");
       if (d.pending) throw new Error("仿真仍在计算中");
       setDynRes(d); setDynPhase("ready"); setSimId(d.simulationId || "");
     } catch (e: any) { setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
-  }, [dynI]);
+  }, [dynI, landcover]);
 
   const clearWaterMeshes = useCallback(() => {
     waterMeshMap.current.forEach(m => { if (m.parent) m.parent.remove(m); m.geometry?.dispose(); (m.material as THREE.Material)?.dispose(); });
@@ -668,6 +762,16 @@ export default function SandboxPage() {
             <div className="space-y-2">
               <div><div className="flex justify-between text-[10px]"><span className="text-gray-500">降雨倍率</span><span className="text-cyan-400 font-bold">{dynI}%</span></div>
               <input type="range" min="10" max="300" value={dynI} onChange={e => setDynI(+e.target.value)} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
+              {/* 下垫面方案切换(方案2):点击改变下垫面→重新仿真→横截面水量变化 */}
+              <div>
+                <div className="mb-1 text-[10px] text-gray-500">下垫面方案</div>
+                <div className="grid grid-cols-3 gap-1">
+                  {([["default", "⚪ 现状"], ["green", "🟢 绿色海绵"], ["gray", "🟠 灰色强开发"]] as const).map(([val, label]) => (
+                    <button key={val} onClick={() => { setLandcover(val); if (dynRes) setDynRes(null); }} className={`py-1 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-green-700 text-white" : val === "gray" ? "bg-orange-700 text-white" : "bg-gray-600 text-white") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{label}</button>
+                  ))}
+                </div>
+                {landcover !== "default" && <div className="mt-1 text-[9px] leading-3.5 text-gray-500">{landcover === "green" ? "增加透水铺装与绿地,降低不透水率" : "增加硬化地面,提高不透水率"}</div>}
+              </div>
               <button onClick={loadSim} className="w-full py-1.5 bg-cyan-800 rounded font-bold text-xs hover:bg-cyan-700 transition-colors">{dynRes ? "🔄 重新仿真" : "📊 加载仿真结果"}</button>
               {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">▶ 开始推演</button>}
               {dynPhase === "done" && <button onClick={() => { setDynStep(0); setDynPlay(true); setDynPhase("running"); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">🔄 重新推演</button>}
@@ -724,6 +828,15 @@ export default function SandboxPage() {
                 <div className="flex justify-between"><span className="text-gray-500">capacity</span><span className="text-gray-200">{(curLinkData.capacity?.[dynStep]??0).toFixed(3)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">流向</span><span className="text-gray-200">{(curLinkData.flow?.[dynStep]??0)>=0 ? "→ "+selected.data.to : "← "+selected.data.from}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">状态</span><span className="text-gray-200">{(curLinkData.capacity?.[dynStep]??0)>0.98?"满管":(curLinkData.depthFraction?.[dynStep]??0)>0.5?"高负荷":"正常"}</span></div>
+                {/* 管网横截面水量展示(方案1) */}
+                <PipeCrossSection
+                  diam={selected.data.diam || 0.3}
+                  depth={curLinkData.depth?.[dynStep] ?? 0}
+                  depthFraction={curLinkData.depthFraction?.[dynStep] ?? 0}
+                  flow={curLinkData.flow?.[dynStep] ?? 0}
+                  flowDir={`${selected.data.from} → ${selected.data.to}`}
+                  landcover={landcover}
+                />
               </>)}
             </div>
           )}

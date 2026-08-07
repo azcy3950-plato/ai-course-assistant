@@ -36,9 +36,9 @@ function cleanupStaleTasks() {
 }
 
 // ─── Modify INP ───
-function modifyRainfall(originalInpPath: string, intensity: number, simDir: string): string {
+function modifyRainfall(originalInpPath: string, intensity: number, simDir: string, landcover?: string): string {
   const tempInp = join(simDir, 'model.inp');
-  const text = readFileSync(originalInpPath, 'utf-8');
+  let text = readFileSync(originalInpPath, 'utf-8');
   const lines = text.split('\n');
   const result: string[] = [];
   let inTS = false;
@@ -60,7 +60,48 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
     }
     result.push(line);
   }
-  writeFileSync(tempInp, result.join('\n'), 'utf-8');
+  text = result.join('\n');
+
+  // ── 下垫面方案:调整各汇水区不透水率(%Imperv)与不透水糙率(N-Imperv) ──
+  // landcover: "gray" = 灰色强开发(提高不透水率) / "green" = 绿色海绵(降低不透水率)
+  if (landcover === "gray" || landcover === "green") {
+    const factor = landcover === "gray" ? 1.6 : 0.5; // 不透水率乘数(上限 95%)
+    const lines2 = text.split('\n');
+    const out: string[] = [];
+    let inSub = false, inSubarea = false;
+    for (const line of lines2) {
+      const upper = line.trim().toUpperCase();
+      if (upper.startsWith('[SUBCATCHMENTS]')) { inSub = true; inSubarea = false; out.push(line); continue; }
+      if (upper.startsWith('[SUBAREAS]')) { inSub = false; inSubarea = true; out.push(line); continue; }
+      if (inSub && upper.startsWith('[')) inSub = false;
+      if (inSubarea && upper.startsWith('[')) inSubarea = false;
+      if (line.trim() === '' || line.trim().startsWith(';') || line.trim().startsWith('[')) { out.push(line); continue; }
+      const parts = line.trim().split(/\s+/);
+      if (inSub && parts.length >= 4) {
+        // [SUBCATCHMENTS] Name Rain-Gage Outlet Area %Imperv ...
+        const imperv = parseFloat(parts[3]);
+        if (!isNaN(imperv)) {
+          const adjusted = Math.max(5, Math.min(95, imperv * factor));
+          parts[3] = adjusted.toFixed(2);
+          out.push(parts.join('\t'));
+          continue;
+        }
+      }
+      if (inSubarea && parts.length >= 3) {
+        // [SUBAREAS] Subcatchment N-Imperv N-Perv ... (第2列 N-Imperv)
+        const nImp = parseFloat(parts[1]);
+        if (!isNaN(nImp) && nImp > 0) {
+          parts[1] = (landcover === "gray" ? Math.min(0.05, nImp * 0.8) : Math.max(0.12, nImp * 1.6)).toFixed(4);
+          out.push(parts.join('\t'));
+          continue;
+        }
+      }
+      out.push(line);
+    }
+    text = out.join('\n');
+  }
+
+  writeFileSync(tempInp, text, 'utf-8');
   return tempInp;
 }
 
@@ -238,19 +279,20 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const intensity = Math.max(10, Math.min(500, body.intensity || 80));
+    const landcover = ["gray", "green"].includes(body.landcover) ? body.landcover : undefined;
     cleanupStaleTasks();
 
     const simulationId = crypto.randomUUID();
     const simDir = join(SIM_DIR, simulationId);
     mkdirSync(simDir, { recursive: true });
 
-    console.log('[SWMM] Starting — intensity:', intensity, 'simId:', simulationId);
+    console.log('[SWMM] Starting — intensity:', intensity, 'landcover:', landcover || 'default', 'simId:', simulationId);
 
     const task: SimTask = { simulationId, intensity, status: 'running', startedAt: Date.now() };
     tasks.set(simulationId, task);
 
     const originalInp = join(process.cwd(), 'public', 'zijing_inp.inp');
-    const tempInp = modifyRainfall(originalInp, intensity, simDir);
+    const tempInp = modifyRainfall(originalInp, intensity, simDir, landcover);
 
     try {
       const result = runSimulation(tempInp, simulationId, simDir);
@@ -264,7 +306,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         ok: true, simulationId, status: 'completed',
-        parameters: { intensity },
+        parameters: { intensity, landcover: landcover || 'default' },
         ...result,
       });
     } catch (err: any) {
