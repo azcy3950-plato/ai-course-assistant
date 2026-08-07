@@ -214,31 +214,41 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
 
     // 水量(圆管截面:按充满度填充弓形区域)
     if (fillRatio > 0.001) {
-      // 弓形:圆心到水面的垂线距离 d = r - 2*r*ratio(水面以下占直径比例)
-      const waterDepthPx = 2 * (r - 4) * fillRatio;
-      const waterSurfaceY = cy + (r - 4) - waterDepthPx;
-      const dist = cy + (r - 4) - waterSurfaceY; // 圆心到水面距离(向下为正)
-      const chordHalf = Math.sqrt(Math.max(0, Math.pow(r - 4, 2) - Math.pow(dist, 2)));
+      // 水面到圆心的带符号距离:水面在圆心下方为正,上方为负
+      // dist = R - 2R*ratio(ratio>0.5 时水面高于圆心,dist 为负)
+      const dist = (r - 4) - 2 * (r - 4) * fillRatio;
+      const waterY = cy + dist;
+      const chordHalf = Math.sqrt(Math.max(0, Math.pow(r - 4, 2) - dist * dist));
       const isFull = fillRatio > 0.985;
       if (isFull) {
         ctx.fillStyle = "rgba(51,136,204,0.85)";
         ctx.beginPath(); ctx.arc(cx, cy, r - 4, 0, Math.PI * 2); ctx.fill();
-      } else {
-        const startAngle = Math.atan2(dist, chordHalf);
-        const endAngle = Math.PI - startAngle;
+      } else if (chordHalf > 0.01) {
+        const halfAngle = Math.acos(Math.min(1, Math.max(-1, dist / (r - 4))));
+        // 水面线(弦)两点:与水面同高
+        const startAngle = Math.PI / 2 + halfAngle; // 左下
+        const endAngle = Math.PI / 2 - halfAngle;   // 右下
         ctx.fillStyle = "rgba(51,136,204,0.75)";
         ctx.beginPath();
-        ctx.moveTo(cx - chordHalf, waterSurfaceY);
-        ctx.lineTo(cx + chordHalf, waterSurfaceY);
-        ctx.arc(cx, cy, r - 4, -endAngle, -startAngle, true);
+        ctx.moveTo(cx - chordHalf, waterY);
+        ctx.lineTo(cx + chordHalf, waterY);
+        if (dist >= 0) {
+          // 水面在圆心下方:经过底部的小弧
+          ctx.arc(cx, cy, r - 4, endAngle, startAngle, false);
+        } else {
+          // 水面在圆心上方:经过顶部的大弧
+          ctx.arc(cx, cy, r - 4, endAngle, startAngle, true);
+        }
         ctx.closePath();
         ctx.fill();
-      }
-      // 水面高光
-      if (!isFull) {
+        // 水面高光
         ctx.strokeStyle = "rgba(180,220,255,0.7)";
         ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(cx - chordHalf, waterSurfaceY); ctx.lineTo(cx + chordHalf, waterSurfaceY); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx - chordHalf, waterY); ctx.lineTo(cx + chordHalf, waterY); ctx.stroke();
+      } else {
+        // 极浅水:画一小段水面
+        ctx.fillStyle = "rgba(51,136,204,0.75)";
+        ctx.fillRect(cx - 1.5, cy + (r - 4) - 1, 3, 2);
       }
       // 满管警告
       if (fillRatio > 0.9) {
@@ -767,7 +777,7 @@ export default function SandboxPage() {
                 <div className="mb-1 text-[10px] text-gray-500">下垫面方案</div>
                 <div className="grid grid-cols-3 gap-1">
                   {([["default", "⚪ 现状"], ["green", "🟢 绿色海绵"], ["gray", "🟠 灰色强开发"]] as const).map(([val, label]) => (
-                    <button key={val} onClick={() => { setLandcover(val); if (dynRes) setDynRes(null); }} className={`py-1 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-green-700 text-white" : val === "gray" ? "bg-orange-700 text-white" : "bg-gray-600 text-white") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{label}</button>
+                    <button key={val} onClick={() => { setLandcover(val); setDynPhase("config"); if (dynRes) setDynRes(null); }} className={`py-1 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-green-700 text-white" : val === "gray" ? "bg-orange-700 text-white" : "bg-gray-600 text-white") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{label}</button>
                   ))}
                 </div>
                 {landcover !== "default" && <div className="mt-1 text-[9px] leading-3.5 text-gray-500">{landcover === "green" ? "增加透水铺装与绿地,降低不透水率" : "增加硬化地面,提高不透水率"}</div>}
