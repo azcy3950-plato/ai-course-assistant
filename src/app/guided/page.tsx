@@ -43,17 +43,21 @@ export default function GuidedPage() {
   const dragging = useRef(false);
   const [resizing, setResizing] = useState(false);
 
-  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); const seed = d.graph.nodes.slice(0, 3); const seedIds = new Set(seed.map((n: KnowledgeNode) => n.id)); setCurrentGraph({ nodes: seed, edges: d.graph.edges.filter((e: KnowledgeEdge) => seedIds.has(e.source) && seedIds.has(e.target)) }); setFocusIds(seed.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); }, []);
+  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); }, []);
   const ratioRef = useRef(ratio);
   useEffect(() => { ratioRef.current = ratio; }, [ratio]);
   useEffect(() => { const move = (e: PointerEvent) => { if (!dragging.current || !workspace.current) return; const rect = workspace.current.getBoundingClientRect(); const next = Math.min(62, Math.max(30, ((e.clientX - rect.left) / rect.width) * 100)); setRatio(next); }; const up = () => { if (dragging.current) { try { localStorage.setItem(STORAGE_KEY, String(ratioRef.current)); } catch { /* 隐私模式忽略 */ } } dragging.current = false; setResizing(false); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up); return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); }; }, []);
 
-  const graph = mode === "current" ? currentGraph : cumulative;
+  const graph = fullGraph; // 完整图谱模式：始终显示全部节点，焦点只影响高亮与中心
   const nodeForId = useCallback((id: string) => fullGraph.nodes.find((n) => n.id === id) || cumulative.nodes.find((n) => n.id === id), [cumulative.nodes, fullGraph.nodes]);
   const setCurrentFromContext = (ctx: any) => {
     const ids = [ctx?.focusNode?.id, ...(ctx?.highlightNodeIds || []), ...(ctx?.prerequisites || []).map((n: KnowledgeNode) => n.id), ...(ctx?.relatedNodes || []).map((n: KnowledgeNode) => n.id), ...(ctx?.nextNodes || []).map((n: KnowledgeNode) => n.id)].filter(Boolean) as string[];
-    const unique = [...new Set(ids)]; const nodes = unique.map(nodeForId).filter(Boolean) as KnowledgeNode[]; const idSet = new Set(unique); const edges = fullGraph.edges.filter((e) => idSet.has(e.source) && idSet.has(e.target));
-    setFocusIds(ctx?.focusNode?.id ? [ctx.focusNode.id] : unique.slice(0, 1)); setCurrentGraph({ nodes, edges }); setCumulative((old) => mergeGraph(old, nodes, edges)); return unique;
+    const unique = [...new Set(ids)];
+    // 完整图谱模式：不裁剪当前图，仅移动焦点中心；提问相关节点加入累计图
+    const relatedNodes = unique.map(nodeForId).filter(Boolean) as KnowledgeNode[];
+    setFocusIds(ctx?.focusNode?.id ? [ctx.focusNode.id] : unique.slice(0, 1));
+    setCumulative((old) => mergeGraph(old, relatedNodes, fullGraph.edges.filter((e) => unique.includes(e.source) && unique.includes(e.target))));
+    return unique;
   };
 
   const send = async (value = input) => {
@@ -100,9 +104,9 @@ export default function GuidedPage() {
   const resetSocratic = () => { setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); setMessages((old) => [...old, { id: `reset-${Date.now()}`, role: "assistant", content: "本轮引导已结束。你可以提出一个新的问题继续学习。", kind: "info" }]); };
 
   const askAbout = (node: KnowledgeNode) => { setSelected(node); setInput(`请解释“${node.name}”，并说明它与城市排水和内涝防治的关系。`); setMobileTab("chat"); };
-  const expand = (node: KnowledgeNode) => { const related = fullGraph.edges.filter((e) => e.source === node.id || e.target === node.id).flatMap((e) => [e.source, e.target]).filter((id) => id !== node.id); const ids = [...new Set([...focusIds, node.id, ...related])]; const nodes = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[]; const idSet = new Set(ids); const edges = fullGraph.edges.filter((e) => idSet.has(e.source) && idSet.has(e.target)); setCurrentGraph((old) => mergeGraph(old, nodes, edges)); setCumulative((old) => mergeGraph(old, nodes, edges)); setFocusIds((old) => [...new Set([...old, node.id])]); };
+  const expand = (node: KnowledgeNode) => { const related = fullGraph.edges.filter((e) => e.source === node.id || e.target === node.id).flatMap((e) => [e.source, e.target]).filter((id) => id !== node.id); const ids = [...new Set([...focusIds, node.id, ...related])]; setFocusIds(ids); setCumulative((old) => mergeGraph(old, ids.map(nodeForId).filter(Boolean) as KnowledgeNode[], fullGraph.edges.filter((e) => ids.includes(e.source) && ids.includes(e.target)))); };
   const fullscreen = async () => { const el = workspace.current?.querySelector("[aria-label='交互式知识图谱']")?.parentElement; if (!document.fullscreenElement) await el?.requestFullscreen?.(); else await document.exitFullscreen(); };
-  const graphForMessage = (m: ChatMessage) => { if (!m.nodeIds?.length) return; const nodes = m.nodeIds.map(nodeForId).filter(Boolean) as KnowledgeNode[]; const ids = new Set(m.nodeIds); setCurrentGraph({ nodes, edges: fullGraph.edges.filter((e) => ids.has(e.source) && ids.has(e.target)) }); setFocusIds(m.nodeIds.slice(0, 1)); setMode("current"); setMobileTab("graph"); };
+  const graphForMessage = (m: ChatMessage) => { if (!m.nodeIds?.length) return; setFocusIds(m.nodeIds.slice(0, 1)); setMode("current"); setMobileTab("graph"); };
   const selectedNeighbors = selected ? fullGraph.edges.filter((e) => e.source === selected.id || e.target === selected.id).map((e) => nodeForId(e.source === selected.id ? e.target : e.source)).filter(Boolean) as KnowledgeNode[] : [];
 
   if (state.authLoading) return <div className="p-8 text-center">正在加载学习空间…</div>;
