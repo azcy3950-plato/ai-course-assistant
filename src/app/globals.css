@@ -65,10 +65,6 @@ body {
   from { opacity: 0; transform: translateY(10px) scale(0.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-@keyframes dot-bounce {
-  0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
-  40% { transform: translateY(-4px); opacity: 1; }
-}
 @keyframes pop-in {
   0% { opacity: 0; transform: scale(0.55); }
   70% { transform: scale(1.06); }
@@ -90,17 +86,8 @@ body {
   0%, 100% { opacity: 0.4; transform: translateY(0); }
   50% { opacity: 1; transform: translateY(-2px); }
 }
-@keyframes edge-draw {
-  from { stroke-dashoffset: 240; opacity: 0.25; }
-  to { stroke-dashoffset: 0; opacity: 1; }
-}
-@keyframes ring-spin {
-  to { transform: rotate(360deg); }
-}
 
 .msg-enter { animation: msg-fade-up 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
-.msg-enter-delay-1 { animation-delay: 0.05s; }
-.msg-enter-delay-2 { animation-delay: 0.1s; }
 .typing-dot { display: inline-block; width: 5px; height: 5px; margin-right: 3px; border-radius: 999px; background: currentColor; animation: typing-pulse 1.2s ease-in-out infinite; }
 .typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .typing-dot:nth-child(3) { animation-delay: 0.3s; }
@@ -108,7 +95,6 @@ body {
 .slide-in-right { animation: slide-in-right 0.28s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
 .fade-in { animation: fade-in 0.25s ease both; }
 .glow-breathe { animation: glow-breathe 2.4s ease-in-out infinite; }
-.edge-draw { animation: edge-draw 0.5s ease-out both; }
 
 /* 平滑滚动与过渡基调 */
 html { scroll-behavior: smooth; }
@@ -116,11 +102,11 @@ html { scroll-behavior: smooth; }
 /* 用户偏好减少动效时关闭动画 */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .msg-enter, .pop-in, .slide-in-right, .fade-in, .glow-breathe, .typing-dot, .edge-draw {
+  .msg-enter, .pop-in, .slide-in-right, .fade-in, .glow-breathe, .typing-dot {
     animation: none !important;
     transition: none !important;
   }
-  .node-shell, .node-shell * {
+  .node-shell, .node-shell *, svg path, svg text {
     transition: none !important;
   }
 }
