@@ -41,14 +41,22 @@ export default function GuidedPage() {
   const workspace = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const reqSeqRef = useRef(0);
   const dragging = useRef(false);
   const [resizing, setResizing] = useState(false);
 
   useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); }, []);
   const ratioRef = useRef(ratio);
   useEffect(() => { ratioRef.current = ratio; }, [ratio]);
-  // 消息或加载状态变化时,自动滚动对话到底部
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages, loading]);
+  // 消息或加载状态变化时,若用户接近底部则自动滚动到底部(回读历史时不打断)
+  useEffect(() => {
+    const el = chatEndRef.current?.parentElement?.parentElement as HTMLElement | null;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+    if (!nearBottom) return;
+    const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    chatEndRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "end" });
+  }, [messages, loading]);
   useEffect(() => { const move = (e: PointerEvent) => { if (!dragging.current || !workspace.current) return; const rect = workspace.current.getBoundingClientRect(); const next = Math.min(62, Math.max(30, ((e.clientX - rect.left) / rect.width) * 100)); setRatio(next); }; const up = () => { if (dragging.current) { try { localStorage.setItem(STORAGE_KEY, String(ratioRef.current)); } catch { /* 隐私模式忽略 */ } } dragging.current = false; setResizing(false); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up); return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); }; }, []);
 
   const graph = fullGraph; // 完整图谱模式：始终显示全部节点，焦点只影响高亮与中心
@@ -65,6 +73,7 @@ export default function GuidedPage() {
 
   const send = async (value = input) => {
     const text = value.trim(); if (!text || loading) return; abortRef.current?.abort(); const controller = new AbortController(); abortRef.current = controller; const requestId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const mySeq = ++reqSeqRef.current;
     const history = messages.slice(-8).map((m) => ({ role: m.role, content: m.content }));
     setInput(""); setLoading(true);
     if (!socraticActive) {
@@ -88,7 +97,7 @@ export default function GuidedPage() {
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.response || "继续思考一下，你离答案很近了。", pending: false, nodeIds: ids, concepts, kind } : m));
       } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: "已停止生成。你可以继续回答或提出新问题。", pending: false, kind: "info" } : m)); }
     }
-    setLoading(false);
+    if (mySeq === reqSeqRef.current) setLoading(false);
   };
 
   const requestHint = async () => {
