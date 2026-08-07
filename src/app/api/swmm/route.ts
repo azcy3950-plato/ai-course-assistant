@@ -91,7 +91,7 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
         // [SUBAREAS] Subcatchment N-Imperv N-Perv ... (第2列 N-Imperv)
         const nImp = parseFloat(parts[1]);
         if (!isNaN(nImp) && nImp > 0) {
-          parts[1] = (landcover === "gray" ? Math.min(0.05, nImp * 0.8) : Math.min(1, Math.max(0.12, nImp * 1.6))).toFixed(4);
+          parts[1] = (landcover === "gray" ? Math.max(0.01, Math.min(0.05, nImp * 0.8)) : Math.min(1, Math.max(0.12, nImp * 1.6))).toFixed(4);
           out.push(parts.join('\t'));
           continue;
         }
@@ -278,7 +278,7 @@ with Output(out_path) as out:
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const rawIntensity = Number(body.intensity);
+    const rawIntensity = body.intensity == null ? NaN : Number(body.intensity);
     const intensity = Number.isFinite(rawIntensity) ? Math.max(10, Math.min(500, rawIntensity)) : 80;
     const landcover = ["gray", "green"].includes(body.landcover) ? body.landcover : undefined;
     cleanupStaleTasks();
