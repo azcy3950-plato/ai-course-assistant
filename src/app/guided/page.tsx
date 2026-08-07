@@ -75,7 +75,7 @@ export default function GuidedPage() {
         const ids = data.graphContext ? setCurrentFromContext(data.graphContext) : []; const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[];
         setSocraticActive(true); setSocraticQuestion(text); setTurn(1); setHintLevel(0);
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.greeting || "让我们一步步来思考这个问题。", pending: false, nodeIds: ids, concepts, kind: "answer" } : m));
-      } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); }
+      } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: "已停止生成。你可以重新提问或继续。", pending: false, kind: "info" } : m)); }
     } else {
       // 追问轮次中：学生回答 → 苏格拉底式评估
       setMessages((old) => [...old, { id: `${requestId}-q`, role: "user", content: text }, { id: `${requestId}-a`, role: "assistant", content: "正在评估你的回答并继续引导…", pending: true }]);
@@ -86,7 +86,7 @@ export default function GuidedPage() {
         if (data.status === "complete" || data.status === "mastered") { setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); }
         else setTurn((t) => Math.min(MAX_TURNS, t + 1));
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.response || "继续思考一下，你离答案很近了。", pending: false, nodeIds: ids, concepts, kind } : m));
-      } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); }
+      } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: "已停止生成。你可以继续回答或提出新问题。", pending: false, kind: "info" } : m)); }
     }
     setLoading(false);
   };
