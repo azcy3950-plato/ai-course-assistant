@@ -183,7 +183,7 @@ export default function KnowledgeGraphPanel(p: Props) {
         return { scale, tx: vx - (vx - v.tx) * k, ty: vy - (vy - v.ty) * k };
       });
     };
-    const onPointerDown = (e: PointerEvent) => { dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false }; };
+    const onPointerDown = (e: PointerEvent) => { e.preventDefault(); dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false }; };
     const onPointerMove = (e: PointerEvent) => {
       if (!dragRef.current.active) return;
       const { rs } = renderScale();
