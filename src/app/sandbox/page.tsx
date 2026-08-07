@@ -725,18 +725,22 @@ export default function SandboxPage() {
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
   // 键盘快捷键:空格 = 播放/暂停,←/→ = 步进(仅动态模式且有结果,且焦点不在输入控件)
+  // 用 ref 保存最新状态,监听器只绑定一次,避免推演播放时每步重建
+  const kbState = useRef({ mode, dynRes, timeStepCount, dynPhase, dynPlay, dynStep });
+  kbState.current = { mode, dynRes, timeStepCount, dynPhase, dynPlay, dynStep };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
-      if (mode !== "dynamic" || !dynRes?.ok || timeStepCount <= 0) return;
-      if (e.code === "Space") { e.preventDefault(); if (dynPhase === "running") { setDynPlay(false); setDynPhase("paused"); } else if (dynPhase === "paused" || dynPhase === "ready" || dynPhase === "done") { if (dynPhase === "done" && dynStep >= timeStepCount - 1) setDynStep(0); setDynPlay(true); setDynPhase("running"); } }
-      else if (e.key === "ArrowLeft") { e.preventDefault(); setDynStep(s => Math.max(0, s - 1)); if (dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
-      else if (e.key === "ArrowRight") { e.preventDefault(); setDynStep(s => Math.min(timeStepCount - 1, s + 1)); if (dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
+      const s = kbState.current;
+      if (s.mode !== "dynamic" || !s.dynRes?.ok || s.timeStepCount <= 0) return;
+      if (e.code === "Space") { e.preventDefault(); if (s.dynPhase === "running") { setDynPlay(false); setDynPhase("paused"); } else if (s.dynPhase === "paused" || s.dynPhase === "ready" || s.dynPhase === "done") { if (s.dynPhase === "done" && s.dynStep >= s.timeStepCount - 1) setDynStep(0); setDynPlay(true); setDynPhase("running"); } }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); setDynStep(v => Math.max(0, v - 1)); if (s.dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
+      else if (e.key === "ArrowRight") { e.preventDefault(); setDynStep(v => Math.min(s.timeStepCount - 1, v + 1)); if (s.dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode, dynRes, timeStepCount, dynPhase, dynPlay, dynStep]);
+  }, []);
 
   // ── Dynamic property data ──
   const curNodeData = (mode === "dynamic" && selected?.type === "node" && dynRes?.nodes) ? dynRes.nodes[selected.data.id] : null;
