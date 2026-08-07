@@ -77,12 +77,12 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
       if (inSubarea && upper.startsWith('[')) inSubarea = false;
       if (line.trim() === '' || line.trim().startsWith(';') || line.trim().startsWith('[')) { out.push(line); continue; }
       const parts = line.trim().split(/\s+/);
-      if (inSub && parts.length >= 4) {
-        // [SUBCATCHMENTS] Name Rain-Gage Outlet Area %Imperv ...
-        const imperv = parseFloat(parts[3]);
+      if (inSub && parts.length >= 5) {
+        // [SUBCATCHMENTS] Name Rain-Gage Outlet Area %Imperv Width %Slope ...
+        const imperv = parseFloat(parts[4]);
         if (!isNaN(imperv)) {
           const adjusted = Math.max(5, Math.min(95, imperv * factor));
-          parts[3] = adjusted.toFixed(2);
+          parts[4] = adjusted.toFixed(2);
           out.push(parts.join('\t'));
           continue;
         }
