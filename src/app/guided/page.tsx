@@ -136,7 +136,9 @@ export default function GuidedPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `引导学习-${new Date().toISOString().slice(0, 10)}.md`;
-    a.click(); URL.revokeObjectURL(url);
+    document.body.appendChild(a); a.click(); a.remove();
+    // 延迟回收 Blob URL,避免 Safari/WebView 下载被中断
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const selectedNeighbors = selected ? fullGraph.edges.filter((e) => e.source === selected.id || e.target === selected.id).map((e) => nodeForId(e.source === selected.id ? e.target : e.source)).filter(Boolean) as KnowledgeNode[] : [];
 
