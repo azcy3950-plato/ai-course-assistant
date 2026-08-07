@@ -35,10 +35,20 @@ interface SC3D {
 // ═══════════════════════════════════════════════════════════
 // INP PARSER — extended fields for Chinese property panel
 // ═══════════════════════════════════════════════════════════
-function sec(t: string, s: string, e: string) {
+// 提取 SWMM 段落:从 [S] 段头之后开始,遇到下一个以 [ 开头的段头即停
+// (不依赖结束段名——[XSECTIONS] 与 [TIMESERIES] 之间可能隔着
+//  [POLLUTANTS]/[LANDUSES]/[COVERAGES] 等段,按名截取会污染解析)
+function sec(t: string, s: string, _e: string) {
   const si = t.indexOf(s); if (si < 0) return "";
-  const ei = t.indexOf(e, si + s.length);
-  return t.substring(si + s.length, ei > 0 ? ei : t.length);
+  const rest = t.substring(si + s.length);
+  const lines = rest.split("\n");
+  const out: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) break;
+    out.push(line);
+  }
+  return out.join("\n");
 }
 function toX(x: number) { return (x - CENTER_X); }
 function toZ(y: number) { return -(y - CENTER_Y); }
@@ -105,8 +115,9 @@ function parseInp(text: string) {
   const impervMap = new Map<string, number>(), scArea = new Map<string, number>();
   const scOutlet = new Map<string, string>(), scWidth = new Map<string, number>(), scSlope = new Map<string, number>();
   subcSec.split("\n").forEach(line => {
-    const m = line.trim().match(/^(\S+)\s+(\S+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
-    if (m) { scOutlet.set(m[1], m[2]); scArea.set(m[1], parseFloat(m[3])); impervMap.set(m[1], parseFloat(m[4])); scWidth.set(m[1], parseFloat(m[5]) || 0); scSlope.set(m[1], parseFloat(m[6]) || 0); }
+    // [SUBCATCHMENTS] Name RainGage Outlet Area %Imperv Width %Slope ...
+    const m = line.trim().match(/^(\S+)\s+(\S+)\s+(\S+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+    if (m) { scOutlet.set(m[1], m[3]); scArea.set(m[1], parseFloat(m[4])); impervMap.set(m[1], parseFloat(m[5])); scWidth.set(m[1], parseFloat(m[6]) || 0); scSlope.set(m[1], parseFloat(m[7]) || 0); }
   });
 
   const scs: SC3D[] = [];
