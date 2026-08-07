@@ -378,6 +378,7 @@ export default function SandboxPage() {
   const waterMeshMap = useRef<Map<string, THREE.Mesh>>(new Map());
   const spanRef = useRef(300);
   const simSeqRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
@@ -644,17 +645,20 @@ export default function SandboxPage() {
   const loadSim = useCallback(async () => {
     const reqSeq = ++simSeqRef.current;
     setDynPhase("loading"); setDynStep(0);
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     try {
-      const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 90000);
       const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intensity: dynI, landcover }), signal: ctrl.signal });
       clearTimeout(tid);
+      if (abortRef.current === ctrl) abortRef.current = null;
       const d = await res.json();
       if (!d.ok) throw new Error(d.error || "API error");
       // 竞态防护:若期间已切换方案发起新请求,丢弃本次过期结果
       if (reqSeq !== simSeqRef.current) return;
       setDynRes(d); setDynPhase("ready"); setSimId(d.simulationId || "");
-    } catch (e: any) { if (reqSeq !== simSeqRef.current) return; setDynPhase("config"); alert("仿真加载失败: " + (e.name === "AbortError" ? "请求超时,请重试或减小降雨倍率" : e.message)); }
+    } catch (e: any) { if (reqSeq !== simSeqRef.current) return; if (abortRef.current === ctrl) abortRef.current = null; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
   }, [dynI, landcover]);
 
   const clearWaterMeshes = useCallback(() => {
@@ -719,6 +723,20 @@ export default function SandboxPage() {
   }, [dynStep, dynRes, vertEx]);
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
+
+  // 键盘快捷键:空格 = 播放/暂停,←/→ = 步进(仅动态模式且有结果,且焦点不在输入控件)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      if (mode !== "dynamic" || !dynRes?.ok || timeStepCount <= 0) return;
+      if (e.code === "Space") { e.preventDefault(); if (dynPhase === "running") { setDynPlay(false); setDynPhase("paused"); } else if (dynPhase === "paused" || dynPhase === "ready" || dynPhase === "done") { if (dynPhase === "done" && dynStep >= timeStepCount - 1) setDynStep(0); setDynPlay(true); setDynPhase("running"); } }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); setDynStep(s => Math.max(0, s - 1)); if (dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
+      else if (e.key === "ArrowRight") { e.preventDefault(); setDynStep(s => Math.min(timeStepCount - 1, s + 1)); if (dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode, dynRes, timeStepCount, dynPhase, dynPlay, dynStep]);
 
   // ── Dynamic property data ──
   const curNodeData = (mode === "dynamic" && selected?.type === "node" && dynRes?.nodes) ? dynRes.nodes[selected.data.id] : null;
@@ -811,6 +829,7 @@ export default function SandboxPage() {
             <div className="space-y-2">
               <div className="flex justify-between"><span className="text-gray-500">当前时间</span><span className="text-gray-200 font-bold font-mono">{currentTimeLabel}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">当前步</span><span className="text-gray-200">{dynStep+1}/{timeStepCount}</span></div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800"><div className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400 transition-[width] duration-150" style={{ width: `${((dynStep + 1) / Math.max(1, timeStepCount)) * 100}%` }} /></div>
               <div className="flex justify-between"><span className="text-gray-500">最大水深</span><span className="text-gray-200">{dynRes?.summary?.maxDepth?.value?.toFixed(2)} m</span></div>
               <div className="flex gap-1.5">
                 <button onClick={() => { setDynPlay(false); setDynPhase("paused"); }} className="flex-1 py-1.5 bg-yellow-800 rounded font-bold text-xs hover:bg-yellow-700">⏸ 暂停</button>
@@ -830,7 +849,7 @@ export default function SandboxPage() {
             </div>
           )}
 
-          {dynPhase === "loading" && <div className="text-center py-3"><div className="animate-spin text-lg mb-1">⏳</div><div className="text-[10px] text-gray-400">运行 SWMM 仿真…</div></div>}
+          {dynPhase === "loading" && <div className="text-center py-3"><div className="animate-spin text-lg mb-1">⏳</div><div className="text-[10px] text-gray-400">运行 SWMM 仿真…</div><button onClick={() => { abortRef.current?.abort(); setDynPhase("config"); }} className="mt-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-[10px] text-gray-300">✕ 取消</button></div>}
 
           {/* Dynamic property for selected object */}
           {selected && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && (
