@@ -113,6 +113,15 @@ body {
 /* 平滑滚动与过渡基调 */
 html { scroll-behavior: smooth; }
 
+/* 用户偏好减少动效时关闭动画 */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .msg-enter, .pop-in, .slide-in-right, .fade-in, .glow-breathe, .typing-dot, .edge-draw {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 /* Custom scrollbar */
 @media (min-width: 768px) {
   /* Guided learning keeps the graph viewport aligned with the chat workspace. */
