@@ -663,7 +663,7 @@ export default function SandboxPage() {
     } catch (e: any) { if (reqSeq !== simSeqRef.current) return; if (abortRef.current === ctrl) abortRef.current = null; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
   }, [dynI, landcover]);
 
-  // 三方案对比:并发仿真 现状/绿色/灰色,展示峰值差异
+  // 三方案对比:串行仿真 现状/绿色/灰色(后端为同步仿真,逐个请求),展示峰值差异
   const runCompare = useCallback(async () => {
     if (comparing) return;
     const seq = ++simSeqRef.current;
@@ -675,9 +675,11 @@ export default function SandboxPage() {
       for (const [lc, label] of schemes) {
         if (seq !== simSeqRef.current) return;
         const ctrl = new AbortController();
+        abortRef.current = ctrl;
         const tid = setTimeout(() => ctrl.abort(), 90000);
         const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intensity: dynI, landcover: lc }), signal: ctrl.signal });
         clearTimeout(tid);
+        if (abortRef.current === ctrl) abortRef.current = null;
         const d = await res.json();
         if (!d.ok) throw new Error(`${label}方案: ${d.error || "API error"}`);
         results[lc] = d;
@@ -685,8 +687,8 @@ export default function SandboxPage() {
       if (seq !== simSeqRef.current) return;
       setCompareRes(results);
       setDynRes(results.default); setSimId(results.default.simulationId || ""); setDynPhase("ready");
-    } catch (e: any) { if (seq !== simSeqRef.current) return; setDynPhase("config"); alert("对比仿真失败: " + e.message); }
-    finally { if (seq === simSeqRef.current) setComparing(false); }
+    } catch (e: any) { if (seq !== simSeqRef.current) return; setDynPhase("config"); if (e.name !== "AbortError") alert("对比仿真失败: " + e.message); }
+    finally { setComparing(false); }
   }, [dynI, comparing]);
 
   const clearWaterMeshes = useCallback(() => {
@@ -864,7 +866,7 @@ export default function SandboxPage() {
                       );
                     })}
                   </div>
-                  <div className="text-[9px] leading-3 text-gray-500">绿色海绵降低峰值 {compareRes.green && compareRes.default ? Math.max(0, ((compareRes.default.summary?.maxFlow?.value - compareRes.green.summary?.maxFlow?.value) / compareRes.default.summary?.maxFlow?.value) * 100).toFixed(0) : "—"}%，灰色强开发抬高峰值 {compareRes.gray && compareRes.default ? Math.max(0, ((compareRes.gray.summary?.maxFlow?.value - compareRes.default.summary?.maxFlow?.value) / compareRes.default.summary?.maxFlow?.value) * 100).toFixed(0) : "—"}%</div>
+                  <div className="text-[9px] leading-3 text-gray-500">绿色海绵降低峰值 {(() => { const g = compareRes.green?.summary?.maxFlow?.value, b = compareRes.default?.summary?.maxFlow?.value; return (g != null && b > 0) ? Math.max(0, ((b - g) / b) * 100).toFixed(0) : "—"; })()}%，灰色强开发抬高峰值 {(() => { const r = compareRes.gray?.summary?.maxFlow?.value, b = compareRes.default?.summary?.maxFlow?.value; return (r != null && b > 0) ? Math.max(0, ((r - b) / b) * 100).toFixed(0) : "—"; })()}%</div>
                 </div>
               )}
               {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">▶ 开始推演</button>}
