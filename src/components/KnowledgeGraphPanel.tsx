@@ -149,8 +149,8 @@ export default function KnowledgeGraphPanel(p: Props) {
     setView({ scale: Math.max(0.15, scale), tx, ty });
   }, [placed, placedById]);
 
-  // 仅在内容结构变化(focusIds 或节点数量)时重置视图,搜索/筛选导致的 visible 变化不覆盖用户手动视图
-  const fitKey = `${p.focusIds?.join(",") || ""}|${visible.nodes.length}`;
+  // 仅在内容结构变化(focusIds、节点数或深度)时重置视图,搜索/筛选导致的 visible 变化不覆盖用户手动视图
+  const fitKey = `${p.focusIds?.join(",") || ""}|${visible.nodes.length}|${p.depth}`;
   const fitKeyRef = useRef("");
   useEffect(() => {
     if (fitKeyRef.current === fitKey) return;
