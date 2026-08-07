@@ -652,7 +652,7 @@ export default function SandboxPage() {
       // 竞态防护:若期间已切换方案发起新请求,丢弃本次过期结果
       if (reqSeq !== simSeqRef.current) return;
       setDynRes(d); setDynPhase("ready"); setSimId(d.simulationId || "");
-    } catch (e: any) { if (reqSeq !== simSeqRef.current) return; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
+    } catch (e: any) { if (reqSeq !== simSeqRef.current) return; setDynPhase("config"); alert("仿真加载失败: " + (e.name === "AbortError" ? "请求超时,请重试或减小降雨倍率" : e.message)); }
   }, [dynI, landcover]);
 
   const clearWaterMeshes = useCallback(() => {
@@ -781,7 +781,7 @@ export default function SandboxPage() {
           {(dynPhase === "config" || dynPhase === "ready" || dynPhase === "done") && (
             <div className="space-y-2">
               <div><div className="flex justify-between text-[10px]"><span className="text-gray-500">降雨倍率</span><span className="text-cyan-400 font-bold">{dynI}%</span></div>
-              <input type="range" min="10" max="300" value={dynI} onChange={e => { simSeqRef.current++; setDynI(+e.target.value); }} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
+              <input type="range" min="10" max="300" value={dynI} onChange={e => { simSeqRef.current++; setDynI(+e.target.value); if (dynRes) { setDynRes(null); setDynPhase("config"); } }} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
               {/* 下垫面方案切换(方案2):点击改变下垫面→重新仿真→横截面水量变化 */}
               <div>
                 <div className="mb-1 text-[10px] text-gray-500">下垫面方案</div>
