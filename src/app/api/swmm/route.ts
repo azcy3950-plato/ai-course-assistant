@@ -81,7 +81,7 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
         // [SUBCATCHMENTS] Name Rain-Gage Outlet Area %Imperv Width %Slope ...
         const imperv = parseFloat(parts[4]);
         if (!isNaN(imperv)) {
-          const adjusted = Math.max(5, Math.min(95, imperv * factor));
+          const adjusted = Math.max(0, Math.min(95, imperv * factor));
           parts[4] = adjusted.toFixed(2);
           out.push(parts.join('\t'));
           continue;
