@@ -132,7 +132,7 @@ function parseInp(text: string) {
       curPts.push([toX(parseFloat(m[2])), toZ(parseFloat(m[3]))]);
     }
   });
-  if (curPts.length >= 3) scs.push({ id: curId, pts: curPts, imperv: impervMap.get(curId) || 50, area: scArea.get(curId) || 0, outlet: scOutlet.get(curId) || "", width: scWidth.get(curId) || 0, slope: scSlope.get(curId) || 0 });
+  if (curPts.length >= 3) scs.push({ id: curId, pts: curPts, imperv: impervMap.get(curId) ?? 50, area: scArea.get(curId) ?? 0, outlet: scOutlet.get(curId) || "", width: scWidth.get(curId) ?? 0, slope: scSlope.get(curId) ?? 0 });
 
   const nodeList: Node3D[] = [];
   rawNodes.forEach((n, id) => { nodeList.push({ id, x: n.x, z: n.z, invert: n.invert, maxD: n.maxD, initD: n.initD, ground: n.invert + n.maxD, type: n.type }); });
