@@ -83,8 +83,8 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
           // gray 灰色强开发:向 100% 不透水收敛(0%→60%,100% 保持 100%)
           // green 绿色海绵:不透水率减半(100%→50%,0% 保持 0%)
           const adjusted = landcover === "gray"
-            ? Math.min(100, imperv + (100 - imperv) * 0.6)
-            : Math.max(0, imperv * 0.5);
+            ? Math.min(100, Math.max(0, imperv + (100 - imperv) * 0.6))
+            : Math.min(100, Math.max(0, imperv * 0.5));
           parts[4] = adjusted.toFixed(2);
           out.push(parts.join('\t'));
           continue;
