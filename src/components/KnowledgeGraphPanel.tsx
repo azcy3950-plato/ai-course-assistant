@@ -152,6 +152,8 @@ export default function KnowledgeGraphPanel(p: Props) {
     const pad = 110;
     const scale = Math.min((W - pad * 2) / Math.max(60, maxX - minX), (H - pad * 2) / Math.max(60, maxY - minY), 1.15);
     const targets = ids && ids.length ? ids.map((id) => placedById.get(id)).filter(Boolean) as Placed[] : [];
+    // 指定了焦点但全部被搜索/筛选过滤(不可见)时保持当前视图,不做无效重置
+    if (ids && ids.length && targets.length === 0 && !placedById.has(ids[0])) return;
     const cx = targets.length ? targets.reduce((s, pt) => s + pt.x, 0) / targets.length : (minX + maxX) / 2;
     const cy = targets.length ? targets.reduce((s, pt) => s + pt.y, 0) / targets.length : (minY + maxY) / 2;
     const tx = W / 2 - cx * scale;
