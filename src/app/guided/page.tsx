@@ -53,7 +53,7 @@ export default function GuidedPage() {
   useEffect(() => {
     try {
       localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({
-        messages: messages.filter((m) => !m.pending),
+        messages: messages.filter((m) => !m.pending).slice(-100).map((m) => ({ ...m, concepts: m.concepts ? m.concepts.map((c) => ({ id: c.id, name: c.name })) : undefined })),
         socratic: { active: socraticActive, question: socraticQuestion, turn, hintLevel },
       }));
     } catch { /* 隐私模式/容量满忽略 */ }
@@ -119,7 +119,7 @@ export default function GuidedPage() {
       const res = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "guided_socratic_hint", params: { question: socraticQuestion, level, history } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "提示服务暂时不可用");
       setHintLevel(level);
       setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: `💡 第 ${level}/${MAX_HINTS} 级提示：${data.hint || "想一想课程中相关的概念。"}`, pending: false } : m));
-    } catch (e) { setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: (e as Error).message || "提示获取失败，请重试", pending: false, error: true } : m)); }
+    } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: (e as Error).message || "提示获取失败，请重试", pending: false, error: true } : m)); }
     setLoading(false);
   };
 

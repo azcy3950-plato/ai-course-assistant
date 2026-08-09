@@ -446,14 +446,17 @@ export default function SandboxPage() {
   const [heatmap, setHeatmap] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">(() => { try { return localStorage.getItem("sandbox-theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
   // 场景主题联动:深色 ↔ 浅色(背景/雾/网格)
-  useEffect(() => {
+  const applyTheme = useCallback(() => {
     const sc = sceneRef.current; if (!sc) return;
-    const bg = theme === "dark" ? "#1c1c24" : "#e8eef6";
-    (sc.background as THREE.Color)?.set(bg); (sc.fog as THREE.Fog)?.color?.set(bg);
+    const isLight = themeRef.current === "light";
+    (sc.background as THREE.Color)?.set(isLight ? "#e8eef6" : "#1c1c24");
+    (sc.fog as THREE.Fog)?.color?.set(isLight ? "#e8eef6" : "#1c1c24");
     const gm = gridRef.current?.material as THREE.LineBasicMaterial | undefined;
-    if (gm) gm.color.set(theme === "dark" ? "#5a5a5a" : "#9db4cc");
-    try { localStorage.setItem("sandbox-theme", theme); } catch { /* 忽略 */ }
-  }, [theme]);
+    if (gm) gm.color.set(isLight ? "#9db4cc" : "#5a5a5a");
+  }, []);
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+  useEffect(() => { applyTheme(); try { localStorage.setItem("sandbox-theme", theme); } catch { /* 忽略 */ } }, [theme, applyTheme]);
 
   const timeStepCount = dynRes?.timeStepCount || 0;
   const timestamps: number[] = dynRes?.timestamps || [];
@@ -593,6 +596,8 @@ export default function SandboxPage() {
     const gridHelper = new THREE.GridHelper(gridCount * gridStep, gridCount, "#5a5a5a", "#3e3e3e");
     gridHelper.position.y = gndY + 0.02; grp.ground.add(gridHelper);
     gridRef.current = gridHelper;
+    // 场景与网格就绪后应用已保存的主题(初始化 effect 早于 theme effect,需此处补一次)
+    applyTheme();
 
     // ── Subcatchments — thin extruded polygons, semi-transparent ──
     data.scs.forEach((sc: SC3D) => {
@@ -786,7 +791,7 @@ export default function SandboxPage() {
       else { const ratio = Math.min(1, depth / (ts.summary?.maxDepth?.value || 1)); m.color.set(new THREE.Color().setHSL(0.57 - ratio * 0.12, 0.7, 0.35 + ratio * 0.2)); m.emissive.set("#001122"); m.emissiveIntensity = 0.15 + ratio * 0.2; }
 
       const childrenToRemove = group.children.filter(c => (c as any).userData?.overflowRing);
-      childrenToRemove.forEach(c => group.remove(c));
+      childrenToRemove.forEach(c => { group.remove(c); const m = c as THREE.Mesh; if (m.geometry) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; if (mat) mat.dispose(); });
       // 淹没热力图:按深度比例着色的半透明圆盘(蓝绿→黄→红紫)
       if (heatmap && depth > 0.02) {
         const maxD = ts.summary?.maxDepth?.value || 1;
