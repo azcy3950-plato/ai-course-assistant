@@ -125,7 +125,7 @@ export default function GuidedPage() {
       if (mySeq !== reqSeqRef.current) return; // 新对话已清空,丢弃迟到提示响应
       setHintLevel(level);
       setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: `💡 第 ${level}/${MAX_HINTS} 级提示：${data.hint || "想一想课程中相关的概念。"}`, pending: false } : m));
-    } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: (e as Error).message || "提示获取失败，请重试", pending: false, error: true } : m)); }
+    } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: (e as Error).message || "提示获取失败，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: "已停止生成提示。", pending: false, kind: "info" } : m)); }
     if (mySeq === reqSeqRef.current) setLoading(false);
   };
 
