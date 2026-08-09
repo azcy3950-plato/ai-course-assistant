@@ -21,14 +21,15 @@ function getUserEmail(req: NextRequest): string {
 export async function GET(req: NextRequest) {
   try {
     const userEmail = getUserEmail(req);
+    if (!userEmail) return NextResponse.json({ error: "未登录" }, { status: 401 });
     const graph = await loadKnowledgeGraph(userEmail);
     return NextResponse.json({
       graph,
       suggestedPath: buildSuggestedPath(graph),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "知识图谱加载失败";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[knowledge-graph] GET:', error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "知识图谱服务暂时不可用" }, { status: 500 });
   }
 }
 
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
     );
     return NextResponse.json({ ok: true, progress });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "学习状态更新失败";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[knowledge-graph] POST:', error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "学习状态更新失败，请稍后重试" }, { status: 500 });
   }
 }

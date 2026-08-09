@@ -104,6 +104,7 @@ export default function KnowledgeGraphPanel(p: Props) {
   const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
   const [viewAnim, setViewAnim] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; tx: number; ty: number; active: boolean; moved: boolean; nodeId: string | null; baseX: number; baseY: number }>({ startX: 0, startY: 0, tx: 0, ty: 0, active: false, moved: false, nodeId: null, baseX: 0, baseY: 0 });
+  const clickTimer = useRef<number | null>(null);
   const [nodeDrag, setNodeDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
 
   const visible = useMemo(() => {
@@ -143,7 +144,7 @@ export default function KnowledgeGraphPanel(p: Props) {
     return out;
   }, [adj, nodeDrag]);
 
-  const fit = useCallback((ids?: string[]) => {
+  const fit = useCallback((ids?: string[], force = false) => {
     if (!placed.length) return;
     const W = 1400, H = 900;
     // 完整图模式:缩放级别由全图决定(保持完整可见),中心对准焦点/指定节点
@@ -152,8 +153,8 @@ export default function KnowledgeGraphPanel(p: Props) {
     const pad = 110;
     const scale = Math.min((W - pad * 2) / Math.max(60, maxX - minX), (H - pad * 2) / Math.max(60, maxY - minY), 1.15);
     const targets = ids && ids.length ? ids.map((id) => placedById.get(id)).filter(Boolean) as Placed[] : [];
-    // 指定了焦点但全部被搜索/筛选过滤(不可见)时保持当前视图,不做无效重置
-    if (ids && ids.length && targets.length === 0 && !placedById.has(ids[0])) return;
+    // 指定了焦点但全部被搜索/筛选过滤(不可见)时保持当前视图,不做无效重置(用户显式点击时 force=true 跳过)
+    if (!force && ids && ids.length && targets.length === 0 && !placedById.has(ids[0])) return;
     const cx = targets.length ? targets.reduce((s, pt) => s + pt.x, 0) / targets.length : (minX + maxX) / 2;
     const cy = targets.length ? targets.reduce((s, pt) => s + pt.y, 0) / targets.length : (minY + maxY) / 2;
     const tx = W / 2 - cx * scale;
@@ -289,7 +290,7 @@ export default function KnowledgeGraphPanel(p: Props) {
         <button onClick={() => p.onModeChange("cumulative")} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.mode === "cumulative" ? "text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`} style={p.mode === "cumulative" ? { background: "linear-gradient(135deg, #165dff, #5b34ff)" } : undefined}>累计图谱</button>
         <button onClick={() => p.onDepthChange(1)} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.depth === 1 ? "bg-[#165dff] text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`}>一阶</button>
         <button onClick={() => p.onDepthChange(2)} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.depth === 2 ? "bg-[#165dff] text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`}>二阶</button>
-        <button onClick={() => fit(p.focusIds)} className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">适应视图</button>
+        <button onClick={() => fit(p.focusIds, true)} title="对准当前焦点(若被筛选过滤则重置到全图)" className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">适应视图</button>
         <button onClick={() => fit()} className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">重置布局</button>
         <button onClick={() => setLabels((v) => !v)} className={`rounded-full border px-3 py-1 text-xs font-medium shadow-sm transition ${labels ? "border-[rgba(22,93,255,0.2)] bg-[rgba(22,93,255,0.08)] text-[#2450a5]" : "border-[rgba(105,126,165,0.16)] bg-white text-[#314362]"}`}>关系标签</button>
         <button onClick={() => setLegend((v) => !v)} className={`rounded-full border px-3 py-1 text-xs font-medium shadow-sm transition ${legend ? "border-[rgba(22,93,255,0.2)] bg-[rgba(22,93,255,0.08)] text-[#2450a5]" : "border-[rgba(105,126,165,0.16)] bg-white text-[#314362]"}`}>图例</button>
@@ -346,8 +347,8 @@ export default function KnowledgeGraphPanel(p: Props) {
                 const radius = radiusOf(depth);
                 const lines = wrapLabel(node.name);
                 return <g key={node.id} data-node-id={node.id} className={`node-shell${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.45 : 1, transition: "opacity .3s ease, transform .55s cubic-bezier(0.22, 0.61, 0.36, 1)", cursor: "grab", transform: `translate(${fx}px, ${fy}px)` }}
-                  onClick={(e) => { e.stopPropagation(); if (dragRef.current.moved) { dragRef.current.moved = false; return; } p.onNodeClick(node); }}
-                  onDoubleClick={(e) => { e.stopPropagation(); p.onExpand(node); }}
+                  onClick={(e) => { e.stopPropagation(); if (dragRef.current.moved) { dragRef.current.moved = false; return; } if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; return; } clickTimer.current = window.setTimeout(() => { clickTimer.current = null; p.onNodeClick(node); }, 220); }}
+                  onDoubleClick={(e) => { e.stopPropagation(); if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; } p.onExpand(node); }}
                   onMouseEnter={() => setHover(node)}
                   onMouseLeave={() => setHover(null)}>
                   <circle cx="0" cy="0" r={radius} fill={kind.color} fillOpacity={depth === 0 ? 1 : 0.92} stroke="rgba(255,255,255,0.88)" strokeWidth={isSelected ? 3 : 2} filter={isSelected ? "url(#kgHoverGlow)" : "url(#kgSoftGlow)"} style={{ transition: "r .3s ease, stroke-width .25s ease, filter .25s ease" }} />

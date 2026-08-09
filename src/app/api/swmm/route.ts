@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verify as jwtVerify } from 'jsonwebtoken';
 import { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -278,8 +279,23 @@ with Output(out_path) as out:
 }
 
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// 鉴权:与 /api/agent 一致,解析 JWT 邮箱,无效即 401
+function getUserEmail(req: NextRequest): string {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!token || !jwtSecret) return "";
+  try {
+    return (jwtVerify(token, jwtSecret) as { email?: string }).email || "";
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const userEmail = getUserEmail(req);
+    if (!userEmail) return NextResponse.json({ error: "未登录" }, { status: 401 });
     const body = await req.json().catch(() => ({}));
     const rawIntensity = body.intensity == null ? NaN : Number(body.intensity);
     const intensity = Number.isFinite(rawIntensity) ? Math.max(10, Math.min(500, rawIntensity)) : 80;

@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "next dev",
     "check": "tsc --noEmit",
+    "test": "vitest run",
     "build": "npm run copy:cesium && next build",
     "start": "next start",
     "lint": "next lint",
@@ -53,7 +54,8 @@
     "@types/react-dom": "^19.2.3",
     "postcss": "^8.5.19",
     "tailwindcss": "^4.3.3",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "postcss": "$postcss",

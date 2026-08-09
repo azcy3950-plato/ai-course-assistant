@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { verify } from "jsonwebtoken";
+import { sanitizeHistory } from "@/lib/chat-history";
 import {
   getNodesWithoutEmbeddings,
   loadKnowledgeGraph,
@@ -218,14 +219,6 @@ function buildSocraticFacts(graphContext: GraphContext, chunks: RetrievedChunk[]
     ? chunks.map((chunk, index) => `[${index + 1}] ${chunk.doc_name}｜${chunk.chapter || "未标章节"}\n${chunk.content || ""}`).join("\n\n")
     : "课程知识库中没有检索到可引用片段。";
   return `${graphFacts}\n\n【课程资料】\n${courseFacts}`;
-}
-
-/** 过滤对话历史：只保留 user/assistant 角色，丢弃其余（含 system 注入），防止客户端注入系统消息。 */
-function sanitizeHistory(raw: Array<{ role?: string; content?: string }>): Array<{ role: string; content: string }> {
-  return (raw || [])
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .map((message) => ({ role: message.role as "user" | "assistant", content: String(message.content || "") }))
-    .filter((message) => message.content.length > 0);
 }
 
 async function prepareKnowledgeTurn(question: string, userEmail: string) {
