@@ -91,8 +91,8 @@ export default function GuidedPage() {
       setMessages((old) => [...old, { id: `${requestId}-q`, role: "user", content: text }, { id: `${requestId}-a`, role: "assistant", content: "正在结合课程知识图谱组织引导问题…", pending: true }]);
       try {
         const res = await fetch("/api/agent", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "guided_socratic_start", params: { question: text } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "引导服务暂时不可用");
-        const ids = data.graphContext ? setCurrentFromContext(data.graphContext) : []; const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[];
         if (mySeq !== reqSeqRef.current) return; // 新对话已清空,丢弃迟到响应
+        const ids = data.graphContext ? setCurrentFromContext(data.graphContext) : []; const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[];
         setSocraticActive(true); setSocraticQuestion(text); setTurn(1); setHintLevel(0);
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.greeting || "让我们一步步来思考这个问题。", pending: false, nodeIds: ids, concepts, kind: "answer" } : m));
       } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: "已停止生成。你可以重新提问或继续。", pending: false, kind: "info" } : m)); }
@@ -101,9 +101,9 @@ export default function GuidedPage() {
       setMessages((old) => [...old, { id: `${requestId}-q`, role: "user", content: text }, { id: `${requestId}-a`, role: "assistant", content: "正在评估你的回答并继续引导…", pending: true }]);
       try {
         const res = await fetch("/api/agent", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "guided_socratic_turn", params: { question: socraticQuestion, answer: text, turn, history } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "引导服务暂时不可用");
+        if (mySeq !== reqSeqRef.current) return; // 新对话已清空,丢弃迟到响应
         const ids = data.graphContext ? setCurrentFromContext(data.graphContext) : []; const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[];
         const kind = data.status === "complete" ? "final" : (data.status === "mastered" ? "info" : "answer");
-        if (mySeq !== reqSeqRef.current) return; // 新对话已清空,丢弃迟到响应
         if (data.status === "complete" || data.status === "mastered") { setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); }
         else setTurn((t) => Math.min(MAX_TURNS, t + 1));
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.response || "继续思考一下，你离答案很近了。", pending: false, nodeIds: ids, concepts, kind } : m));
@@ -114,15 +114,17 @@ export default function GuidedPage() {
 
   const requestHint = async () => {
     if (loading || !socraticActive || hintLevel >= MAX_HINTS) return;
+    const mySeq = ++reqSeqRef.current;
     const level = hintLevel + 1; setLoading(true); const requestId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const history = messages.slice(-8).map((m) => ({ role: m.role, content: m.content }));
     setMessages((old) => [...old, { id: `${requestId}-h`, role: "assistant", content: `正在生成第 ${level} 级提示…`, pending: true, kind: "hint" }]);
     try {
       const res = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "guided_socratic_hint", params: { question: socraticQuestion, level, history } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "提示服务暂时不可用");
+      if (mySeq !== reqSeqRef.current) return; // 新对话已清空,丢弃迟到提示响应
       setHintLevel(level);
       setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: `💡 第 ${level}/${MAX_HINTS} 级提示：${data.hint || "想一想课程中相关的概念。"}`, pending: false } : m));
     } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: (e as Error).message || "提示获取失败，请重试", pending: false, error: true } : m)); }
-    setLoading(false);
+    if (mySeq === reqSeqRef.current) setLoading(false);
   };
 
   const resetSocratic = () => { setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); setMessages((old) => [...old, { id: `reset-${Date.now()}`, role: "assistant", content: "本轮引导已结束。你可以提出一个新的问题继续学习。", kind: "info" }]); };
@@ -136,7 +138,7 @@ export default function GuidedPage() {
     if (messages.length === 0) return;
     if (!window.confirm("确定清空当前对话并重新开始吗？此操作不可撤销。")) return;
     abortRef.current?.abort(); reqSeqRef.current++; // 中止飞行中请求,防止旧响应复活状态
-    setMessages([]); setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); setSelected(null); setInput("");
+    setLoading(false); setMessages([]); setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); setSelected(null); setInput("");
     try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* 隐私模式忽略 */ }
   };
   const exportChat = () => {
