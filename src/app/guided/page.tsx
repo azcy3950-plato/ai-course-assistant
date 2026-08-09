@@ -46,7 +46,7 @@ export default function GuidedPage() {
   const dragging = useRef(false);
   const [resizing, setResizing] = useState(false);
 
-  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); try { const raw = localStorage.getItem(CHAT_STORAGE_KEY); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed.messages)) { const msgs = (parsed.messages as ChatMessage[]).filter((m) => m && typeof m.content === "string" && !m.pending); if (msgs.length) { setMessages(msgs); const lastNodes = [...msgs].reverse().find((m) => m.nodeIds?.length)?.nodeIds; if (lastNodes?.length) setFocusIds(lastNodes.slice(0, 1)); } } if (parsed.socratic && typeof parsed.socratic.active === "boolean") { setSocraticActive(parsed.socratic.active); if (typeof parsed.socratic.question === "string") setSocraticQuestion(parsed.socratic.question); if (typeof parsed.socratic.turn === "number") setTurn(parsed.socratic.turn); if (typeof parsed.socratic.hintLevel === "number") setHintLevel(parsed.socratic.hintLevel); } } } catch { /* 旧数据/隐私模式忽略 */ } }, []);
+  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); let restoredFocus = false; fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); if (!restoredFocus) setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); try { const raw = localStorage.getItem(CHAT_STORAGE_KEY); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed.messages)) { const msgs = (parsed.messages as ChatMessage[]).filter((m) => m && typeof m.content === "string" && !m.pending); if (msgs.length) { setMessages(msgs); const lastNodes = [...msgs].reverse().find((m) => m.nodeIds?.length)?.nodeIds; if (lastNodes?.length) { restoredFocus = true; setFocusIds(lastNodes.slice(0, 1)); } } } if (parsed.socratic && typeof parsed.socratic.active === "boolean") { setSocraticActive(parsed.socratic.active); if (typeof parsed.socratic.question === "string") setSocraticQuestion(parsed.socratic.question); if (typeof parsed.socratic.turn === "number") setTurn(parsed.socratic.turn); if (typeof parsed.socratic.hintLevel === "number") setHintLevel(parsed.socratic.hintLevel); } } } catch { /* 旧数据/隐私模式忽略 */ } }, []);
   const ratioRef = useRef(ratio);
   useEffect(() => { ratioRef.current = ratio; }, [ratio]);
   // 对话持久化:消息或苏格拉底状态变化时写入 localStorage(跳过 pending)
@@ -139,7 +139,7 @@ export default function GuidedPage() {
   const newChat = () => {
     if (messages.length === 0) return;
     if (!window.confirm("确定清空当前对话并重新开始吗？此操作不可撤销。")) return;
-    abortRef.current?.abort(); reqSeqRef.current++; // 中止飞行中请求,防止旧响应复活状态
+    abortRef.current?.abort(); abortRef.current = null; reqSeqRef.current++; // 中止飞行中请求,防止旧响应复活状态
     setLoading(false); setMessages([]); setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); setSelected(null); setInput("");
     try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* 隐私模式忽略 */ }
   };

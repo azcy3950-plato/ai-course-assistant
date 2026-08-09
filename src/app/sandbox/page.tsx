@@ -345,7 +345,7 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
     series: compareData.map((s) => ({ name: s.name, type: 'line' as const, data: s.data, smooth: false, symbol: 'none', lineStyle: { color: s.color, width: 1.5 } })),
   } : null;
 
-  if (selected.type === "node") {
+  if (selected?.type === "node") {
     const nd = dynRes?.nodes?.[selected.data.id];
     if (!nd) return null;
     const d = nd.depth || []; const ti = nd.totalInflow || []; const pv = nd.pondedVolume || []; const fl = nd.floodingLosses || [];
@@ -379,7 +379,7 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
     );
   }
 
-  if (selected.type === "pipe") {
+  if (selected?.type === "pipe") {
     const ld = dynRes?.links?.[selected.data.id];
     if (!ld) return null;
     const fl = ld.flow || []; const dp = ld.depth || []; const vl = ld.velocity || []; const cp = ld.capacity || [];
