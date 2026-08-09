@@ -775,6 +775,9 @@ export default function SandboxPage() {
       const isOverflow = nodeInfo && depth > (nodeInfo.maxD || 99);
 
       let wm = waterMeshMap.current.get(nid);
+      // 先清理热力图/溢流环(含 early-return 路径,防止水深回落后圆盘残留)
+      const childrenToRemove = group.children.filter(c => (c as any).userData?.overflowRing);
+      childrenToRemove.forEach(c => { group.remove(c); const m = c as THREE.Mesh; if (m.geometry) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; if (mat) mat.dispose(); });
       if (depth < 0.003) { if (wm) wm.visible = false; return; }
       if (!wm) {
         const wGeom = new THREE.CylinderGeometry(0.18, 0.18, 1, 8);
@@ -790,9 +793,7 @@ export default function SandboxPage() {
       if (ponding > 0.01 || isOverflow) { m.color.set("#e04040"); m.emissive.set("#300000"); m.emissiveIntensity = 0.4; }
       else { const ratio = Math.min(1, depth / (ts.summary?.maxDepth?.value || 1)); m.color.set(new THREE.Color().setHSL(0.57 - ratio * 0.12, 0.7, 0.35 + ratio * 0.2)); m.emissive.set("#001122"); m.emissiveIntensity = 0.15 + ratio * 0.2; }
 
-      const childrenToRemove = group.children.filter(c => (c as any).userData?.overflowRing);
-      childrenToRemove.forEach(c => { group.remove(c); const m = c as THREE.Mesh; if (m.geometry) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; if (mat) mat.dispose(); });
-      // 淹没热力图:按深度比例着色的半透明圆盘(蓝绿→黄→红紫)
+      // 淹没热力图:按深度比例着色的半透明圆盘(蓝绿→黄→红紫)(清理已统一在 early-return 前)
       if (heatmap && depth > 0.02) {
         const maxD = ts.summary?.maxDepth?.value || 1;
         const ratio = Math.min(1, depth / Math.max(0.05, maxD));

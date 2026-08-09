@@ -133,6 +133,7 @@ export default function GuidedPage() {
   const newChat = () => {
     if (messages.length === 0) return;
     if (!window.confirm("确定清空当前对话并重新开始吗？此操作不可撤销。")) return;
+    abortRef.current?.abort(); reqSeqRef.current++; // 中止飞行中请求,防止旧响应复活状态
     setMessages([]); setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); setSelected(null); setInput("");
     try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* 隐私模式忽略 */ }
   };
