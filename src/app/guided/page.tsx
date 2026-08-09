@@ -92,6 +92,7 @@ export default function GuidedPage() {
       try {
         const res = await fetch("/api/agent", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "guided_socratic_start", params: { question: text } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "引导服务暂时不可用");
         const ids = data.graphContext ? setCurrentFromContext(data.graphContext) : []; const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[];
+        if (mySeq !== reqSeqRef.current) return; // 新对话已清空,丢弃迟到响应
         setSocraticActive(true); setSocraticQuestion(text); setTurn(1); setHintLevel(0);
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.greeting || "让我们一步步来思考这个问题。", pending: false, nodeIds: ids, concepts, kind: "answer" } : m));
       } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: "已停止生成。你可以重新提问或继续。", pending: false, kind: "info" } : m)); }
@@ -102,6 +103,7 @@ export default function GuidedPage() {
         const res = await fetch("/api/agent", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "guided_socratic_turn", params: { question: socraticQuestion, answer: text, turn, history } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "引导服务暂时不可用");
         const ids = data.graphContext ? setCurrentFromContext(data.graphContext) : []; const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[];
         const kind = data.status === "complete" ? "final" : (data.status === "mastered" ? "info" : "answer");
+        if (mySeq !== reqSeqRef.current) return; // 新对话已清空,丢弃迟到响应
         if (data.status === "complete" || data.status === "mastered") { setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); }
         else setTurn((t) => Math.min(MAX_TURNS, t + 1));
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.response || "继续思考一下，你离答案很近了。", pending: false, nodeIds: ids, concepts, kind } : m));
