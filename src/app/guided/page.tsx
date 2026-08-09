@@ -115,11 +115,13 @@ export default function GuidedPage() {
   const requestHint = async () => {
     if (loading || !socraticActive || hintLevel >= MAX_HINTS) return;
     const mySeq = ++reqSeqRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController(); abortRef.current = controller;
     const level = hintLevel + 1; setLoading(true); const requestId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const history = messages.slice(-8).map((m) => ({ role: m.role, content: m.content }));
     setMessages((old) => [...old, { id: `${requestId}-h`, role: "assistant", content: `正在生成第 ${level} 级提示…`, pending: true, kind: "hint" }]);
     try {
-      const res = await fetch("/api/agent", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "guided_socratic_hint", params: { question: socraticQuestion, level, history } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "提示服务暂时不可用");
+      const res = await fetch("/api/agent", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ action: "guided_socratic_hint", params: { question: socraticQuestion, level, history } }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "提示服务暂时不可用");
       if (mySeq !== reqSeqRef.current) return; // 新对话已清空,丢弃迟到提示响应
       setHintLevel(level);
       setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: `💡 第 ${level}/${MAX_HINTS} 级提示：${data.hint || "想一想课程中相关的概念。"}`, pending: false } : m));
