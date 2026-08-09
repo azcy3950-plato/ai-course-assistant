@@ -291,11 +291,28 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
 // ═══════════════════════════════════════════════════════════
 // TIME-SERIES CHART PANEL
 // ═══════════════════════════════════════════════════════════
-function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel }: {
-  selected: any; dynRes: any; dynStep: number; timeStepCount: number; currentTimeLabel: string;
+function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel, compareRes }: {
+  selected: any; dynRes: any; dynStep: number; timeStepCount: number; currentTimeLabel: string; compareRes?: Record<string, any> | null;
 }) {
   const [chartOpen, setChartOpen] = useState(false);
   const timestamps: number[] = dynRes?.timestamps || [];
+
+  // 三方案系统总流量对比(各方案所有管道 flow 逐时间步求和)
+  const compareData = useMemo(() => {
+    if (!compareRes) return null;
+    const schemes: Array<["default" | "green" | "gray", string, string]> = [["default", "现状", "#9e9e9e"], ["green", "绿色海绵", "#81c784"], ["gray", "灰色强开发", "#ff8a65"]];
+    const out: Array<{ name: string; color: string; data: number[] }> = [];
+    for (const [lc, name, color] of schemes) {
+      const r = compareRes[lc];
+      if (!r?.links) return null;
+      const links = Object.values(r.links) as Array<{ flow?: number[] }>;
+      const len = r.timestamps?.length || 0;
+      const data: number[] = new Array(len).fill(0);
+      links.forEach((ld) => { const fl = ld.flow || []; for (let i = 0; i < Math.min(len, fl.length); i++) data[i] += Math.abs(fl[i] || 0); });
+      out.push({ name, color, data });
+    }
+    return out;
+  }, [compareRes]);
 
   function makeOption(title: string, data: number[], yLabel: string, color: string) {
     const markData = dynStep < data.length ? [{ xAxis: timestamps[dynStep] ?? dynStep }] : [];
@@ -315,6 +332,32 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
   }
 
   const chartH = 140;
+
+  // 三方案对比图(系统总流量曲线叠加),独立于选中对象展示
+  if (compareData) {
+    const compareOption = {
+      backgroundColor: 'transparent',
+      grid: { top: 32, right: 12, bottom: 24, left: 48 },
+      tooltip: { trigger: 'axis' as const },
+      legend: { show: true, textStyle: { color: '#aaa', fontSize: 9 }, top: 2 },
+      xAxis: { type: 'category' as const, data: timestamps.map((t: number) => t.toFixed(1) + 'h'), axisLabel: { color: '#888', fontSize: 9, interval: Math.max(0, Math.floor(timestamps.length / 6) - 1) } },
+      yAxis: { type: 'value' as const, name: '总流量 (m³/s)', nameTextStyle: { color: '#888', fontSize: 9 }, axisLabel: { color: '#888', fontSize: 9 } },
+      series: compareData.map((s) => ({ name: s.name, type: 'line' as const, data: s.data, smooth: false, symbol: 'none', lineStyle: { color: s.color, width: 1.5 } })),
+    };
+    return (
+      <div className="absolute left-2 right-2 bg-black/92 backdrop-blur rounded-lg border border-gray-700 z-10" style={{ bottom: 48 }}>
+        <button onClick={() => setChartOpen(!chartOpen)} className="w-full px-3 py-1 text-left text-[10px] text-gray-400 hover:text-gray-200 flex justify-between">
+          <span>📈 三方案系统总流量对比</span><span>{chartOpen ? "收起 ▲" : "展开 ▼"}</span>
+        </button>
+        {chartOpen && (
+          <div className="px-1 pb-1">
+            <ReactEChartsCore echarts={echarts} option={compareOption} style={{ height: 170 }} notMerge />
+            <div className="px-1 pb-0.5 text-[9px] text-gray-500">灰色强开发抬高峰值 · 绿色海绵削减峰值 — 点击三方案对比按钮生成</div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (selected.type === "node") {
     const nd = dynRes?.nodes?.[selected.data.id];
@@ -367,6 +410,7 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
 export default function SandboxPage() {
   const cr = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const gridRef = useRef<THREE.GridHelper | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const dataRef = useRef<any>(null);
@@ -399,6 +443,17 @@ export default function SandboxPage() {
   const [dynSpd, setDynSpd] = useState(1);
   const [dynPhase, setDynPhase] = useState<"config"|"loading"|"ready"|"running"|"paused"|"done">("config");
   const [simId, setSimId] = useState("");
+  const [heatmap, setHeatmap] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">(() => { try { return localStorage.getItem("sandbox-theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
+  // 场景主题联动:深色 ↔ 浅色(背景/雾/网格)
+  useEffect(() => {
+    const sc = sceneRef.current; if (!sc) return;
+    const bg = theme === "dark" ? "#1c1c24" : "#e8eef6";
+    (sc.background as THREE.Color)?.set(bg); (sc.fog as THREE.Fog)?.color?.set(bg);
+    const gm = gridRef.current?.material as THREE.LineBasicMaterial | undefined;
+    if (gm) gm.color.set(theme === "dark" ? "#5a5a5a" : "#9db4cc");
+    try { localStorage.setItem("sandbox-theme", theme); } catch { /* 忽略 */ }
+  }, [theme]);
 
   const timeStepCount = dynRes?.timeStepCount || 0;
   const timestamps: number[] = dynRes?.timestamps || [];
@@ -537,6 +592,7 @@ export default function SandboxPage() {
     const gridCount = Math.round(gndSpan / gridStep);
     const gridHelper = new THREE.GridHelper(gridCount * gridStep, gridCount, "#5a5a5a", "#3e3e3e");
     gridHelper.position.y = gndY + 0.02; grp.ground.add(gridHelper);
+    gridRef.current = gridHelper;
 
     // ── Subcatchments — thin extruded polygons, semi-transparent ──
     data.scs.forEach((sc: SC3D) => {
@@ -731,6 +787,16 @@ export default function SandboxPage() {
 
       const childrenToRemove = group.children.filter(c => (c as any).userData?.overflowRing);
       childrenToRemove.forEach(c => group.remove(c));
+      // 淹没热力图:按深度比例着色的半透明圆盘(蓝绿→黄→红紫)
+      if (heatmap && depth > 0.02) {
+        const maxD = ts.summary?.maxDepth?.value || 1;
+        const ratio = Math.min(1, depth / Math.max(0.05, maxD));
+        const ringGeom = new THREE.CircleGeometry(0.42, 16);
+        const hue = 0.62 - ratio * 0.62; // 蓝(0.62)→红(0)
+        const ring = new THREE.Mesh(ringGeom, new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(hue, 0.85, 0.55), transparent: true, opacity: 0.28 + ratio * 0.3, depthWrite: false }));
+        ring.position.y = groundY + 0.01; ring.rotation.x = -Math.PI / 2; (ring as any).userData = { overflowRing: true };
+        group.add(ring);
+      }
       if (ponding > 0.01) {
         const ringGeom = new THREE.TorusGeometry(0.28, 0.05, 8, 10);
         const ring = new THREE.Mesh(ringGeom, new THREE.MeshStandardMaterial({ color: "#e04040", emissive: "#300000", emissiveIntensity: 0.6, roughness: 0.1 }));
@@ -750,7 +816,7 @@ export default function SandboxPage() {
       mat.emissive.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
       mat.emissiveIntensity = isFull ? 0.5 : 0.08 + ratio * 0.4;
     });
-  }, [dynStep, dynRes, vertEx]);
+  }, [dynStep, dynRes, vertEx, heatmap]);
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
@@ -806,6 +872,9 @@ export default function SandboxPage() {
           <button onClick={() => { setMode("static"); clearWaterMeshes(); }} className={"px-3 py-1 rounded-md font-bold text-xs " + (mode === "static" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white")}>📐 静态沙盘</button>
           <button onClick={() => setMode("dynamic")} className={"px-3 py-1 rounded-md font-bold text-xs " + (mode === "dynamic" ? "bg-cyan-600 text-white" : "text-gray-400 hover:text-white")}>▶ 动态推演</button>
         </div>
+        <div className="h-4 w-px bg-gray-600" />
+        <button onClick={() => setHeatmap(v => !v)} title="节点淹没深度热力图" className={"px-2 py-1 rounded-md text-xs font-bold " + (heatmap ? "bg-purple-600 text-white" : "text-gray-400 hover:text-white")}>🌡 热力图</button>
+        <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="切换深浅主题" className={"px-2 py-1 rounded-md text-xs font-bold " + (theme === "light" ? "bg-amber-500 text-black" : "text-gray-400 hover:text-white")}>{theme === "dark" ? "☀️ 浅色" : "🌙 深色"}</button>
         <div className="h-4 w-px bg-gray-600" />
         {[{ id: "sc", l: "汇水区" },{ id: "pipes", l: "管道" },{ id: "nodes", l: "节点" },{ id: "ground", l: "地表" }].map(({ id, l }) => (
           <button key={id} onClick={() => toggleLayer(id)} className={"px-1.5 py-0.5 rounded text-[10px] " + (layers[id] ? "bg-gray-600 text-white" : "bg-gray-800 text-gray-500")}>{l}</button>
@@ -965,14 +1034,15 @@ export default function SandboxPage() {
         </div>
       )}
 
-      {/* ── Time-series charts (dynamic + selected object) ── */}
-      {mode === "dynamic" && selected && dynRes?.ok && timeStepCount > 0 && (
+      {/* ── Time-series charts (dynamic + selected object + 三方案对比) ── */}
+      {mode === "dynamic" && dynRes?.ok && timeStepCount > 0 && (selected || compareRes) && (
         <ChartPanel
           selected={selected}
           dynRes={dynRes}
           dynStep={dynStep}
           timeStepCount={timeStepCount}
           currentTimeLabel={currentTimeLabel}
+          compareRes={compareRes}
         />
       )}
 
