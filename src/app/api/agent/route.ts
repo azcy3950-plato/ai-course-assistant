@@ -258,8 +258,10 @@ function extractJsonArray(text: string): unknown[] {
 export async function POST(req: NextRequest) {
   try {
     const { action, params = {} } = await req.json();
-    if (!req.headers.get("authorization")) return NextResponse.json({ error: "未登录" }, { status: 401 });
     const userEmail = getUserEmail(req);
+    // 严格鉴权:不仅要求 authorization 头存在,还必须解析出有效邮箱
+    // (否则伪造 Bearer 头即可免费调用所有 action,消耗 DeepSeek/DashScope 配额)
+    if (!userEmail) return NextResponse.json({ error: "未登录" }, { status: 401 });
 
     if (action === "knowledge_stream") {
       const question = String(params.question || "").trim();
