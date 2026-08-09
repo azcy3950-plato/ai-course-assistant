@@ -612,7 +612,7 @@ export default function SandboxPage() {
     abortRef.current = ctrl;
     try {
       const tid = setTimeout(() => ctrl.abort(), 90000);
-      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intensity: dynI, landcover }), signal: ctrl.signal });
+      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: dynI, landcover }), signal: ctrl.signal });
       clearTimeout(tid);
       if (abortRef.current === ctrl) abortRef.current = null;
       const d = await res.json();
@@ -637,7 +637,7 @@ export default function SandboxPage() {
         const ctrl = new AbortController();
         abortRef.current = ctrl;
         const tid = setTimeout(() => ctrl.abort(), 90000);
-        const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intensity: dynI, landcover: lc }), signal: ctrl.signal });
+        const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: dynI, landcover: lc }), signal: ctrl.signal });
         clearTimeout(tid);
         if (abortRef.current === ctrl) abortRef.current = null;
         const d = await res.json();

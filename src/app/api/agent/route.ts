@@ -381,7 +381,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "guided_free_turn") {
-      const history = (params.history || []).map((message: { role: string; content: string }) => ({ role: message.role, content: message.content }));
+      const history = sanitizeHistory(params.history);
       const text = await callDeepSeek([
         { role: "system", content: GUIDED_PROMPT },
         ...history,
@@ -391,7 +391,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "guided_free_hint") {
-      const history = (params.history || []).map((message: { role: string; content: string }) => ({ role: message.role, content: message.content }));
+      const history = sanitizeHistory(params.history);
       const text = await callDeepSeek([
         { role: "system", content: `${GUIDED_PROMPT}\n根据对话给第${params.level || 1}级提示，只给一个思考方向或关键概念。` },
         ...history,
