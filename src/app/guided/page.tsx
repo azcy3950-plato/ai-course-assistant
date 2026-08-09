@@ -46,7 +46,7 @@ export default function GuidedPage() {
   const dragging = useRef(false);
   const [resizing, setResizing] = useState(false);
 
-  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); try { const raw = localStorage.getItem(CHAT_STORAGE_KEY); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed.messages)) { const msgs = (parsed.messages as ChatMessage[]).filter((m) => m && typeof m.content === "string" && !m.pending); if (msgs.length) setMessages(msgs); } if (parsed.socratic && typeof parsed.socratic.active === "boolean") { setSocraticActive(parsed.socratic.active); if (typeof parsed.socratic.question === "string") setSocraticQuestion(parsed.socratic.question); if (typeof parsed.socratic.turn === "number") setTurn(parsed.socratic.turn); if (typeof parsed.socratic.hintLevel === "number") setHintLevel(parsed.socratic.hintLevel); } } } catch { /* 旧数据/隐私模式忽略 */ } }, []);
+  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); try { const raw = localStorage.getItem(CHAT_STORAGE_KEY); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed.messages)) { const msgs = (parsed.messages as ChatMessage[]).filter((m) => m && typeof m.content === "string" && !m.pending); if (msgs.length) { setMessages(msgs); const lastNodes = [...msgs].reverse().find((m) => m.nodeIds?.length)?.nodeIds; if (lastNodes?.length) setFocusIds(lastNodes.slice(0, 1)); } } if (parsed.socratic && typeof parsed.socratic.active === "boolean") { setSocraticActive(parsed.socratic.active); if (typeof parsed.socratic.question === "string") setSocraticQuestion(parsed.socratic.question); if (typeof parsed.socratic.turn === "number") setTurn(parsed.socratic.turn); if (typeof parsed.socratic.hintLevel === "number") setHintLevel(parsed.socratic.hintLevel); } } } catch { /* 旧数据/隐私模式忽略 */ } }, []);
   const ratioRef = useRef(ratio);
   useEffect(() => { ratioRef.current = ratio; }, [ratio]);
   // 对话持久化:消息或苏格拉底状态变化时写入 localStorage(跳过 pending)
@@ -109,7 +109,7 @@ export default function GuidedPage() {
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.response || "继续思考一下，你离答案很近了。", pending: false, nodeIds: ids, concepts, kind } : m));
       } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: "已停止生成。你可以继续回答或提出新问题。", pending: false, kind: "info" } : m)); }
     }
-    if (mySeq === reqSeqRef.current) setLoading(false);
+    if (mySeq === reqSeqRef.current) { if (abortRef.current === controller) abortRef.current = null; setLoading(false); }
   };
 
   const requestHint = async () => {
@@ -126,7 +126,7 @@ export default function GuidedPage() {
       setHintLevel(level);
       setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: `💡 第 ${level}/${MAX_HINTS} 级提示：${data.hint || "想一想课程中相关的概念。"}`, pending: false } : m));
     } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: (e as Error).message || "提示获取失败，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-h` ? { ...m, content: "已停止生成提示。", pending: false, kind: "info" } : m)); }
-    if (mySeq === reqSeqRef.current) setLoading(false);
+    if (mySeq === reqSeqRef.current) { if (abortRef.current === controller) abortRef.current = null; setLoading(false); }
   };
 
   const resetSocratic = () => { setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); setMessages((old) => [...old, { id: `reset-${Date.now()}`, role: "assistant", content: "本轮引导已结束。你可以提出一个新的问题继续学习。", kind: "info" }]); };

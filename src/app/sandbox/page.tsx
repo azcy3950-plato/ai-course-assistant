@@ -332,32 +332,18 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
   }
 
   const chartH = 140;
+  const [compareOpen, setCompareOpen] = useState(false);
 
-  // 三方案对比图(系统总流量曲线叠加),独立于选中对象展示
-  if (compareData) {
-    const compareOption = {
-      backgroundColor: 'transparent',
-      grid: { top: 32, right: 12, bottom: 24, left: 48 },
-      tooltip: { trigger: 'axis' as const },
-      legend: { show: true, textStyle: { color: '#aaa', fontSize: 9 }, top: 2 },
-      xAxis: { type: 'category' as const, data: timestamps.map((t: number) => t.toFixed(1) + 'h'), axisLabel: { color: '#888', fontSize: 9, interval: Math.max(0, Math.floor(timestamps.length / 6) - 1) } },
-      yAxis: { type: 'value' as const, name: '总流量 (m³/s)', nameTextStyle: { color: '#888', fontSize: 9 }, axisLabel: { color: '#888', fontSize: 9 } },
-      series: compareData.map((s) => ({ name: s.name, type: 'line' as const, data: s.data, smooth: false, symbol: 'none', lineStyle: { color: s.color, width: 1.5 } })),
-    };
-    return (
-      <div className="absolute left-2 right-2 bg-black/92 backdrop-blur rounded-lg border border-gray-700 z-10" style={{ bottom: 48 }}>
-        <button onClick={() => setChartOpen(!chartOpen)} className="w-full px-3 py-1 text-left text-[10px] text-gray-400 hover:text-gray-200 flex justify-between">
-          <span>📈 三方案系统总流量对比</span><span>{chartOpen ? "收起 ▲" : "展开 ▼"}</span>
-        </button>
-        {chartOpen && (
-          <div className="px-1 pb-1">
-            <ReactEChartsCore echarts={echarts} option={compareOption} style={{ height: 170 }} notMerge />
-            <div className="px-1 pb-0.5 text-[9px] text-gray-500">灰色强开发抬高峰值 · 绿色海绵削减峰值 — 点击三方案对比按钮生成</div>
-          </div>
-        )}
-      </div>
-    );
-  }
+  // 三方案对比图(系统总流量曲线叠加),与选中对象图表可同时展示
+  const compareOption = compareData ? {
+    backgroundColor: 'transparent',
+    grid: { top: 32, right: 12, bottom: 24, left: 48 },
+    tooltip: { trigger: 'axis' as const },
+    legend: { show: true, textStyle: { color: '#aaa', fontSize: 9 }, top: 2 },
+    xAxis: { type: 'category' as const, data: timestamps.map((t: number) => t.toFixed(1) + 'h'), axisLabel: { color: '#888', fontSize: 9, interval: Math.max(0, Math.floor(timestamps.length / 6) - 1) } },
+    yAxis: { type: 'value' as const, name: '总流量 (m³/s)', nameTextStyle: { color: '#888', fontSize: 9 }, axisLabel: { color: '#888', fontSize: 9 } },
+    series: compareData.map((s) => ({ name: s.name, type: 'line' as const, data: s.data, smooth: false, symbol: 'none', lineStyle: { color: s.color, width: 1.5 } })),
+  } : null;
 
   if (selected.type === "node") {
     const nd = dynRes?.nodes?.[selected.data.id];
@@ -365,6 +351,19 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
     const d = nd.depth || []; const ti = nd.totalInflow || []; const pv = nd.pondedVolume || []; const fl = nd.floodingLosses || [];
     return (
       <div className="absolute left-2 right-2 bg-black/92 backdrop-blur rounded-lg border border-gray-700 z-10" style={{ bottom: 48 }}>
+        {compareOption && (
+          <>
+            <button onClick={() => setCompareOpen(!compareOpen)} className="w-full px-3 py-1 text-left text-[10px] text-gray-400 hover:text-gray-200 flex justify-between border-b border-gray-800">
+              <span>📈 三方案系统总流量对比</span><span>{compareOpen ? "收起 ▲" : "展开 ▼"}</span>
+            </button>
+            {compareOpen && (
+              <div className="px-1 pb-1 border-b border-gray-800">
+                <ReactEChartsCore echarts={echarts} option={compareOption} style={{ height: 170 }} notMerge />
+                <div className="px-1 pb-0.5 text-[9px] text-gray-500">灰色强开发抬高峰值 · 绿色海绵削减峰值 — 点击三方案对比按钮生成</div>
+              </div>
+            )}
+          </>
+        )}
         <button onClick={() => setChartOpen(!chartOpen)} className="w-full px-3 py-1 text-left text-[10px] text-gray-400 hover:text-gray-200 flex justify-between">
           <span>📈 {selected.data.id} 时间序列</span><span>{chartOpen ? "收起 ▲" : "展开 ▼"}</span>
         </button>
@@ -386,6 +385,19 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
     const fl = ld.flow || []; const dp = ld.depth || []; const vl = ld.velocity || []; const cp = ld.capacity || [];
     return (
       <div className="absolute left-2 right-2 bg-black/92 backdrop-blur rounded-lg border border-gray-700 z-10" style={{ bottom: 48 }}>
+        {compareOption && (
+          <>
+            <button onClick={() => setCompareOpen(!compareOpen)} className="w-full px-3 py-1 text-left text-[10px] text-gray-400 hover:text-gray-200 flex justify-between border-b border-gray-800">
+              <span>📈 三方案系统总流量对比</span><span>{compareOpen ? "收起 ▲" : "展开 ▼"}</span>
+            </button>
+            {compareOpen && (
+              <div className="px-1 pb-1 border-b border-gray-800">
+                <ReactEChartsCore echarts={echarts} option={compareOption} style={{ height: 170 }} notMerge />
+                <div className="px-1 pb-0.5 text-[9px] text-gray-500">灰色强开发抬高峰值 · 绿色海绵削减峰值 — 点击三方案对比按钮生成</div>
+              </div>
+            )}
+          </>
+        )}
         <button onClick={() => setChartOpen(!chartOpen)} className="w-full px-3 py-1 text-left text-[10px] text-gray-400 hover:text-gray-200 flex justify-between">
           <span>📈 {selected.data.id} 时间序列</span><span>{chartOpen ? "收起 ▲" : "展开 ▼"}</span>
         </button>
@@ -395,6 +407,23 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
             <ReactEChartsCore echarts={echarts} option={makeOption("水深 (m)", dp, "m", "#81c784")} style={{ height: chartH }} notMerge />
             <ReactEChartsCore echarts={echarts} option={makeOption("流速 (m/s)", vl, "m/s", "#ff8a65")} style={{ height: chartH }} notMerge />
             <ReactEChartsCore echarts={echarts} option={makeOption("容量利用率", cp, "", "#ba68c8")} style={{ height: chartH }} notMerge />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 无选中对象时:仅对比图
+  if (compareOption) {
+    return (
+      <div className="absolute left-2 right-2 bg-black/92 backdrop-blur rounded-lg border border-gray-700 z-10" style={{ bottom: 48 }}>
+        <button onClick={() => setCompareOpen(!compareOpen)} className="w-full px-3 py-1 text-left text-[10px] text-gray-400 hover:text-gray-200 flex justify-between">
+          <span>📈 三方案系统总流量对比</span><span>{compareOpen ? "收起 ▲" : "展开 ▼"}</span>
+        </button>
+        {compareOpen && (
+          <div className="px-1 pb-1">
+            <ReactEChartsCore echarts={echarts} option={compareOption} style={{ height: 170 }} notMerge />
+            <div className="px-1 pb-0.5 text-[9px] text-gray-500">灰色强开发抬高峰值 · 绿色海绵削减峰值 — 点击三方案对比按钮生成</div>
           </div>
         )}
       </div>

@@ -508,7 +508,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "未知操作" }, { status: 400 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "智能体服务失败";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[agent] Fatal:', error instanceof Error ? error.message : error);
+    // 不向前端回显内部错误细节(可能含 LLM 原始响应/服务器路径),仅返回通用提示
+    return NextResponse.json({ error: "智能体服务暂时不可用，请稍后重试" }, { status: 500 });
   }
 }
