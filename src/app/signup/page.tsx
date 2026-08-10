@@ -156,13 +156,15 @@ function SignupForm() {
               <button
                 type="button"
                 onClick={() => setSelectedRole("teacher")}
-                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                disabled
+                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors opacity-50 cursor-not-allowed ${
                   selectedRole === "teacher"
                     ? "bg-white text-[var(--color-primary)] shadow-sm"
                     : "text-[var(--color-text-secondary)]"
                 }`}
+                title="教师账号由管理员开通"
               >
-                👨‍🏫 教师
+                👨‍🏫 教师（管理员开通）
               </button>
             </div>
           </div>

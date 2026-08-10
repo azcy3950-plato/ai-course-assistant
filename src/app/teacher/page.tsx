@@ -97,13 +97,13 @@ export default function TeacherPage() {
         body: JSON.stringify({ fileName: file.name, fileType: file.type }),
       });
       if (!urlRes.ok) { alert("获取上传链接失败"); return; }
-      const { uploadUrl, fileKey, fileUrl } = await urlRes.json();
+      const { uploadUrl, fileKey, fileUrl, contentType } = await urlRes.json();
 
-      // 2) Upload directly to OSS
+      // 2) Upload directly to OSS(使用后端白名单后的 Content-Type,防客户端覆盖为非白名单类型)
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadUrl);
-        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.setRequestHeader("Content-Type", contentType || file.type || "application/octet-stream");
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
         };

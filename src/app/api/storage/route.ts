@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       new PutObjectCommand({ Bucket: BUCKET, Key: fileKey, ContentType: ct }),
       { expiresIn: 300 }
     );
-    return NextResponse.json({ uploadUrl, fileKey, fileUrl: buildFileUrl(fileKey) });
+    return NextResponse.json({ uploadUrl, fileKey, fileUrl: buildFileUrl(fileKey), contentType: ct });
   } catch (err: any) {
     console.error('[storage] POST:', err?.message || err);
     return NextResponse.json({ error: "上传服务暂时不可用" }, { status: 500 });
