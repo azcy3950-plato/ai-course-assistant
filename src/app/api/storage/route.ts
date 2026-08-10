@@ -37,8 +37,10 @@ function buildFileUrl(fileKey: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  if (!getUser(req))
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  const user = getUser(req);
+  if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+  // 文件列表仅教师可见(与学生 POST/DELETE 的 403 口径一致,防枚举)
+  if (user.role !== "teacher") return NextResponse.json({ error: "仅教师可查看" }, { status: 403 });
   try {
     const { Contents } = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: "uploads/" }));
     const files = (Contents || [])
