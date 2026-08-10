@@ -137,7 +137,7 @@ export default function TeacherPage() {
     try {
       await fetch(API, {
         method: "DELETE",
-        headers: await getAuthHeaders(),
+        headers: getAuthHeaders(),
         body: JSON.stringify({ fileKey: f.key }),
       });
       await supabase.from("documents").delete().eq("r2_key", f.key);

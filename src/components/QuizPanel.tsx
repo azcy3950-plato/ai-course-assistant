@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { getAuthToken } from "@/contexts/AppContext";
 
 interface QuizQuestion {
@@ -40,8 +39,6 @@ export default function QuizPanel({ questions, onClose, onComplete }: Props) {
       const isCorrect = answered[i] === questions[i].correct;
       if (isCorrect) correct++;
       try {
-        const { data: session } = await supabase.auth.getSession();
-        const email = session?.session?.user?.email || "unknown";
         await fetch("/api/quiz", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` },
