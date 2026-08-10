@@ -19,7 +19,13 @@ const DB_URL = process.env.DATABASE_URL;
 let dbPool: Pool | null = null;
 function getPool(): Pool | null {
   if (!DB_URL) return null;
-  if (!dbPool) dbPool = new Pool({ connectionString: DB_URL, max: 10 });
+  if (!dbPool) {
+    dbPool = new Pool({ connectionString: DB_URL, max: 10 });
+    // 空闲连接被服务端剪断时 Pool 会 emit 'error',无监听器会崩实例(生命周期拉长后风险放大)
+    dbPool.on("error", (err) => {
+      console.error("[agent] dbPool idle error:", (err as Error)?.message || err);
+    });
+  }
   return dbPool;
 }
 
