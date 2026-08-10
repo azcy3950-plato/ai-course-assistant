@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     if (!email || !email.includes("@")) {
       return NextResponse.json({ error: "请输入有效的邮箱地址" }, { status: 400 });
     }
-    if (email === user.email.toLowerCase()) {
+    if (email === (user.email || "").trim().toLowerCase()) {
       return NextResponse.json({ error: "你已是教师,无需操作" }, { status: 400 });
     }
 
