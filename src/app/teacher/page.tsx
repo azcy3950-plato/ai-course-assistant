@@ -341,7 +341,7 @@ function AccountManager() {
         )}
       </div>
       <p className="text-xs text-[var(--color-text-muted)] mt-3">
-        说明:仅教师账号可执行此操作;开通操作会记录到服务器日志。
+        说明:仅教师账号可执行此操作;每次开通都会写入审计记录,可追溯。
       </p>
     </div>
   );
