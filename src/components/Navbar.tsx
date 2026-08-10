@@ -17,6 +17,7 @@ const navLinks = {
     { href: "/", label: "首页", icon: "🏠" },
     { href: "/teacher", label: "教学管理", icon: "⚙️" },
     { href: "/knowledge", label: "知识问答", icon: "📚" },
+    { href: "/guided", label: "引导学习", icon: "💡" },
     { href: "/sandbox", label: "电子沙盘", icon: "🗺️" },
   ],
 };

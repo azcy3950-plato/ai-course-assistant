@@ -19,6 +19,7 @@ const teacherCommands = [
   { label: "文档管理", icon: "📤", href: "/teacher?tab=upload" },
   { label: "检索测试", icon: "🔍", href: "/teacher/search" },
   { label: "知识问答", icon: "💬", href: "/knowledge" },
+  { label: "引导学习", icon: "🧭", href: "/guided" },
   { label: "电子沙盘", icon: "🗺️", href: "/sandbox" },
 ];
 

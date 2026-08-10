@@ -15,6 +15,17 @@ const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
 const DASHSCOPE_KEY = process.env.DASHSCOPE_API_KEY;
 const DB_URL = process.env.DATABASE_URL;
 
+// 复用连接池(原实现每次请求 new Pool + end,连接握手开销大)
+let dbPool: Pool | null = null;
+function getPool(): Pool | null {
+  if (!DB_URL) return null;
+  if (!dbPool) dbPool = new Pool({ connectionString: DB_URL, max: 10 });
+  return dbPool;
+}
+
+// 检索片段注入提示词的截断长度:控制输入 token,显著降低 LLM 首 token 延迟
+const CHUNK_PROMPT_LIMIT = 600;
+
 /**
  * 智能体B的核心教学提示词。图谱上下文由服务端检索并注入，模型无权新增节点或关系。
  */
@@ -103,6 +114,7 @@ async function getEmbeddings(texts: string[]): Promise<number[][]> {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${DASHSCOPE_KEY}` },
     body: JSON.stringify({ model: "text-embedding-v2", input: texts.length === 1 ? texts[0] : texts }),
+    signal: AbortSignal.timeout(30000),
   });
   if (!response.ok) throw new Error(`Embedding服务请求失败：${response.status}`);
   const data = await response.json();
@@ -119,8 +131,8 @@ async function hydrateNodeEmbeddings() {
 }
 
 async function searchChunks(embedding: number[]): Promise<RetrievedChunk[]> {
-  if (!DB_URL || !embedding.length) return [];
-  const pool = new Pool({ connectionString: DB_URL });
+  const pool = getPool();
+  if (!pool || !embedding.length) return [];
   try {
     const vector = `[${embedding.join(",")}]`;
     const result = await pool.query(
@@ -132,8 +144,9 @@ async function searchChunks(embedding: number[]): Promise<RetrievedChunk[]> {
       [vector],
     );
     return result.rows;
-  } finally {
-    await pool.end();
+  } catch (err) {
+    console.error("[agent] searchChunks:", (err as Error)?.message || err);
+    return [];
   }
 }
 
@@ -143,6 +156,7 @@ async function callDeepSeek(messages: Array<{ role: string; content: string }>, 
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_KEY}` },
     body: JSON.stringify({ model: "deepseek-v4-flash", messages, max_tokens: maxTokens, temperature: 0.35 }),
+    signal: AbortSignal.timeout(45000),
   });
   if (!response.ok) throw new Error(`大模型服务请求失败：${response.status}`);
   const data = await response.json();
@@ -155,6 +169,7 @@ async function callDeepSeekStream(messages: Array<{ role: string; content: strin
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_KEY}` },
     body: JSON.stringify({ model: "deepseek-v4-flash", messages, max_tokens: 2048, temperature: 0.35, stream: true }),
+    signal: AbortSignal.timeout(90000),
   });
 }
 
@@ -195,7 +210,10 @@ function buildTurnPrompt(_question: string, graphContext: GraphContext, chunks: 
     `系统推荐下一节点：${graphContext.suggestedNextNode?.name || "无"}`,
   ].join("\n");
   const courseFacts = chunks.length
-    ? chunks.map((chunk, index) => `[${index + 1}] ${chunk.doc_name}｜${chunk.chapter || "未标章节"}\n${chunk.content || ""}`).join("\n\n")
+    ? chunks.map((chunk, index) => {
+        const content = (chunk.content || "").slice(0, CHUNK_PROMPT_LIMIT);
+        return `[${index + 1}] ${chunk.doc_name}｜${chunk.chapter || "未标章节"}\n${content}${(chunk.content || "").length > CHUNK_PROMPT_LIMIT ? "…(截断)" : ""}`;
+      }).join("\n\n")
     : "课程知识库中没有检索到可引用片段。";
   return `${KNOWLEDGE_GRAPH_TEACHING_PROMPT}\n\n【知识图谱上下文】\n${graphFacts}\n\n【课程资料】\n${courseFacts}`;
 }
@@ -216,7 +234,10 @@ function buildSocraticFacts(graphContext: GraphContext, chunks: RetrievedChunk[]
     `系统推荐下一节点：${graphContext.suggestedNextNode?.name || "无"}`,
   ].join("\n");
   const courseFacts = chunks.length
-    ? chunks.map((chunk, index) => `[${index + 1}] ${chunk.doc_name}｜${chunk.chapter || "未标章节"}\n${chunk.content || ""}`).join("\n\n")
+    ? chunks.map((chunk, index) => {
+        const content = (chunk.content || "").slice(0, CHUNK_PROMPT_LIMIT);
+        return `[${index + 1}] ${chunk.doc_name}｜${chunk.chapter || "未标章节"}\n${content}${(chunk.content || "").length > CHUNK_PROMPT_LIMIT ? "…(截断)" : ""}`;
+      }).join("\n\n")
     : "课程知识库中没有检索到可引用片段。";
   return `${graphFacts}\n\n【课程资料】\n${courseFacts}`;
 }
