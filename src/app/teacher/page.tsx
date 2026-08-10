@@ -21,7 +21,7 @@ interface OssFile {
   lastModified: string;
 }
 
-type TabKey = "upload" | "knowledge" | "students";
+type TabKey = "upload" | "knowledge" | "students" | "accounts";
 
 function mapType(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() || "";
@@ -157,7 +157,7 @@ export default function TeacherPage() {
       </div>
 
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
-        {[{ k: "upload" as TabKey, l: "资料上传", i: "📤" }, { k: "knowledge" as TabKey, l: "知识库管理", i: "📚" }, { k: "students" as TabKey, l: "学生统计", i: "📊" }].map(t => (
+        {[{ k: "upload" as TabKey, l: "资料上传", i: "📤" }, { k: "knowledge" as TabKey, l: "知识库管理", i: "📚" }, { k: "students" as TabKey, l: "学生统计", i: "📊" }, { k: "accounts" as TabKey, l: "教师账号", i: "🔑" }].map(t => (
           <button key={t.k} onClick={() => setActiveTab(t.k)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === t.k ? "bg-white text-[var(--color-text)] shadow-sm" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}>
             {t.i} {t.l}
@@ -284,6 +284,66 @@ export default function TeacherPage() {
           </div>
         </div>
       )}
+
+      {activeTab === "accounts" && <AccountManager />}
     </div>
   );
 }
+
+function AccountManager() {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function promote() {
+    const em = email.trim();
+    if (!em) { setMsg({ ok: false, text: "请输入学生邮箱" }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch("/api/admin/promote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` },
+        body: JSON.stringify({ email: em }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) setMsg({ ok: true, text: `✅ ${em} 已开通为教师,对方重新登录后生效` });
+      else setMsg({ ok: false, text: data?.error || "开通失败,请稍后重试" });
+    } catch {
+      setMsg({ ok: false, text: "网络错误,请稍后重试" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="max-w-xl">
+      <div className="bg-white rounded-xl border border-[var(--color-border)] p-5">
+        <h3 className="text-sm font-bold mb-1">开通教师账号</h3>
+        <p className="text-xs text-[var(--color-text-muted)] mb-4">输入学生注册邮箱,将其账号提升为教师端。对方重新登录后生效,密码不变。</p>
+        <div className="flex gap-2">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="学生邮箱,如 zhangsan@163.com"
+            className="flex-1 px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm outline-none focus:border-[var(--color-primary)]"
+          />
+          <button
+            onClick={promote}
+            disabled={busy}
+            className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-medium disabled:opacity-50"
+          >
+            {busy ? "开通中…" : "开通教师"}
+          </button>
+        </div>
+        {msg && (
+          <div className={`mt-3 text-sm ${msg.ok ? "text-green-600" : "text-red-500"}`}>{msg.text}</div>
+        )}
+      </div>
+      <p className="text-xs text-[var(--color-text-muted)] mt-3">
+        说明:仅教师账号可执行此操作;开通操作会记录到服务器日志。
+      </p>
+    </div>
+  );
+}
+
