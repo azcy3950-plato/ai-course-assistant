@@ -6,7 +6,8 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, name, role } = await req.json();
+    const { email: rawEmail, password, name, role } = await req.json();
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
     if (!email || !password || !name) {
       return NextResponse.json({ error: "缺少参数" }, { status: 400 });
     }
