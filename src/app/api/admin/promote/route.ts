@@ -18,7 +18,11 @@ function ensureAuditTable(): Promise<void> {
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )`
       )
-      .then(() => undefined);
+      .then(() => undefined)
+      .catch((e) => {
+        auditTableReady = null; // 失败不永久缓存,允许下次重试
+        throw e;
+      });
   }
   return auditTableReady;
 }
