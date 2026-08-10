@@ -13,8 +13,8 @@ export async function POST(req: NextRequest) {
     if (password.length < 6) {
       return NextResponse.json({ error: "密码至少6位" }, { status: 400 });
     }
-    // role 白名单:仅允许 student/teacher,非法值回退 student(防自注册越权)
-    const safeRole = role === "teacher" ? "teacher" : "student";
+    // 一律注册为学生:教师账号由管理员在数据库创建,防自注册越权
+    const safeRole = "student";
 
     const { rows } = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
     if (rows.length > 0) {

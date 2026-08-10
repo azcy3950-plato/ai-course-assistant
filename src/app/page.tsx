@@ -107,12 +107,12 @@ export default function HomePage() {
       try {
         const { data: s } = await supabase.auth.getSession();
         const em = s.session?.user?.email || '';
-        // Fetch documents count
-        const dRes = await fetch('/api/documents', { headers: { Authorization: 'Bearer ' + (s.session?.access_token || '') } });
+        // Fetch documents count(经 /api/storage,登录即可读)
+        const dRes = await fetch('/api/storage', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         let docCount = 0;
-        if (dRes.ok) { const docs = await dRes.json(); docCount = docs.length; }
-        // Fetch quiz stats
-        const qRes = await fetch('/api/quiz-results?email=' + encodeURIComponent(em));
+        if (dRes.ok) { const docs = await dRes.json(); docCount = Array.isArray(docs) ? docs.length : 0; }
+        // Fetch quiz stats(经 /api/quiz-results,登录查询自己的)
+        const qRes = await fetch('/api/quiz-results?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         let quizTotal = 0, quizRate = 0;
         if (qRes.ok) { const qr = await qRes.json(); quizTotal = qr.length; quizRate = qr.length > 0 ? Math.round(qr.filter((q: any) => q.is_correct).length / qr.length * 100) : 0; }
         // Fetch records count

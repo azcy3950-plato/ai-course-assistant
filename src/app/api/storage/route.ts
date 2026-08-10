@@ -3,15 +3,17 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command }
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { verify as jwtVerify } from "jsonwebtoken";
 
-// 严格鉴权:解析 JWT 邮箱,无效即 401(与 /api/agent 一致,防伪造头枚举/操作 OSS)
-function getUserEmail(req: NextRequest): string {
+// 严格鉴权:解析 JWT 邮箱与角色,无效即 401;写操作仅限教师
+function getUser(req: NextRequest): { email: string; role: string } | null {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   const jwtSecret = process.env.JWT_SECRET;
-  if (!token || !jwtSecret) return "";
+  if (!token || !jwtSecret) return null;
   try {
-    return (jwtVerify(token, jwtSecret) as { email?: string }).email || "";
+    const payload = jwtVerify(token, jwtSecret) as { email?: string; role?: string };
+    if (!payload.email) return null;
+    return { email: payload.email, role: payload.role || "student" };
   } catch {
-    return "";
+    return null;
   }
 }
 
@@ -35,7 +37,7 @@ function buildFileUrl(fileKey: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  if (!getUserEmail(req))
+  if (!getUser(req))
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   try {
     const { Contents } = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: "uploads/" }));
@@ -57,15 +59,20 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!getUserEmail(req))
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  const user = getUser(req);
+  if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+  if (user.role !== "teacher") return NextResponse.json({ error: "仅教师可上传" }, { status: 403 });
   try {
     const { fileName, fileType } = await req.json();
+    if (!fileName || typeof fileName !== "string") return NextResponse.json({ error: "参数缺失" }, { status: 400 });
     const safeName = fileName.replace(/[<>:"/\\|?*]/g, "_");
+    // ContentType 白名单:仅允许常见文档/图片类型,防上传 HTML 到公开桶(存储型 XSS 载体)
+    const allowedTypes = ["application/pdf", "text/plain", "text/markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/png", "image/jpeg", "image/gif", "application/octet-stream"];
+    const ct = allowedTypes.includes(fileType) ? fileType : "application/octet-stream";
     const fileKey = "uploads/" + Date.now() + "_" + safeName;
     const uploadUrl = await getSignedUrl(
       s3,
-      new PutObjectCommand({ Bucket: BUCKET, Key: fileKey, ContentType: fileType || "application/octet-stream" }),
+      new PutObjectCommand({ Bucket: BUCKET, Key: fileKey, ContentType: ct }),
       { expiresIn: 300 }
     );
     return NextResponse.json({ uploadUrl, fileKey, fileUrl: buildFileUrl(fileKey) });
@@ -76,10 +83,15 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!getUserEmail(req))
-    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  const user = getUser(req);
+  if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+  if (user.role !== "teacher") return NextResponse.json({ error: "仅教师可删除" }, { status: 403 });
   try {
     const { fileKey } = await req.json();
+    // 强制 uploads/ 前缀,防删除桶内任意对象
+    if (typeof fileKey !== "string" || !fileKey.startsWith("uploads/") || fileKey === "uploads/") {
+      return NextResponse.json({ error: "无权访问该文件" }, { status: 403 });
+    }
     await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: fileKey }));
     return NextResponse.json({ success: true });
   } catch (err: any) {

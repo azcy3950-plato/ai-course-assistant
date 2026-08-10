@@ -69,9 +69,13 @@ const pdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then((m) => m.defau
 export async function POST(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   const jwtSecret = process.env.JWT_SECRET;
-  const email = token && jwtSecret ? (() => { try { return (jwtVerify(token, jwtSecret) as { email?: string }).email || ""; } catch { return ""; } })() : "";
-  if (!email) {
+  const user = token && jwtSecret ? (() => { try { return jwtVerify(token, jwtSecret) as { email?: string; role?: string }; } catch { return null; } })() : null;
+  if (!user?.email) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+  // 消耗向量化成本,仅教师可调用
+  if ((user.role || "student") !== "teacher") {
+    return NextResponse.json({ error: "仅教师可处理文件" }, { status: 403 });
   }
 
   try {

@@ -21,7 +21,7 @@ export default function PortraitPage() {
         const records = r1.ok ? await r1.json() : [];
 
         // Quiz stats are on client side for now
-        const qrRes = await fetch("/api/quiz-results?email=" + encodeURIComponent(em));
+        const qrRes = await fetch("/api/quiz-results?email=" + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         const qr = qrRes.ok ? await qrRes.json() : [];
         setQuizStats({ total: qr.length, correct: qr.filter((q: any) => q.is_correct).length, rate: qr.length > 0 ? Math.round(qr.filter((q: any) => q.is_correct).length / qr.length * 100) : 0 });
 

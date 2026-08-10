@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useApp } from "@/contexts/AppContext";
-import { supabase } from "@/lib/supabase";
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 
 export default function SearchTestPage() {
   const { state } = useApp();
@@ -20,11 +19,9 @@ export default function SearchTestPage() {
     setLoading(true);
     setResults(null); setChunks([]);
     try {
-      const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token || "";
       const res = await fetch("/api/agent", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ action: "knowledge", params: { question: query } }),
       });
       const data = await res.json();
