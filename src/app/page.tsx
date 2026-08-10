@@ -107,10 +107,12 @@ export default function HomePage() {
       try {
         const { data: s } = await supabase.auth.getSession();
         const em = s.session?.user?.email || '';
-        // Fetch documents count(经 /api/storage,登录即可读)
-        const dRes = await fetch('/api/storage', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        // Fetch documents count(经 /api/storage,仅教师可见)
         let docCount = 0;
-        if (dRes.ok) { const docs = await dRes.json(); docCount = Array.isArray(docs) ? docs.length : 0; }
+        if (state.role === "teacher") {
+          const dRes = await fetch('/api/storage', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+          if (dRes.ok) { const docs = await dRes.json(); docCount = Array.isArray(docs) ? docs.length : 0; }
+        }
         // Fetch quiz stats(经 /api/quiz-results,登录查询自己的)
         const qRes = await fetch('/api/quiz-results?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         let quizTotal = 0, quizRate = 0;
