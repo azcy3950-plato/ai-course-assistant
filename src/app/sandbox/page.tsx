@@ -443,16 +443,17 @@ export default function SandboxPage() {
         if (selRef.current) { resetHL(selRef.current); selRef.current = null; setSelected(null); }
       });
 
+      let rafId = 0;
       const animate = () => {
-        requestAnimationFrame(animate);
-        // 环绕模式:相机绕场景中心缓慢自动旋转(用户拖拽/滚轮后暂停 8s 再恢复由交互处理)
+        rafId = requestAnimationFrame(animate);
+        // 环绕模式:相机绕场景中心缓慢自动旋转
         if (orbitRef.current) { camState.current.theta += 0.0022; updateCam(); }
         renderer.render(scene, camera);
       };
       animate();
       const onResize = () => { const w2 = cr.current!.clientWidth, h2 = cr.current!.clientHeight; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
       window.addEventListener("resize", onResize);
-      return () => { window.removeEventListener("resize", onResize); renderer.dispose(); };
+      return () => { window.removeEventListener("resize", onResize); cancelAnimationFrame(rafId); renderer.dispose(); };
     } catch (e: any) { setError(e.message); }
   })(); }, []);
 

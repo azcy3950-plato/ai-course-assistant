@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useApp } from "@/contexts/AppContext";
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 import { supabase } from "@/lib/supabase";
 import { StudentStats } from "@/types";
 
@@ -63,18 +63,17 @@ export default function TeacherPage() {
   const [loadingFiles, setLoadingFiles] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const getAuthHeaders = useCallback(async () => {
-    const { data } = await supabase.auth.getSession();
+  const getAuthHeaders = useCallback(() => {
     return {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${data.session?.access_token || ""}`,
+      Authorization: `Bearer ${getAuthToken()}`,
     };
   }, []);
 
   const loadFiles = useCallback(async () => {
     setLoadingFiles(true);
     try {
-      const res = await fetch(API, { headers: await getAuthHeaders() });
+      const res = await fetch(API, { headers: getAuthHeaders() });
       if (res.ok) setFiles(await res.json());
     } catch (e) { console.error(e); }
     finally { setLoadingFiles(false); }
@@ -91,7 +90,7 @@ export default function TeacherPage() {
     setUploadProgress(0);
     try {
       // 1) Get pre-signed URL
-      const headers = await getAuthHeaders();
+      const headers = getAuthHeaders();
       const urlRes = await fetch(API, {
         method: "POST",
         headers,

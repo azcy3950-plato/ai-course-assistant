@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getAuthToken } from "@/contexts/AppContext";
 
 interface QuizQuestion {
   question: string;
@@ -43,9 +44,8 @@ export default function QuizPanel({ questions, onClose, onComplete }: Props) {
         const email = session?.session?.user?.email || "unknown";
         await fetch("/api/quiz", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` },
           body: JSON.stringify({
-            user_email: email,
             question: questions[i].question,
             student_answer: answered[i] || "",
             correct_answer: questions[i].correct,

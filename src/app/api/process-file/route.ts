@@ -83,6 +83,10 @@ export async function POST(req: NextRequest) {
     // Download via S3 client (bucket is private)
     const urlObj = new URL(fileUrl);
     const key = decodeURIComponent(urlObj.pathname.substring(1));
+    // 归属校验:只允许读取 uploads/ 前缀的教师上传对象,防越权读取其他存储
+    if (!key.startsWith("uploads/")) {
+      return NextResponse.json({ error: "无权访问该文件" }, { status: 403 });
+    }
     const s3Res = await s3.send(new GetObjectCommand({ Bucket: OSS_BUCKET, Key: key }));
     const bufChunks: Buffer[] = [];
     if (s3Res.Body) {
