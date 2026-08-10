@@ -302,6 +302,14 @@ export async function POST(req: NextRequest) {
     const landcover = ["gray", "green"].includes(body.landcover) ? body.landcover : undefined;
     cleanupStaleTasks();
 
+    // 并发限流:同时在跑的仿真(含排队中的 running)超过上限时拒绝,防认证用户并发耗尽服务器
+    const MAX_CONCURRENT = 2;
+    let runningCount = 0;
+    for (const t of tasks.values()) { if (t.status === 'running') runningCount++; }
+    if (runningCount >= MAX_CONCURRENT) {
+      return NextResponse.json({ ok: false, error: '仿真繁忙，请稍后重试（同时最多 2 个仿真）' }, { status: 429 });
+    }
+
     const simulationId = crypto.randomUUID();
     const simDir = join(SIM_DIR, simulationId);
     mkdirSync(simDir, { recursive: true });

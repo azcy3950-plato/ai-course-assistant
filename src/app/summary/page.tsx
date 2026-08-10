@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
-import { useApp } from "@/contexts/AppContext";
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 import { supabase } from "@/lib/supabase";
 
 const mockSummaries = [
@@ -36,7 +36,7 @@ export default function SummaryPage() {
       const { data: sess } = await supabase.auth.getSession();
       const em = sess.session?.user?.email || "";
       if (em) {
-        const r = await fetch("/api/records?email=" + encodeURIComponent(em));
+        const r = await fetch("/api/records?email=" + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         if (r.ok) {
           const records = await r.json();
           let y = 81;
@@ -67,7 +67,7 @@ export default function SummaryPage() {
         new Paragraph({ text: "" }),
       ];
       if (em) {
-        const r = await fetch("/api/records?email=" + encodeURIComponent(em));
+        const r = await fetch("/api/records?email=" + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         if (r.ok) {
           const records = await r.json();
           children.push(new Paragraph({ text: "学习内容:", heading: HeadingLevel.HEADING_3 }));

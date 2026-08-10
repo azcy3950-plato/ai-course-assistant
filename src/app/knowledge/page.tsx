@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useChat } from '@/contexts/ChatContext';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, getAuthToken } from '@/contexts/AppContext';
 import { useLearning } from '@/contexts/LearningContext';
 import { supabase } from '@/lib/supabase';
 import { queryKnowledgeAgent, queryKnowledgeAgentStream } from '@/services/agent';
@@ -70,8 +70,8 @@ export default function KnowledgePage() {
         const { data: s } = await supabase.auth.getSession();
         const em = s.session?.user?.email || '';
         if (em) {
-          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: false }) });
-          const qr = await fetch('/api/quiz?email=' + encodeURIComponent(em));
+          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: false }) });
+          const qr = await fetch('/api/quiz?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
           const qd = await qr.json();
           if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }
         }

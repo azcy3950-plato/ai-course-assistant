@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLearning } from '@/contexts/LearningContext';
+import { getAuthToken } from "@/contexts/AppContext";
 import { supabase } from '@/lib/supabase';
 import { RecordType, LearningRecord } from '@/types';
 
@@ -21,7 +22,7 @@ export default function RecordsPage() {
       const { data: s } = await supabase.auth.getSession();
       const em = s.session?.user?.email || '';
       if (!em) return;
-      const r = await fetch('/api/records?email=' + encodeURIComponent(em));
+      const r = await fetch('/api/records?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
       if (r.ok) setRemoteRecords(await r.json());
     })();
   }, []);

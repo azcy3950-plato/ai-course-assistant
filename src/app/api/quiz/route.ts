@@ -1,15 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { loadKnowledgeGraph, recordQuizResultByTopic } from "@/lib/knowledge-graph";
+import { verify as jwtVerify } from "jsonwebtoken";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
 
+// 严格鉴权:解析 JWT 邮箱,无效即 401
+function getUserEmail(req: NextRequest): string {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!token || !jwtSecret) return "";
+  try {
+    return (jwtVerify(token, jwtSecret) as { email?: string }).email || "";
+  } catch {
+    return "";
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
+    const me = getUserEmail(req);
+    if (!me) return NextResponse.json({ error: "未登录" }, { status: 401 });
     const sp = new URL(req.url).searchParams;
-    const email = sp.get("email") || "";
-    if (!email) return NextResponse.json({ error: "email required" }, { status: 400 });
+    // 只能查询自己的记录(参数 email 与令牌一致才放行,防枚举)
+    const requested = sp.get("email") || "";
+    if (requested && requested !== me) return NextResponse.json({ error: "无权访问" }, { status: 403 });
+    const email = me;
 
     const { rows: cnt } = await pool.query(
       "SELECT COUNT(*) as c FROM learning_records WHERE user_email = $1 AND created_at > COALESCE((SELECT MAX(created_at) FROM quiz_results WHERE user_email = $1), '1970-01-01'::timestamptz)",
@@ -56,13 +73,18 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ needsQuiz: true, recordCount, questions });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[quiz] GET:', err?.message || err);
+    return NextResponse.json({ error: "小测服务暂时不可用" }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { user_email, question, student_answer, correct_answer, is_correct, topic } = await req.json();
+    const me = getUserEmail(req);
+    if (!me) return NextResponse.json({ error: "未登录" }, { status: 401 });
+    const { question, student_answer, correct_answer, is_correct, topic } = await req.json();
+    // 强制写自己的结果,忽略客户端传入的 user_email
+    const user_email = me;
     await pool.query(
       "INSERT INTO quiz_results (user_email, question, correct_answer, student_answer, is_correct, topic) VALUES ($1,$2,$3,$4,$5,$6)",
       [user_email, question, correct_answer, student_answer, is_correct, topic]
@@ -70,6 +92,7 @@ export async function POST(req: NextRequest) {
     await recordQuizResultByTopic(user_email, topic, Boolean(is_correct));
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[quiz] POST:', err?.message || err);
+    return NextResponse.json({ error: "小测结果保存失败，请稍后重试" }, { status: 500 });
   }
 }

@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { verify as jwtVerify } from "jsonwebtoken";
+
+// 严格鉴权:解析 JWT 邮箱,无效即 401(与 /api/agent 一致,防伪造头枚举/操作 OSS)
+function getUserEmail(req: NextRequest): string {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!token || !jwtSecret) return "";
+  try {
+    return (jwtVerify(token, jwtSecret) as { email?: string }).email || "";
+  } catch {
+    return "";
+  }
+}
 
 const s3 = new S3Client({
   region: "oss-cn-beijing",
@@ -22,7 +35,7 @@ function buildFileUrl(fileKey: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  if (!req.headers.get("Authorization"))
+  if (!getUserEmail(req))
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   try {
     const { Contents } = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: "uploads/" }));
@@ -38,12 +51,13 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
     return NextResponse.json(files);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[storage] GET:', err?.message || err);
+    return NextResponse.json({ error: "文件服务暂时不可用" }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
-  if (!req.headers.get("Authorization"))
+  if (!getUserEmail(req))
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   try {
     const { fileName, fileType } = await req.json();
@@ -56,18 +70,20 @@ export async function POST(req: NextRequest) {
     );
     return NextResponse.json({ uploadUrl, fileKey, fileUrl: buildFileUrl(fileKey) });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[storage] POST:', err?.message || err);
+    return NextResponse.json({ error: "上传服务暂时不可用" }, { status: 500 });
   }
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!req.headers.get("Authorization"))
+  if (!getUserEmail(req))
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   try {
     const { fileKey } = await req.json();
     await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: fileKey }));
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[storage] DELETE:', err?.message || err);
+    return NextResponse.json({ error: "删除服务暂时不可用" }, { status: 500 });
   }
 }

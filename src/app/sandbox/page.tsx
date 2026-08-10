@@ -316,6 +316,9 @@ export default function SandboxPage() {
   const groupsRef = useRef<Record<string, THREE.Group>>({});
   const selRef = useRef<THREE.Object3D | null>(null);
   const camState = useRef({ theta: 0.45, phi: 0.85, dist: 500, tx: 0, tz: 0 });
+  const orbitRef = useRef(false);
+  const [orbit, setOrbit] = useState(false);
+  useEffect(() => { orbitRef.current = orbit; }, [orbit]);
   const nodeGeomMap = useRef<Map<string, { group: THREE.Group; invertY: number; groundY: number }>>(new Map());
   const pipeMeshMap = useRef<Map<string, THREE.Mesh>>(new Map());
   const waterMeshMap = useRef<Map<string, THREE.Mesh>>(new Map());
@@ -440,7 +443,12 @@ export default function SandboxPage() {
         if (selRef.current) { resetHL(selRef.current); selRef.current = null; setSelected(null); }
       });
 
-      const animate = () => { requestAnimationFrame(animate); renderer.render(scene, camera); };
+      const animate = () => {
+        requestAnimationFrame(animate);
+        // 环绕模式:相机绕场景中心缓慢自动旋转(用户拖拽/滚轮后暂停 8s 再恢复由交互处理)
+        if (orbitRef.current) { camState.current.theta += 0.0022; updateCam(); }
+        renderer.render(scene, camera);
+      };
       animate();
       const onResize = () => { const w2 = cr.current!.clientWidth, h2 = cr.current!.clientHeight; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
       window.addEventListener("resize", onResize);
@@ -604,15 +612,16 @@ export default function SandboxPage() {
   // ═══════════════════════════════════════════════════════════
   // DYNAMIC MODE — kept from working backend, visuals cleaned
   // ═══════════════════════════════════════════════════════════
-  const loadSim = useCallback(async () => {
+  const loadSim = useCallback(async (overrideIntensity?: number) => {
     const reqSeq = ++simSeqRef.current;
     setDynPhase("loading"); setDynStep(0);
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    const simIntensity = overrideIntensity ?? dynI;
     try {
       const tid = setTimeout(() => ctrl.abort(), 90000);
-      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: dynI, landcover }), signal: ctrl.signal });
+      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, landcover }), signal: ctrl.signal });
       clearTimeout(tid);
       if (abortRef.current === ctrl) abortRef.current = null;
       const d = await res.json();
@@ -769,6 +778,7 @@ export default function SandboxPage() {
         <div className="h-4 w-px bg-gray-600" />
         <button onClick={() => setHeatmap(v => !v)} title="节点淹没深度热力图" className={"px-2 py-1 rounded-md text-xs font-bold " + (heatmap ? "bg-purple-600 text-white" : "text-gray-400 hover:text-white")}>🌡 热力图</button>
         <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="切换深浅主题" className={"px-2 py-1 rounded-md text-xs font-bold " + (theme === "light" ? "bg-amber-500 text-black" : "text-gray-400 hover:text-white")}>{theme === "dark" ? "☀️ 浅色" : "🌙 深色"}</button>
+        <button onClick={() => setOrbit(v => !v)} title="相机自动环绕" className={"px-2 py-1 rounded-md text-xs font-bold " + (orbit ? "bg-pink-600 text-white" : "text-gray-400 hover:text-white")}>🔄 环绕</button>
         <div className="h-4 w-px bg-gray-600" />
         {[{ id: "sc", l: "汇水区" },{ id: "pipes", l: "管道" },{ id: "nodes", l: "节点" },{ id: "ground", l: "地表" }].map(({ id, l }) => (
           <button key={id} onClick={() => toggleLayer(id)} className={"px-1.5 py-0.5 rounded text-[10px] " + (layers[id] ? "bg-gray-600 text-white" : "bg-gray-800 text-gray-500")}>{l}</button>
@@ -816,6 +826,15 @@ export default function SandboxPage() {
             <div className="space-y-2">
               <div><div className="flex justify-between text-[10px]"><span className="text-gray-500">降雨倍率</span><span className="text-cyan-400 font-bold">{dynI}%</span></div>
               <input type="range" min="10" max="300" value={dynI} onChange={e => { simSeqRef.current++; setDynI(+e.target.value); setDynPhase("config"); clearWaterMeshes(); if (dynRes) setDynRes(null); }} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
+              {/* 暴雨情景预设:一键设置重现期并仿真 */}
+              <div>
+                <div className="mb-1 text-[10px] text-gray-500">暴雨情景</div>
+                <div className="grid grid-cols-3 gap-1">
+                  {([["5年一遇", 120], ["10年一遇", 160], ["50年一遇", 240]] as const).map(([label, pct]) => (
+                    <button key={label} onClick={() => { setDynI(pct); loadSim(pct); }} title={`${label}（降雨倍率 ${pct}%）`} className={`py-1 rounded text-[10px] font-bold transition-colors ${dynI === pct ? "bg-blue-700 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{label}</button>
+                  ))}
+                </div>
+              </div>
               {/* 下垫面方案切换(方案2):点击改变下垫面→重新仿真→横截面水量变化 */}
               <div>
                 <div className="mb-1 text-[10px] text-gray-500">下垫面方案</div>
@@ -826,7 +845,7 @@ export default function SandboxPage() {
                 </div>
                 {landcover !== "default" && <div className="mt-1 text-[9px] leading-3.5 text-gray-500">{landcover === "green" ? "增加透水铺装与绿地,降低不透水率" : "增加硬化地面,提高不透水率"}</div>}
               </div>
-              <button onClick={loadSim} className="w-full py-1.5 bg-cyan-800 rounded font-bold text-xs hover:bg-cyan-700 transition-colors">{dynRes ? "🔄 重新仿真" : "📊 加载仿真结果"}</button>
+              <button onClick={() => loadSim()} className="w-full py-1.5 bg-cyan-800 rounded font-bold text-xs hover:bg-cyan-700 transition-colors">{dynRes ? "🔄 重新仿真" : "📊 加载仿真结果"}</button>
               <button onClick={runCompare} disabled={comparing} className="w-full py-1.5 bg-violet-900 rounded font-bold text-xs hover:bg-violet-800 transition-colors disabled:opacity-40">{comparing ? "⏳ 对比中…" : "⚖️ 三方案对比"}</button>
               {compareRes && (
                 <div className="border-t border-gray-700 pt-1.5 mt-1 space-y-1">

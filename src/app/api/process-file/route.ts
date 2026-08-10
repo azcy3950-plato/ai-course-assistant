@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { verify as jwtVerify } from "jsonwebtoken";
 
 const DASHSCOPE_KEY = process.env.DASHSCOPE_API_KEY;
 const OSS_BUCKET = process.env.OSS_BUCKET || "ai-course-assistant";
@@ -66,7 +67,10 @@ async function extractOfficeText(buffer: Buffer, ext: string): Promise<string> {
 const pdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then((m) => m.default);
 
 export async function POST(req: NextRequest) {
-  if (!req.headers.get("Authorization")) {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const jwtSecret = process.env.JWT_SECRET;
+  const email = token && jwtSecret ? (() => { try { return (jwtVerify(token, jwtSecret) as { email?: string }).email || ""; } catch { return ""; } })() : "";
+  if (!email) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
   }
 
@@ -133,6 +137,7 @@ export async function POST(req: NextRequest) {
       message: "提取 " + (text.length / 1000).toFixed(0) + "k 字，向量化 " + stored + "/" + chunks.length + " 片段",
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[process-file]:', err?.message || err);
+    return NextResponse.json({ error: "文件处理服务暂时不可用" }, { status: 500 });
   }
 }

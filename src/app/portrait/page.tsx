@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useApp } from "@/contexts/AppContext";
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 import { supabase } from "@/lib/supabase";
 
 export default function PortraitPage() {
@@ -17,7 +17,7 @@ export default function PortraitPage() {
       const em = s.session?.user?.email || "";
       if (!em) { setLoading(false); return; }
       try {
-        const r1 = await fetch("/api/records?email=" + encodeURIComponent(em));
+        const r1 = await fetch("/api/records?email=" + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         const records = r1.ok ? await r1.json() : [];
 
         // Quiz stats are on client side for now

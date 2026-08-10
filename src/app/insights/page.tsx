@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useApp } from "@/contexts/AppContext";
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 import { supabase } from "@/lib/supabase";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
@@ -21,7 +21,7 @@ export default function InsightsPage() {
       const em = s.session?.user?.email || "";
       if (!em) { setLoading(false); return; }
       try {
-        const r = await fetch("/api/records?email=" + encodeURIComponent(em));
+        const r = await fetch("/api/records?email=" + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         if (r.ok) setRecords(await r.json());
       } catch (e) {}
       setLoading(false);

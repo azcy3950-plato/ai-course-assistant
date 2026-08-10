@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 import { useLearning } from '@/contexts/LearningContext';
 import { supabase } from '@/lib/supabase';
 
@@ -116,7 +116,7 @@ export default function HomePage() {
         let quizTotal = 0, quizRate = 0;
         if (qRes.ok) { const qr = await qRes.json(); quizTotal = qr.length; quizRate = qr.length > 0 ? Math.round(qr.filter((q: any) => q.is_correct).length / qr.length * 100) : 0; }
         // Fetch records count
-        const rRes = await fetch('/api/records?email=' + encodeURIComponent(em));
+        const rRes = await fetch("/api/records?email=" + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         let recordCount = 0;
         if (rRes.ok) { const recs = await rRes.json(); recordCount = recs.length; }
         setStats({ docCount, quizTotal, quizRate, recordCount });

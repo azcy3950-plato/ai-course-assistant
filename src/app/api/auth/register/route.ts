@@ -13,6 +13,8 @@ export async function POST(req: NextRequest) {
     if (password.length < 6) {
       return NextResponse.json({ error: "密码至少6位" }, { status: 400 });
     }
+    // role 白名单:仅允许 student/teacher,非法值回退 student(防自注册越权)
+    const safeRole = role === "teacher" ? "teacher" : "student";
 
     const { rows } = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
     if (rows.length > 0) {
@@ -22,11 +24,12 @@ export async function POST(req: NextRequest) {
     const passwordHash = await hash(password, 10);
     const { rows: newUser } = await pool.query(
       "INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role",
-      [email, passwordHash, name, role || "student"]
+      [email, passwordHash, name, safeRole]
     );
 
     return NextResponse.json({ user: newUser[0] });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[auth/register]:', err?.message || err);
+    return NextResponse.json({ error: "注册服务暂时不可用，请稍后重试" }, { status: 500 });
   }
 }

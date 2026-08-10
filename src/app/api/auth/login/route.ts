@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[auth/login]:', err?.message || err);
+    return NextResponse.json({ error: "登录服务暂时不可用，请稍后重试" }, { status: 500 });
   }
 }
