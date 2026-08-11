@@ -229,8 +229,8 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
 
   const chartH = 140;
   const [compareOpen, setCompareOpen] = useState(false);
-  // 曲线点击联动时间轴(传给所有图表)
-  const seekEvents = { click: (p: any) => { if (p?.dataIndex != null && onSeek) onSeek(p.dataIndex); } };
+  // 曲线点击联动时间轴(传给所有图表);dataIndex 钳制防越界
+  const seekEvents = { click: (p: any) => { if (p?.dataIndex != null && onSeek) onSeek(Math.min(Math.max(0, p.dataIndex), Math.max(0, timeStepCount - 1))); } };
 
   // 三方案对比图(系统总流量曲线叠加),与选中对象图表可同时展示
   const compareOption = compareData ? {
@@ -385,7 +385,6 @@ export default function SandboxPage() {
   const [showTip, setShowTip] = useState(false);
   // 分步新手引导:1 点击管道 → 2 切换方案 → 3 拖动雨强滑条(每步完成自动下一步,可跳过)
   const [guide, setGuide] = useState(0);
-  const [guideDismissed, setGuideDismissed] = useState(false);
   // 悬停提示:内容变化才 setState(位置由原生事件直接改 style,避免高频重渲染)
   const [hoverInfo, setHoverInfo] = useState<{ lines: string[]; type: string } | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -490,19 +489,36 @@ export default function SandboxPage() {
         const cs = camState.current;
         focusAnim = { t0: performance.now(), from: { ...cs }, to: { ...cs, tx: x, tz: z, dist: Math.max(span * 0.4, cs.dist * 0.55) } };
       };
-      renderer.domElement.addEventListener("click", e => {
-        const rect = renderer.domElement.getBoundingClientRect();
-        raycaster.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1), camera);
+      // 拾取:过滤水柱/粒子等装饰对象,返回带 type 的可交互对象
+      const pick = (nx: number, ny: number): any => {
+        raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
         const hits = raycaster.intersectObjects(scene.children, true);
-        if (hits.length > 0) {
-          let obj: any = hits[0].object;
-          while (obj) { if (obj.userData?.type) { if (selRef.current !== obj) { if (selRef.current) resetHL(selRef.current); selRef.current = obj; hlObj(obj); setSelected({ type: obj.userData.type, data: obj.userData.data }); } flyTo(obj.position.x, obj.position.z); return; } obj = obj.parent; }
+        for (const h of hits) {
+          let o: any = h.object;
+          while (o) {
+            if (o.userData?.type) return o;
+            if (o.userData?.particle || o.userData?.water) break;
+            o = o.parent;
+          }
         }
-        if (selRef.current) { resetHL(selRef.current); selRef.current = null; setSelected(null); }
+        return null;
+      };
+      let clickStart = { x: 0, y: 0 };
+      renderer.domElement.addEventListener("click", e => {
+        // 拖拽(旋转/平移)后松开不触发点击:位移阈值 5px
+        const moved = Math.hypot(e.clientX - clickStart.x, e.clientY - clickStart.y);
+        if (moved > 5) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const obj = pick(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        if (obj) {
+          if (selRef.current !== obj) { if (selRef.current) resetHL(selRef.current); selRef.current = obj; hlObj(obj); setSelected({ type: obj.userData.type, data: obj.userData.data }); }
+          flyTo(obj.position.x, obj.position.z);
+        } else if (selRef.current) { resetHL(selRef.current); selRef.current = null; setSelected(null); }
       });
 
-      // 悬停提示:目标轻高亮 + tooltip(内容变化才 setState;位置原生直改)
+      // 悬停提示:目标轻高亮 + tooltip(内容变化才 setState;位置原生直改;raycast 节流)
       let hoverObj: any = null;
+      let lastHoverRay = 0;
       const hoverLines = (obj: any): string[] => {
         const ud = obj.userData || {};
         const id = ud.data?.id ?? "";
@@ -534,26 +550,39 @@ export default function SandboxPage() {
       renderer.domElement.addEventListener("mousemove", e => {
         if (tooltipRef.current) { tooltipRef.current.style.left = (e.clientX + 14) + "px"; tooltipRef.current.style.top = (e.clientY + 12) + "px"; }
         if (dragging) { if (hoverObj) { hoverObj = null; setHoverInfo(null); } return; }
+        // raycast 节流 50ms(位置更新保持实时,拾取不拖慢渲染)
+        const nowT = performance.now();
+        if (nowT - lastHoverRay < 50) return;
+        lastHoverRay = nowT;
         const rect = renderer.domElement.getBoundingClientRect();
-        raycaster.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1), camera);
-        const hits = raycaster.intersectObjects(scene.children, true);
-        let obj: any = hits[0]?.object;
-        while (obj && !obj.userData?.type) obj = obj.parent;
+        const obj = pick(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         if (obj !== hoverObj) {
+          // 离开旧对象:恢复其原 emissiveIntensity(若未恢复)
+          if (hoverObj && hoverObj !== selRef.current && hoverObj.material) {
+            const hm = hoverObj.material as any;
+            if (hm.userData?.hoverEmissive != null) hm.emissiveIntensity = hm.userData.hoverEmissive;
+          }
           if (obj) {
             const m = obj as THREE.Mesh;
             if (m.material && !(m.material as any)._isWater && obj !== selRef.current) {
-              (m.material as any).userData?.hoverEmissive === undefined && ((m.material as any).userData = { ...((m.material as any).userData || {}), hoverEmissive: (m.material as any).emissiveIntensity });
-              (m.material as any).emissiveIntensity = Math.max((m.material as any).emissiveIntensity || 0, 0.28);
+              const mat = m.material as any;
+              if (mat.userData?.hoverEmissive === undefined) mat.userData = { ...(mat.userData || {}), hoverEmissive: mat.emissiveIntensity };
+              mat.emissiveIntensity = Math.max(mat.emissiveIntensity || 0, 0.28);
             }
           }
           hoverObj = obj;
           setHoverInfo(obj ? { lines: hoverLines(obj), type: obj.userData.type } : null);
         }
       });
-      renderer.domElement.addEventListener("mouseleave", () => { hoverObj = null; setHoverInfo(null); });
+      renderer.domElement.addEventListener("mouseleave", () => {
+        if (hoverObj && hoverObj !== selRef.current && hoverObj.material) {
+          const hm = hoverObj.material as any;
+          if (hm.userData?.hoverEmissive != null) hm.emissiveIntensity = hm.userData.hoverEmissive;
+        }
+        hoverObj = null; setHoverInfo(null);
+      });
       // 拖拽/环绕/聚焦时取消悬停与聚焦动画
-      renderer.domElement.addEventListener("mousedown", e => { if (e.button <= 1) { dragging = true; last = { x: e.clientX, y: e.clientY }; focusAnim = null; } });
+      renderer.domElement.addEventListener("mousedown", e => { if (e.button <= 1) { dragging = true; last = { x: e.clientX, y: e.clientY }; clickStart = { x: e.clientX, y: e.clientY }; focusAnim = null; } });
 
       let rafId = 0;
       const animate = () => {
@@ -748,6 +777,7 @@ export default function SandboxPage() {
       pipeEndsMap.current.set(p.id, { fx: fn.x, fy: fromY, fz: fn.z, tx: tn.x, ty: toY, tz: tn.z });
       const particle = new THREE.Mesh(SHARED.flowParticle, SHARED.flowParticleMat);
       particle.visible = false;
+      particle.userData = { particle: true }; // 拾取时过滤(不参与选中/悬停)
       particle.position.set(fn.x, fromY, fn.z);
       grp.pipes.add(particle);
       flowParticleMap.current.set(p.id, particle);
@@ -896,7 +926,7 @@ export default function SandboxPage() {
   }, [dynI, comparing]);
 
   const clearWaterMeshes = useCallback(() => {
-    waterMeshMap.current.forEach(m => { if (m.parent) m.parent.remove(m); m.geometry?.dispose(); (m.material as THREE.Material)?.dispose(); });
+    waterMeshMap.current.forEach(m => { if (m.parent) m.parent.remove(m); if (m.geometry !== SHARED.waterCyl) m.geometry?.dispose(); (m.material as THREE.Material)?.dispose(); });
     waterMeshMap.current.clear();
     pipeMeshMap.current.forEach(m => { if (m.material) { const mat = m.material as THREE.MeshStandardMaterial; mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; } });
   }, []);
@@ -920,7 +950,7 @@ export default function SandboxPage() {
       let wm = waterMeshMap.current.get(nid);
       // 先清理热力图/溢流环(含 early-return 路径,防止水深回落后圆盘残留)
       const childrenToRemove = group.children.filter(c => (c as any).userData?.overflowRing);
-      childrenToRemove.forEach(c => { group.remove(c); const m = c as THREE.Mesh; if (m.geometry) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; if (mat) mat.dispose(); });
+      childrenToRemove.forEach(c => { group.remove(c); const m = c as THREE.Mesh; if (m.geometry && m.geometry !== SHARED.heatDisc && m.geometry !== SHARED.overflowRing) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; if (mat) mat.dispose(); });
       if (depth < 0.003) { if (wm) wm.visible = false; return; }
       if (!wm) {
         const wGeom = SHARED.waterCyl; // 共享几何(性能:推演不再每步 new Geometry)
@@ -990,7 +1020,7 @@ export default function SandboxPage() {
         }
       }
     });
-  }, [dynStep, dynRes, vertEx, heatmap, selected]);
+  }, [dynStep, dynRes, vertEx, heatmap, selected, rainPreview]);
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
@@ -1016,7 +1046,7 @@ export default function SandboxPage() {
     else if (guide === 2 && landcover !== "default") setGuide(3);
     else if (guide === 3 && (rainPreview != null || dynI !== 100)) { setGuide(0); }
   }, [guide, selected, landcover, rainPreview, dynI]);
-  const finishGuide = () => { setGuide(0); setGuideDismissed(true); };
+  const finishGuide = () => { setGuide(0); };
 
   // 卸载清理防抖/提示定时器(防卸载后 setState/fetch)
   useEffect(() => () => {
@@ -1051,28 +1081,54 @@ export default function SandboxPage() {
     if (selected?.type !== "pipe" || !dataRef.current) { traceRef.current = null; return; }
     const pipes = (dataRef.current.pipes as any[]) || [];
     const byId = new Map(pipes.map(p => [p.id, p]));
-    const adj = new Map<string, string[]>();
+    const adj = new Map<string, string[]>(); // 节点 id → 经过该节点的管道 id
     pipes.forEach(p => { adj.set(p.from, [...(adj.get(p.from) || []), p.id]); adj.set(p.to, [...(adj.get(p.to) || []), p.id]); });
-    const reach = (start: string, dir: "up" | "down", depth = 2): string[] => {
-      // up:流向指向 start 的管道(上游来水);down:从 start 流出的管道(下游去水)
-      const seen = new Set<string>(); const frontier = [start];
+    const reach = (startNode: string, dir: "up" | "down", depth = 2): string[] => {
+      // 从节点出发:up=流向该节点的管道(上游来水,继续沿 p.from 走);down=从该节点流出的管道(下游去水,沿 p.to 走)
+      const seen = new Set<string>(); // 已收集的管道
+      let frontier = [startNode]; // 节点 id
       for (let d = 0; d < depth && frontier.length; d++) {
         const next: string[] = [];
-        for (const pid of frontier) {
-          for (const nid of adj.get(pid) || []) {
-            if (nid === pid || seen.has(nid)) continue;
-            const p = byId.get(nid);
+        for (const nid of frontier) {
+          for (const pid of adj.get(nid) || []) {
+            if (seen.has(pid)) continue;
+            const p = byId.get(pid);
             if (!p) continue;
-            const flowsToStart = dir === "up" ? p.to === pid : p.from === pid;
-            if (flowsToStart) { seen.add(nid); next.push(nid); }
+            const flowsThrough = dir === "up" ? p.to === nid : p.from === nid;
+            if (flowsThrough) {
+              seen.add(pid);
+              next.push(dir === "up" ? p.from : p.to);
+            }
           }
         }
-        frontier.splice(0, frontier.length, ...next);
+        frontier = next;
       }
       return [...seen];
     };
-    traceRef.current = { up: reach(selected.data.id, "up"), down: reach(selected.data.id, "down") };
-    traceTimerRef.current = setTimeout(() => { traceRef.current = null; traceTimerRef.current = null; setSelected(selected ? { ...selected } : null); }, 5000);
+    traceRef.current = { up: reach(selected.data.from, "up"), down: reach(selected.data.to, "down") };
+    // 5s 后清除溯源并手动恢复材质(按当前流量色,effect 同款公式;不再触发 effect 避免恢复循环)
+    const restoreList = [...traceRef.current.up, ...traceRef.current.down, selected.data.id];
+    traceTimerRef.current = setTimeout(() => {
+      traceRef.current = null; traceTimerRef.current = null;
+      const s = kbState.current;
+      const maxF = s.dynRes?.summary?.maxFlow?.value || 0.1;
+      restoreList.forEach((pid) => {
+        const m = pipeMeshMap.current.get(pid); if (!m) return;
+        const mat = m.material as THREE.MeshStandardMaterial;
+        const ld = (s.dynRes as any)?.links?.[pid];
+        const flows = ld?.flow; const caps = ld?.capacity;
+        const flow = (flows && s.dynStep < flows.length) ? flows[s.dynStep] : 0;
+        const capacity = (caps && s.dynStep < caps.length) ? caps[s.dynStep] : 0;
+        if (Math.abs(flow) < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
+        else {
+          const isFull = capacity > 0.98;
+          const ratio = Math.min(1, Math.abs(flow) / maxF);
+          mat.color.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.4 + ratio * 0.25));
+          mat.emissive.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
+          mat.emissiveIntensity = isFull ? 0.5 : 0.08 + ratio * 0.4;
+        }
+      });
+    }, 5000);
   }, [selected]);
 
   // 键盘快捷键:空格 = 播放/暂停,←/→ = 步进(仅动态模式且有结果,且焦点不在输入控件)
@@ -1207,6 +1263,9 @@ export default function SandboxPage() {
                           // 峰值卡片一键跳转:载入该方案结果并跳到全局峰值时刻(3D/横截面/时间轴同步)
                           const rs = compareRes[lc];
                           if (!rs) return;
+                          // 竞态防护:作废在途 loadSim/对比请求
+                          simSeqRef.current++;
+                          abortRef.current?.abort();
                           setLandcover(lc);
                           prevSimRef.current = dynRes; // 供 Δ 对比提示
                           setDynRes(rs); setSimId(rs.simulationId || ""); setDynPhase("ready");
