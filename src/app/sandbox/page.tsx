@@ -696,14 +696,19 @@ export default function SandboxPage() {
             top.forEach(([id]) => {
               const m = pipeMeshMap.current.get(id); if (!m) return;
               const mat = m.material as THREE.MeshStandardMaterial;
-              const flows = (s.dynRes as any)?.links?.[id]?.flow;
+              const ld = (s.dynRes as any)?.links?.[id];
+              const flows = ld?.flow;
+              const caps = ld?.capacity;
               const flow = (flows && s.dynStep < flows.length) ? flows[s.dynStep] : 0;
+              const capacity = (caps && s.dynStep < caps.length) ? caps[s.dynStep] : 0;
               if (Math.abs(flow) < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
               else {
+                // 与着色 effect 同款公式(含满管橙分支),恢复不覆盖 effect 语义
+                const isFull = capacity > 0.98;
                 const ratio = Math.min(1, Math.abs(flow) / maxF);
-                mat.color.set(new THREE.Color().setHSL(0.55 - ratio * 0.35, 0.7, 0.4 + ratio * 0.25));
-                mat.emissive.set(new THREE.Color().setHSL(0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
-                mat.emissiveIntensity = 0.08 + ratio * 0.4;
+                mat.color.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.4 + ratio * 0.25));
+                mat.emissive.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
+                mat.emissiveIntensity = isFull ? 0.5 : 0.08 + ratio * 0.4;
               }
             });
           }, 5200);
