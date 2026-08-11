@@ -13,6 +13,7 @@ J2               9     4       0         0
 ;;Name           Shape    Geom1   Geom2
 P1               CIRCULAR 1.0     0
 P2               CIRCULAR 0.8     0
+P3               RECT_OPEN 1.5    0
 
 [OUTFALLS]
 O1               8       0       0
@@ -56,8 +57,7 @@ describe("applyValvesStorages", () => {
   });
 
   it("非 CIRCULAR 截面不缩放 + k=0 缩到 0.3d", () => {
-    const inp2 = inp + "P3               RECT_OPEN 1.5     0\n";
-    const r = applyValvesStorages(inp2, { P3: 0.5, P1: 0 });
+    const r = applyValvesStorages(inp, { P3: 0.5, P1: 0 });
     // RECT_OPEN 跳过,geom1 不变
     expect(r.text.split("\n").find(l => l.trim().startsWith("P3 "))!.trim().split(/\s+/)[2]).toBe("1.5");
     // k=0 → d * 0.3
