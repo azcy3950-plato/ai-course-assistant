@@ -63,18 +63,18 @@ function fmtTime(hoursDecimal: number): string {
 // ═══════════════════════════════════════════════════════════
 // PIPE CROSS-SECTION PANEL — 管网横截面水量展示(方案1)
 // ═══════════════════════════════════════════════════════════
-function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true }: {
-  diam: number; depth: number; depthFraction: number; flow: number; flowDir: string; landcover: string; previewRatio?: number; animate?: boolean;
+function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false }: {
+  diam: number; depth: number; depthFraction: number; flow: number; flowDir: string; landcover: string; previewRatio?: number; animate?: boolean; compact?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const latest = useRef({ diam, depth, depthFraction, flow, flowDir, previewRatio });
-  latest.current = { diam, depth, depthFraction, flow, flowDir, previewRatio };
+  const latest = useRef({ diam, depth, depthFraction, flow, flowDir, previewRatio, compact });
+  latest.current = { diam, depth, depthFraction, flow, flowDir, previewRatio, compact };
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    const w = 180, h = 150;
+    const w = latest.current.compact ? 100 : 180, h = latest.current.compact ? 84 : 150;
     canvas.width = w * dpr; canvas.height = h * dpr;
     canvas.style.width = w + "px"; canvas.style.height = h + "px";
     const ctx = canvas.getContext("2d");
@@ -727,6 +727,9 @@ export default function SandboxPage() {
   const runCompare = useCallback(async () => {
     if (comparing) return;
     const seq = ++simSeqRef.current;
+    // 取消待执行的雨强防抖重跑(避免防抖回调抢占对比请求)
+    if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
+    setRainPreview(null);
     abortRef.current?.abort();
     setComparing(true); setCompareRes(null); setDynPhase("loading"); setDynStep(0);
     const results: Record<string, any> = {};
@@ -1012,41 +1015,6 @@ export default function SandboxPage() {
                     })}
                   </div>
                   <div className="text-[9px] leading-3 text-gray-500">绿色海绵降低峰值 {(() => { const g = compareRes.green?.summary?.maxFlow?.value, b = compareRes.default?.summary?.maxFlow?.value; return (g != null && b > 0) ? Math.max(0, ((b - g) / b) * 100).toFixed(0) : "—"; })()}%，灰色强开发抬高峰值 {(() => { const r = compareRes.gray?.summary?.maxFlow?.value, b = compareRes.default?.summary?.maxFlow?.value; return (r != null && b > 0) ? Math.max(0, ((r - b) / b) * 100).toFixed(0) : "—"; })()}%</div>
-                  {/* 三方案横截面对比(方案1+2 联动:同一管道、峰值时刻并排对比) */}
-                  {(() => {
-                    const cmpPipe = (selected?.type === "pipe" ? selected.data.id : null) || autoPipeId;
-                    if (!cmpPipe || !compareRes.default?.links?.[cmpPipe]) return null;
-                    const cmpDiam = selected?.type === "pipe" ? (selected.data.diam || 0.3) : ((dataRef.current?.pipes as any)?.find?.((p: any) => p.id === cmpPipe)?.diam) || 0.3;
-                    const peakOf = (rs: any) => { const flows = rs?.links?.[cmpPipe]?.flow || []; let pk = 0; flows.forEach((v: number, i: number) => { if (Math.abs(v) > Math.abs(flows[pk] ?? 0)) pk = i; }); return pk; };
-                    const pkDefault = peakOf(compareRes.default);
-                    const bv = Math.abs(compareRes.default.links[cmpPipe].flow?.[pkDefault] ?? 0);
-                    return (
-                      <div className="border-t border-gray-700 pt-1.5 mt-1">
-                        <div className="text-[10px] text-gray-500 mb-1">管道 {cmpPipe} 横截面对比(峰值时刻)</div>
-                        <div className="flex gap-1">
-                          {([["default", "⚪现状", "text-gray-400"], ["green", "🟢绿色", "text-green-400"], ["gray", "🟠灰色", "text-orange-400"]] as const).map(([lc, label, color]) => {
-                            const rs = compareRes[lc]; const ld = rs?.links?.[cmpPipe]; if (!ld) return null;
-                            const pk = peakOf(rs); const f = ld.flow?.[pk] ?? 0;
-                            const diff = bv > 0 ? (Math.abs(f) - bv) / bv * 100 : 0;
-                            return (
-                              <div key={lc} className="flex-1 text-center">
-                                <PipeCrossSection
-                                  diam={cmpDiam}
-                                  depth={ld.depth?.[pk] ?? 0}
-                                  depthFraction={ld.depthFraction?.[pk] ?? 0}
-                                  flow={f}
-                                  flowDir={label}
-                                  landcover={lc}
-                                  animate={false}
-                                />
-                                <div className={`text-[9px] font-bold ${lc === "default" ? "text-gray-500" : diff <= 0 ? "text-green-400" : "text-orange-400"}`}>{lc === "default" ? "基准" : `${diff <= 0 ? "▼" : "▲"}${Math.abs(diff).toFixed(0)}%`}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
                 </div>
               )}
               {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">▶ 开始推演</button>}
@@ -1165,6 +1133,42 @@ export default function SandboxPage() {
       )}
 
       {/* ── Timeline (dynamic only) ── */}
+      {/* 三方案横截面对比浮层(独立于窄面板,并排不溢出) */}
+      {mode === "dynamic" && compareRes && (() => {
+        const cmpPipe = (selected?.type === "pipe" ? selected.data.id : null) || autoPipeId;
+        if (!cmpPipe || !compareRes.default?.links?.[cmpPipe]) return null;
+        const cmpDiam = selected?.type === "pipe" ? (selected.data.diam || 0.3) : ((dataRef.current?.pipes as any)?.find?.((p: any) => p.id === cmpPipe)?.diam) || 0.3;
+        const peakOf = (rs: any) => { const flows = rs?.links?.[cmpPipe]?.flow || []; let pk = 0; flows.forEach((v: number, i: number) => { if (Math.abs(v) > Math.abs(flows[pk] ?? 0)) pk = i; }); return pk; };
+        const pkDefault = peakOf(compareRes.default);
+        const bv = Math.abs(compareRes.default.links[cmpPipe].flow?.[pkDefault] ?? 0);
+        return (
+          <div className="absolute left-2 bottom-14 z-10 bg-black/90 backdrop-blur rounded-lg border border-gray-700 p-2 w-[336px] shadow-lg">
+            <div className="text-[10px] text-gray-400 mb-1">▬ {cmpPipe} 三方案横截面对比(峰值时刻)</div>
+            <div className="flex gap-1">
+              {([["default", "⚪现状", "text-gray-400"], ["green", "🟢绿色", "text-green-400"], ["gray", "🟠灰色", "text-orange-400"]] as const).map(([lc, label, color]) => {
+                const rs = compareRes[lc]; const ld = rs?.links?.[cmpPipe]; if (!ld) return null;
+                const pk = peakOf(rs); const f = ld.flow?.[pk] ?? 0;
+                const diff = bv > 0 ? (Math.abs(f) - bv) / bv * 100 : 0;
+                return (
+                  <div key={lc} className="flex-1 text-center">
+                    <PipeCrossSection
+                      diam={cmpDiam}
+                      depth={ld.depth?.[pk] ?? 0}
+                      depthFraction={ld.depthFraction?.[pk] ?? 0}
+                      flow={f}
+                      flowDir={label}
+                      landcover={lc}
+                      animate={false}
+                      compact
+                    />
+                    <div className={`text-[9px] font-bold ${lc === "default" ? "text-gray-500" : diff <= 0 ? "text-green-400" : "text-orange-400"}`}>{lc === "default" ? "基准" : `${diff <= 0 ? "▼" : "▲"}${Math.abs(diff).toFixed(0)}%`}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
       {/* 方案切换结果状态条 */}
       {schemeMsg && mode === "dynamic" && (
         <div className={`absolute bottom-14 left-1/2 -translate-x-1/2 z-10 bg-black/85 border border-gray-700 rounded-lg px-3 py-1.5 text-[11px] font-bold whitespace-nowrap shadow-lg ${schemeMsg.color}`}>{schemeMsg.text}</div>
