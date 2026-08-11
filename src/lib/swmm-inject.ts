@@ -2,6 +2,15 @@
 export interface ValveMap { [pipeId: string]: number } // 开度 0-1
 export interface StorageItem { nodeId: string; capacity: number } // 容量 m³
 
+// 阀门开度解析:仅接受数字或非空数字串(null/布尔/空串/NaN 返回 null,防 Number(null)=0 误关阀门)
+export function parseValveValue(v: unknown): number | null {
+  const okType = typeof v === "number" || (typeof v === "string" && v.trim() !== "");
+  if (!okType) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(1, n));
+}
+
 export function applyValvesStorages(
   inpText: string,
   valves?: ValveMap,

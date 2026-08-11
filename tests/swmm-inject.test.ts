@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyValvesStorages } from "../src/lib/swmm-inject";
+import { applyValvesStorages, parseValveValue } from "../src/lib/swmm-inject";
 
 const inp = `[TITLE]
 test
@@ -18,6 +18,25 @@ P3               RECT_OPEN 1.5    0
 [OUTFALLS]
 O1               8       0       0
 `;
+
+describe("parseValveValue", () => {
+  it("接受数字与非空数字串,钳制 0-1", () => {
+    expect(parseValveValue(0.5)).toBe(0.5);
+    expect(parseValveValue("0.5")).toBe(0.5);
+    expect(parseValveValue(2)).toBe(1);
+    expect(parseValveValue(-1)).toBe(0);
+  });
+  it("拒绝 null/布尔/空串/NaN(防 Number(null)=0 误关阀门)", () => {
+    expect(parseValveValue(null)).toBeNull();
+    expect(parseValveValue(undefined)).toBeNull();
+    expect(parseValveValue(true)).toBeNull();
+    expect(parseValveValue("")).toBeNull();
+    expect(parseValveValue("  ")).toBeNull();
+    expect(parseValveValue(NaN)).toBeNull();
+    expect(parseValveValue(Infinity)).toBeNull();
+    expect(parseValveValue("abc")).toBeNull();
+  });
+});
 
 describe("applyValvesStorages", () => {
   it("无阀门/蓄水时原样返回且 affected 为空", () => {
