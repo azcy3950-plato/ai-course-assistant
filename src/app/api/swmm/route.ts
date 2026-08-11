@@ -83,10 +83,10 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
         const imperv = parseFloat(parts[4]);
         if (Number.isFinite(imperv)) {
           // gray 灰色强开发:向 100% 不透水收敛(0%→60%,100% 保持 100%)
-          // green 绿色海绵:不透水率减半(100%→50%,0% 保持 0%);greenLevel∈[0,1] 时线性插值(现状→全绿色)
+          // green 绿色海绵:applyGreenLevel 线性插值(level=0 现状不变,1 全绿色 imperv×0.5)
           const adjusted = landcover === "gray"
             ? Math.min(100, Math.max(0, imperv + (100 - imperv) * 0.6))
-            : Math.min(100, Math.max(0, greenLevel != null ? imperv * (1 - 0.5 * greenLevel) : imperv * 0.5));
+            : applyGreenLevel(imperv, 0, greenLevel ?? 1).imperv;
           parts[4] = adjusted.toFixed(2);
           out.push(parts.join('\t'));
           continue;
@@ -96,7 +96,8 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
         // [SUBAREAS] Subcatchment N-Imperv N-Perv ... (第2列 N-Imperv)
         const nImp = parseFloat(parts[1]);
         if (Number.isFinite(nImp) && nImp > 0) {
-          parts[1] = (landcover === "gray" ? Math.max(0.01, Math.min(0.05, nImp * 0.8)) : Math.min(0.2, Math.max(0.05, nImp * (1 + 3 * (greenLevel != null ? greenLevel : 1))))).toFixed(4);
+          // gray:糙率降 20%(下限 0.01);green:applyGreenLevel 线性插值(level=0 原值、1 ×4,上限 0.2,无下限防 level=0 漂移)
+          parts[1] = (landcover === "gray" ? Math.max(0.01, Math.min(0.05, nImp * 0.8)) : Math.min(0.2, applyGreenLevel(0, nImp, greenLevel ?? 1).nImperv)).toFixed(4);
           out.push(parts.join('\t'));
           continue;
         }
