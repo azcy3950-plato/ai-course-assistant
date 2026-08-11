@@ -403,6 +403,11 @@ export default function SandboxPage() {
   const valveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const valvesRef = useRef<Record<string, number>>({});
   useEffect(() => { valvesRef.current = valves; }, [valves]);
+  // 下垫面渐变 state(声明须在着色 effect 之前):绿色强度 0-1,仅 landcover=green 生效
+  const [greenLevel, setGreenLevel] = useState(1);
+  const greenLevelRef = useRef(1);
+  const greenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { greenLevelRef.current = greenLevel; }, [greenLevel]);
   // 蓄水设施 state(声明须在着色 effect 之前)
   interface StorageFac { id: string; nodeId: string; capacity: number }
   const [storages, setStorages] = useState<StorageFac[]>([]);
@@ -930,7 +935,7 @@ export default function SandboxPage() {
   // ═══════════════════════════════════════════════════════════
   // DYNAMIC MODE — kept from working backend, visuals cleaned
   // ═══════════════════════════════════════════════════════════
-  const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green", overrideValves?: Record<string, number>, overrideStorages?: Array<{ nodeId: string; capacity: number }>) => {
+  const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green", overrideValves?: Record<string, number>, overrideStorages?: Array<{ nodeId: string; capacity: number }>, overrideGreenLevel?: number) => {
     const reqSeq = ++simSeqRef.current;
     // 取消待执行的雨强防抖重跑(避免旧闭包竞态覆盖新方案状态)
     if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
@@ -943,10 +948,11 @@ export default function SandboxPage() {
     const simLandcover = overrideLandcover ?? landcover;
     const simValves = overrideValves ?? valves;
     const simStorages = overrideStorages ?? storagesRef.current.map(s => ({ nodeId: s.nodeId, capacity: s.capacity }));
+    const simGreenLevel = overrideGreenLevel ?? (simLandcover === "green" ? greenLevel : undefined);
     let tid: ReturnType<typeof setTimeout> | null = null;
     try {
       tid = setTimeout(() => ctrl.abort(), 90000);
-      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, landcover: simLandcover, valves: Object.keys(simValves).length ? simValves : undefined, storages: simStorages.length ? simStorages : undefined }), signal: ctrl.signal });
+      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, landcover: simLandcover, greenLevel: simGreenLevel, valves: Object.keys(simValves).length ? simValves : undefined, storages: simStorages.length ? simStorages : undefined }), signal: ctrl.signal });
       if (tid) { clearTimeout(tid); tid = null; }
       if (abortRef.current === ctrl) abortRef.current = null;
       const d = await res.json();
@@ -1012,7 +1018,7 @@ export default function SandboxPage() {
       }
     } catch (e: any) { if (reqSeq !== simSeqRef.current) return; if (abortRef.current === ctrl) abortRef.current = null; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
     finally { if (tid) clearTimeout(tid); }
-  }, [dynI, landcover, valves]);
+  }, [dynI, landcover, valves, greenLevel]);
 
   // 三方案对比:串行仿真 现状/绿色/灰色(后端为同步仿真,逐个请求),展示峰值差异
   const runCompare = useCallback(async () => {
@@ -1082,7 +1088,7 @@ export default function SandboxPage() {
       }
       wm.visible = true;
       // 雨强预览:拖动滑条时按比例缩放目标高度;否则真实仿真值(过渡由 animate 插值实现)
-      const previewRatio = rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1;
+      const previewRatio = (rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * greenPreviewRatio;
       const wh = Math.max(0.03, depth * ve) * previewRatio;
       (wm as any).userData.targetScaleY = wh;
       (wm as any).userData.targetY = invertY + wh / 2;
@@ -1246,6 +1252,15 @@ export default function SandboxPage() {
     const k = valveDraft[pid] ?? valves[pid];
     return k == null ? 1 : 0.3 + 0.7 * k;
   };
+  // 下垫面渐变:绿色强度(0-1),仅 landcover=green 时生效;拖动预览+防抖重跑(与雨强同模式)
+  const onGreenLevelChange = (v: number) => {
+    const lv = Math.max(0, Math.min(1, v / 100));
+    setGreenLevel(lv); // 即时更新 → 横截面预览系数联动
+    if (greenTimerRef.current) { clearTimeout(greenTimerRef.current); greenTimerRef.current = null; }
+    greenTimerRef.current = setTimeout(() => loadSim(undefined, "green", undefined, undefined, greenLevelRef.current), 500);
+  };
+  // 绿色强度预览系数:强度越高水位越低(近似,松手后真实仿真覆盖)
+  const greenPreviewRatio = (landcover === "green" && greenLevel < 1) ? (1 - 0.22 * (1 - greenLevel)) : 1;
   const onValveChange = (pid: string, v: number) => {
     const k = Math.max(0, Math.min(1, v / 100));
     setValveDraft(d => ({ ...d, [pid]: k }));
@@ -1314,6 +1329,7 @@ export default function SandboxPage() {
     if (traceTimerRef.current) clearTimeout(traceTimerRef.current);
     if (valveTimerRef.current) clearTimeout(valveTimerRef.current);
     if (storageCapTimerRef.current) clearTimeout(storageCapTimerRef.current);
+    if (greenTimerRef.current) clearTimeout(greenTimerRef.current);
   }, []);
 
   // 当前时间步风险统计:满管管道 / 溢流节点
@@ -1480,7 +1496,7 @@ export default function SandboxPage() {
                   flow={ld.flow?.[dynStep] ?? 0}
                   flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`}
                   landcover={landcover}
-                  previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(floatPipeId)}
+                  previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * greenPreviewRatio * valveRatio(floatPipeId)}
                   compact
                 />
               </div>
@@ -1511,7 +1527,7 @@ export default function SandboxPage() {
                   flow={ld.flow?.[dynStep] ?? 0}
                   flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`}
                   landcover={landcover}
-                  previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(zoomPipeId)}
+                  previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * greenPreviewRatio * valveRatio(zoomPipeId)}
                   onCanvas={setSnapCanvas}
                 />
                 <div className="flex gap-2 mt-2">
@@ -1581,6 +1597,13 @@ export default function SandboxPage() {
                   ))}
                 </div>
                 {landcover !== "default" && <div className="mt-1 text-[9px] leading-3.5 text-gray-500">{landcover === "green" ? "增加透水铺装与绿地,降低不透水率" : "增加硬化地面,提高不透水率"}</div>}
+                {landcover === "green" && (
+                  <div className="mt-1 rounded bg-green-950/40 border border-green-900/60 p-1.5">
+                    <div className="flex justify-between text-[9px] mb-0.5"><span className="text-green-400/80">🌿 绿色强度(渐变)</span><span className="text-green-300 font-bold">{Math.round(greenLevel * 100)}%</span></div>
+                    <input type="range" min="0" max="100" step="5" value={Math.round(greenLevel * 100)} onChange={e => onGreenLevelChange(Number(e.target.value))} className="w-full accent-green-500" />
+                    <div className="flex justify-between text-[8px] text-gray-500"><span>现状</span><span>全绿色</span></div>
+                  </div>
+                )}
               </div>
               <button onClick={() => loadSim()} className="w-full py-1.5 bg-cyan-800 rounded font-bold text-xs hover:bg-cyan-700 transition-colors">{dynRes ? "🔄 重新仿真" : "📊 加载仿真结果"}</button>
               <button onClick={() => setPlacingStorage(v => !v)} className={`w-full py-1 rounded text-[10px] font-bold transition-colors ${placingStorage ? "bg-teal-600 text-white ring-1 ring-teal-300" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}>🪣 {placingStorage ? "点击地面放置蓄水池…" : `放蓄水池(${storages.length})`}</button>
@@ -1745,7 +1768,7 @@ export default function SandboxPage() {
                       flow={ldOf(p.id).flow?.[dynStep] ?? 0}
                       flowDir={`${p.from} → ${p.to}`}
                       landcover={landcover}
-                      previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(p.id)}
+                      previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * greenPreviewRatio * valveRatio(p.id)}
                       compact
                     />
                   </button>
@@ -1782,7 +1805,7 @@ export default function SandboxPage() {
                   flow={curLinkData.flow?.[dynStep] ?? 0}
                   flowDir={`${selected.data.from} → ${selected.data.to}`}
                   landcover={landcover}
-                  previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(selected.data.id)}
+                  previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * greenPreviewRatio * valveRatio(selected.data.id)}
                 />
                 {/* 调节阀控制(动手型交互):拖动即时预览横截面,松手防抖后重跑仿真;仅圆形截面管道可调(后端仅注入 CIRCULAR) */}
                 {(!selected.data.shape || String(selected.data.shape).toUpperCase() === "CIRCULAR") && <div className="mt-1.5 rounded bg-purple-950/40 border border-purple-900/60 p-1.5">

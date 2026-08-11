@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import crypto from 'crypto';
-import { applyValvesStorages, parseValveValue } from '@/lib/swmm-inject';
+import { applyValvesStorages, parseValveValue, applyGreenLevel } from '@/lib/swmm-inject';
 
 // ─── Task store ───
 interface SimTask {
@@ -38,7 +38,7 @@ function cleanupStaleTasks() {
 }
 
 // ─── Modify INP ───
-function modifyRainfall(originalInpPath: string, intensity: number, simDir: string, landcover?: string): string {
+function modifyRainfall(originalInpPath: string, intensity: number, simDir: string, landcover?: string, greenLevel?: number): string {
   const tempInp = join(simDir, 'model.inp');
   let text = readFileSync(originalInpPath, 'utf-8');
   const lines = text.split('\n');
@@ -83,10 +83,10 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
         const imperv = parseFloat(parts[4]);
         if (Number.isFinite(imperv)) {
           // gray 灰色强开发:向 100% 不透水收敛(0%→60%,100% 保持 100%)
-          // green 绿色海绵:不透水率减半(100%→50%,0% 保持 0%)
+          // green 绿色海绵:不透水率减半(100%→50%,0% 保持 0%);greenLevel∈[0,1] 时线性插值(现状→全绿色)
           const adjusted = landcover === "gray"
             ? Math.min(100, Math.max(0, imperv + (100 - imperv) * 0.6))
-            : Math.min(100, Math.max(0, imperv * 0.5));
+            : Math.min(100, Math.max(0, greenLevel != null ? imperv * (1 - 0.5 * greenLevel) : imperv * 0.5));
           parts[4] = adjusted.toFixed(2);
           out.push(parts.join('\t'));
           continue;
@@ -96,7 +96,7 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
         // [SUBAREAS] Subcatchment N-Imperv N-Perv ... (第2列 N-Imperv)
         const nImp = parseFloat(parts[1]);
         if (Number.isFinite(nImp) && nImp > 0) {
-          parts[1] = (landcover === "gray" ? Math.max(0.01, Math.min(0.05, nImp * 0.8)) : Math.min(0.2, Math.max(0.05, nImp * 4))).toFixed(4);
+          parts[1] = (landcover === "gray" ? Math.max(0.01, Math.min(0.05, nImp * 0.8)) : Math.min(0.2, Math.max(0.05, nImp * (1 + 3 * (greenLevel != null ? greenLevel : 1))))).toFixed(4);
           out.push(parts.join('\t'));
           continue;
         }
@@ -301,6 +301,9 @@ export async function POST(req: NextRequest) {
     const rawIntensity = body.intensity == null ? NaN : Number(body.intensity);
     const intensity = Number.isFinite(rawIntensity) ? Math.max(10, Math.min(500, rawIntensity)) : 80;
     const landcover = ["gray", "green"].includes(body.landcover) ? body.landcover : undefined;
+    // 绿色海绵强度(0-1):仅 landcover=green 时生效,%Imperv 线性插值
+    const rawGL = body.greenLevel == null ? NaN : Number(body.greenLevel);
+    const greenLevel = Number.isFinite(rawGL) ? Math.max(0, Math.min(1, rawGL)) : undefined;
 
     // 阀门(pipeId → 开度 0-1)与蓄水设施(nodeId → 容量 m³):类型校验 + 数值钳制,非法值忽略
     const valves: Record<string, number> = {};
@@ -343,7 +346,7 @@ export async function POST(req: NextRequest) {
     tasks.set(simulationId, task);
 
     const originalInp = join(process.cwd(), 'public', 'zijing_inp.inp');
-    const tempInp = modifyRainfall(originalInp, intensity, simDir, landcover);
+    const tempInp = modifyRainfall(originalInp, intensity, simDir, landcover, greenLevel);
     // 阀门/蓄水注入:在雨强与下垫面修改后的文本上再改直径/洼地面积(失败即标记 task failed,不滞留 running 至超时)
     let affected = { valves: [] as string[], storages: [] as string[] };
     try {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyValvesStorages, parseValveValue } from "../src/lib/swmm-inject";
+import { applyValvesStorages, parseValveValue, applyGreenLevel } from "../src/lib/swmm-inject";
 
 const inp = `[TITLE]
 test
@@ -35,6 +35,24 @@ describe("parseValveValue", () => {
     expect(parseValveValue(NaN)).toBeNull();
     expect(parseValveValue(Infinity)).toBeNull();
     expect(parseValveValue("abc")).toBeNull();
+  });
+});
+
+describe("applyGreenLevel", () => {
+  it("level=0 现状不变,level=1 全绿色(imperv×0.5, N-Imperv×4),中间线性", () => {
+    const l0 = applyGreenLevel(80, 0.01, 0);
+    expect(l0.imperv).toBeCloseTo(80);
+    expect(l0.nImperv).toBeCloseTo(0.01);
+    const l1 = applyGreenLevel(80, 0.01, 1);
+    expect(l1.imperv).toBeCloseTo(40);
+    expect(l1.nImperv).toBeCloseTo(0.04);
+    const l05 = applyGreenLevel(80, 0.01, 0.5);
+    expect(l05.imperv).toBeCloseTo(60);
+    expect(l05.nImperv).toBeCloseTo(0.025);
+  });
+  it("越界 level 钳制 0-1", () => {
+    expect(applyGreenLevel(80, 0.01, 2).imperv).toBeCloseTo(40);
+    expect(applyGreenLevel(80, 0.01, -1).imperv).toBeCloseTo(80);
   });
 });
 

@@ -1,3 +1,13 @@
+// 绿色海绵强度插值:level∈[0,1] 时 %Imperv 与 N-Imperv 在现状与全绿色间线性插值(level=0 现状、1 全绿色)
+export function applyGreenLevel(imperv: number, nImperv: number, level: number): { imperv: number; nImperv: number } {
+  const l = Math.max(0, Math.min(1, level));
+  // 全绿色:imperv×0.5(与既有 green 一致)、N-Imperv×4(糙率增大,上限 0.2 由调用方钳制)
+  return {
+    imperv: Math.min(100, Math.max(0, imperv * (1 - 0.5 * l))),
+    nImperv: nImperv * (1 + 3 * l),
+  };
+}
+
 // SWMM INP 注入纯函数:管道阀门(直径缩放)与节点蓄水(洼地面积) — 可单测,无 I/O
 export interface ValveMap { [pipeId: string]: number } // 开度 0-1
 export interface StorageItem { nodeId: string; capacity: number } // 容量 m³
