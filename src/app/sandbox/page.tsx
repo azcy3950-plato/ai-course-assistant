@@ -1106,14 +1106,12 @@ export default function SandboxPage() {
       return [...seen];
     };
     traceRef.current = { up: reach(selected.data.from, "up"), down: reach(selected.data.to, "down") };
-    // 5s 后清除溯源并手动恢复材质(按当前流量色,effect 同款公式;不再触发 effect 避免恢复循环)
-    const restoreList = [...traceRef.current.up, ...traceRef.current.down, selected.data.id];
+    // 5s 后清除溯源并手动恢复全部管道材质(按当前流量色,effect 同款公式;trace 分支曾把非溯源管道涂暗,必须全量恢复)
     traceTimerRef.current = setTimeout(() => {
       traceRef.current = null; traceTimerRef.current = null;
       const s = kbState.current;
       const maxF = s.dynRes?.summary?.maxFlow?.value || 0.1;
-      restoreList.forEach((pid) => {
-        const m = pipeMeshMap.current.get(pid); if (!m) return;
+      pipeMeshMap.current.forEach((m, pid) => {
         const mat = m.material as THREE.MeshStandardMaterial;
         const ld = (s.dynRes as any)?.links?.[pid];
         const flows = ld?.flow; const caps = ld?.capacity;
