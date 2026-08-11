@@ -304,7 +304,7 @@ export async function POST(req: NextRequest) {
 
     // 阀门(pipeId → 开度 0-1)与蓄水设施(nodeId → 容量 m³):类型校验 + 数值钳制,非法值忽略
     const valves: Record<string, number> = {};
-    if (body.valves && typeof body.valves === "object" && !Array.isArray(body.valves)) {
+    if (body.valves != null && typeof body.valves === "object" && !Array.isArray(body.valves)) {
       for (const [k, v] of Object.entries(body.valves as Record<string, unknown>)) {
         const n = Number(v);
         if (Number.isFinite(n) && k.length <= 64) valves[k] = Math.max(0, Math.min(1, n));
@@ -312,7 +312,7 @@ export async function POST(req: NextRequest) {
     }
     const storages: Array<{ nodeId: string; capacity: number }> = [];
     if (Array.isArray(body.storages)) {
-      for (const s of body.storages as Array<{ nodeId?: unknown; capacity?: unknown }>) {
+      for (const s of (body.storages as Array<{ nodeId?: unknown; capacity?: unknown }>).slice(0, 20)) {
         if (s && typeof s.nodeId === "string" && s.nodeId && s.nodeId.length <= 64) {
           const cap = Number(s.capacity);
           if (Number.isFinite(cap) && cap > 0) storages.push({ nodeId: s.nodeId, capacity: Math.min(5000, Math.max(50, cap)) });
