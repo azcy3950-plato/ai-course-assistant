@@ -695,6 +695,9 @@ export default function SandboxPage() {
           wm.scale.y += (ud.targetScaleY - wm.scale.y) * 0.08;
           wm.position.y += (ud.targetY - wm.position.y) * 0.08;
         });
+        // 溢流红环闪烁(积水圆盘为 MeshBasicMaterial 无 emissive,自动跳过)
+        const flick = 0.35 + 0.45 * Math.sin(performance.now() * 0.008);
+        scene.traverse(o => { const m = o as any; if (m?.userData?.overflowRing && m.isMesh && m.material?.emissiveIntensity != null) m.material.emissiveIntensity = flick; });
         renderer.render(scene, camera);
       };
       animate();
@@ -1034,6 +1037,12 @@ export default function SandboxPage() {
         group.add(ring);
       }
       if (ponding > 0.01) {
+        // 溢流积水圆盘:半径/透明度随地表积水体积实时涨(灾情可视化)
+        const pGeom = new THREE.CircleGeometry(Math.min(1.6, 0.35 + ponding * 0.08), 20);
+        const pDisc = new THREE.Mesh(pGeom, new THREE.MeshBasicMaterial({ color: "#3aa0ff", transparent: true, opacity: Math.min(0.45, 0.15 + ponding * 0.02), depthWrite: false }));
+        pDisc.position.y = groundY + 0.015; pDisc.rotation.x = -Math.PI / 2; (pDisc as any).userData = { overflowRing: true };
+        group.add(pDisc);
+        // 溢流节点红环(静态环 + 闪烁由 animate 统一驱动)
         const ringGeom = SHARED.overflowRing; // 共享几何
         const ring = new THREE.Mesh(ringGeom, new THREE.MeshStandardMaterial({ color: "#e04040", emissive: "#300000", emissiveIntensity: 0.6, roughness: 0.1 }));
         ring.position.y = groundY; ring.rotation.x = Math.PI / 2; (ring as any).userData = { overflowRing: true };
