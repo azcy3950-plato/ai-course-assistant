@@ -74,7 +74,7 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    const w = latest.current.compact ? 100 : 180, h = latest.current.compact ? 84 : 150;
+    const w = latest.current.compact ? 88 : 180, h = latest.current.compact ? 74 : 150;
     canvas.width = w * dpr; canvas.height = h * dpr;
     canvas.style.width = w + "px"; canvas.style.height = h + "px";
     const ctx = canvas.getContext("2d");
@@ -158,13 +158,15 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
   }, [animate]);
 
   return (
-    <div className="rounded-lg border border-gray-700 bg-black/80 p-1.5">
-      <div className="flex items-center justify-between px-1 pb-1">
-        <span className="text-[10px] font-bold text-gray-300">🔵 管道横截面</span>
-        <span className="text-[9px] text-gray-500">{landcover === "green" ? "🟢 绿色海绵" : landcover === "gray" ? "🟠 灰色强开发" : "⚪ 现状"}</span>
-      </div>
+    <div className={`rounded-lg border border-gray-700 bg-black/80 ${latest.current.compact ? "p-0.5" : "p-1.5"}`}>
+      {!latest.current.compact && (
+        <div className="flex items-center justify-between px-1 pb-1">
+          <span className="text-[10px] font-bold text-gray-300">🔵 管道横截面</span>
+          <span className="text-[9px] text-gray-500">{landcover === "green" ? "🟢 绿色海绵" : landcover === "gray" ? "🟠 灰色强开发" : "⚪ 现状"}</span>
+        </div>
+      )}
       <canvas ref={canvasRef} className="block" />
-      <div className="px-1 pt-1 text-[9px] leading-4 text-gray-500">{flowDir}</div>
+      {!latest.current.compact && <div className="px-1 pt-1 text-[9px] leading-4 text-gray-500">{flowDir}</div>}
     </div>
   );
 }
@@ -1142,7 +1144,7 @@ export default function SandboxPage() {
         const pkDefault = peakOf(compareRes.default);
         const bv = Math.abs(compareRes.default.links[cmpPipe].flow?.[pkDefault] ?? 0);
         return (
-          <div className="absolute left-2 bottom-14 z-10 bg-black/90 backdrop-blur rounded-lg border border-gray-700 p-2 w-[336px] shadow-lg">
+          <div className="absolute left-2 bottom-14 z-10 bg-black/90 backdrop-blur rounded-lg border border-gray-700 p-2 w-[340px] shadow-lg">
             <div className="text-[10px] text-gray-400 mb-1">▬ {cmpPipe} 三方案横截面对比(峰值时刻)</div>
             <div className="flex gap-1">
               {([["default", "⚪现状", "text-gray-400"], ["green", "🟢绿色", "text-green-400"], ["gray", "🟠灰色", "text-orange-400"]] as const).map(([lc, label, color]) => {
