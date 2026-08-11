@@ -1021,6 +1021,7 @@ export default function SandboxPage() {
 
   // 三方案对比:串行仿真 现状/绿色/灰色(后端为同步仿真,逐个请求),展示峰值差异
   const runCompare = useCallback(async () => {
+    if (greenTimerRef.current) { clearTimeout(greenTimerRef.current); greenTimerRef.current = null; }
     if (comparing) return;
     const seq = ++simSeqRef.current;
     // 取消待执行的雨强防抖重跑(避免防抖回调抢占对比请求)
@@ -1636,6 +1637,7 @@ export default function SandboxPage() {
                           simSeqRef.current++;
                           abortRef.current?.abort();
                           if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
+                          if (greenTimerRef.current) { clearTimeout(greenTimerRef.current); greenTimerRef.current = null; }
                           setRainPreview(null);
                           setLandcover(lc);
                           prevSimRef.current = dynRes; // 供 Δ 对比提示
