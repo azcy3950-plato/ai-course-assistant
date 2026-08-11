@@ -367,6 +367,12 @@ export default function SandboxPage() {
   // Dynamic state
   const [dynI, setDynI] = useState(80);
   const draggedRainRef = useRef(false); // 用户是否曾拖动过雨强滑条(引导第 3 步完成条件)
+  // 管道调节阀:已生效开度(pipeId→0-1)与拖动中预览;防抖重跑(与雨强滑条同模式)
+  const [valves, setValves] = useState<Record<string, number>>({});
+  const [valveDraft, setValveDraft] = useState<Record<string, number>>({});
+  const valveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const valvesRef = useRef<Record<string, number>>({});
+  useEffect(() => { valvesRef.current = valves; }, [valves]);
   const [landcover, setLandcover] = useState<"default" | "gray" | "green">("default");
   // 雨强预览:拖动滑条时即时缩放横截面水位,松手防抖后真实仿真覆盖
   const [rainPreview, setRainPreview] = useState<number | null>(null);
@@ -829,7 +835,7 @@ export default function SandboxPage() {
   // ═══════════════════════════════════════════════════════════
   // DYNAMIC MODE — kept from working backend, visuals cleaned
   // ═══════════════════════════════════════════════════════════
-  const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green") => {
+  const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green", overrideValves?: Record<string, number>) => {
     const reqSeq = ++simSeqRef.current;
     // 取消待执行的雨强防抖重跑(避免旧闭包竞态覆盖新方案状态)
     if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
@@ -840,10 +846,11 @@ export default function SandboxPage() {
     abortRef.current = ctrl;
     const simIntensity = overrideIntensity ?? dynI;
     const simLandcover = overrideLandcover ?? landcover;
+    const simValves = overrideValves ?? valves;
     let tid: ReturnType<typeof setTimeout> | null = null;
     try {
       tid = setTimeout(() => ctrl.abort(), 90000);
-      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, landcover: simLandcover }), signal: ctrl.signal });
+      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, landcover: simLandcover, valves: Object.keys(simValves).length ? simValves : undefined }), signal: ctrl.signal });
       if (tid) { clearTimeout(tid); tid = null; }
       if (abortRef.current === ctrl) abortRef.current = null;
       const d = await res.json();
@@ -902,7 +909,7 @@ export default function SandboxPage() {
       }
     } catch (e: any) { if (reqSeq !== simSeqRef.current) return; if (abortRef.current === ctrl) abortRef.current = null; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
     finally { if (tid) clearTimeout(tid); }
-  }, [dynI, landcover]);
+  }, [dynI, landcover, valves]);
 
   // 三方案对比:串行仿真 现状/绿色/灰色(后端为同步仿真,逐个请求),展示峰值差异
   const runCompare = useCallback(async () => {
@@ -1030,8 +1037,16 @@ export default function SandboxPage() {
           mat.emissiveIntensity = 0.65;
         }
       }
+      // 阀门状态着色:紫色(开度越小越深紫),优先级最高
+      const vk = valveDraft[pid] ?? valves[pid];
+      if (vk != null) {
+        const v = Math.max(0, Math.min(1, vk));
+        mat.color.set(new THREE.Color().setHSL(0.75, 0.65, 0.2 + v * 0.35));
+        mat.emissive.set(new THREE.Color().setHSL(0.75, 0.8, 0.06 + v * 0.16));
+        mat.emissiveIntensity = 0.55;
+      }
     });
-  }, [dynStep, dynRes, vertEx, heatmap, selected, rainPreview]);
+  }, [dynStep, dynRes, vertEx, heatmap, selected, rainPreview, valves, valveDraft]);
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
@@ -1059,12 +1074,40 @@ export default function SandboxPage() {
   }, [guide, selected, landcover, dynI]);
   const finishGuide = () => { setGuide(0); };
 
+  // ─── 管道调节阀:开度预览/防抖生效/重置(与雨强滑条同「预览→重跑」模式) ───
+  const valveRatio = (pid: string) => {
+    const k = valveDraft[pid] ?? valves[pid];
+    return k == null ? 1 : 0.3 + 0.7 * k;
+  };
+  const onValveChange = (pid: string, v: number) => {
+    const k = Math.max(0, Math.min(1, v / 100));
+    setValveDraft(d => ({ ...d, [pid]: k }));
+    if (valveTimerRef.current) { clearTimeout(valveTimerRef.current); valveTimerRef.current = null; }
+    valveTimerRef.current = setTimeout(() => {
+      const nv = { ...valvesRef.current, [pid]: k };
+      valvesRef.current = nv;
+      setValves(nv);
+      setValveDraft(d => { const n = { ...d }; delete n[pid]; return n; });
+      loadSim(undefined, undefined, nv);
+    }, 500);
+  };
+  const resetValves = (pid?: string) => {
+    if (valveTimerRef.current) { clearTimeout(valveTimerRef.current); valveTimerRef.current = null; }
+    const nv = { ...valvesRef.current };
+    if (pid) delete nv[pid]; else for (const k of Object.keys(nv)) delete nv[k];
+    valvesRef.current = nv;
+    setValves(nv);
+    setValveDraft({});
+    loadSim(undefined, undefined, nv);
+  };
+
   // 卸载清理防抖/提示定时器(防卸载后 setState/fetch)
   useEffect(() => () => {
     if (rainTimer.current) clearTimeout(rainTimer.current);
     if (schemeMsgTimer.current) clearTimeout(schemeMsgTimer.current);
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
     if (traceTimerRef.current) clearTimeout(traceTimerRef.current);
+    if (valveTimerRef.current) clearTimeout(valveTimerRef.current);
   }, []);
 
   // 当前时间步风险统计:满管管道 / 溢流节点
@@ -1258,6 +1301,7 @@ export default function SandboxPage() {
                 {landcover !== "default" && <div className="mt-1 text-[9px] leading-3.5 text-gray-500">{landcover === "green" ? "增加透水铺装与绿地,降低不透水率" : "增加硬化地面,提高不透水率"}</div>}
               </div>
               <button onClick={() => loadSim()} className="w-full py-1.5 bg-cyan-800 rounded font-bold text-xs hover:bg-cyan-700 transition-colors">{dynRes ? "🔄 重新仿真" : "📊 加载仿真结果"}</button>
+              {Object.keys(valves).length > 0 && <button onClick={() => resetValves()} className="w-full py-1 bg-purple-900/70 rounded text-[10px] font-bold hover:bg-purple-800/70 transition-colors">♻ 重置全部阀门({Object.keys(valves).length})</button>}
               <button onClick={runCompare} disabled={comparing} className="w-full py-1.5 bg-violet-900 rounded font-bold text-xs hover:bg-violet-800 transition-colors disabled:opacity-40">{comparing ? "⏳ 对比中…" : "⚖️ 三方案对比"}</button>
               {compareRes && (
                 <div className="border-t border-gray-700 pt-1.5 mt-1 space-y-1">
@@ -1359,7 +1403,7 @@ export default function SandboxPage() {
                 flow={ld.flow?.[dynStep] ?? 0}
                 flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`}
                 landcover={landcover}
-                previewRatio={rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1}
+                previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(autoPipeId)}
               />
             </div>
             );
@@ -1391,8 +1435,18 @@ export default function SandboxPage() {
                   flow={curLinkData.flow?.[dynStep] ?? 0}
                   flowDir={`${selected.data.from} → ${selected.data.to}`}
                   landcover={landcover}
-                  previewRatio={rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1}
+                  previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(selected.data.id)}
                 />
+                {/* 调节阀控制(动手型交互):拖动即时预览横截面,松手防抖后重跑仿真 */}
+                <div className="mt-1.5 rounded bg-purple-950/40 border border-purple-900/60 p-1.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold text-purple-300">🚰 调节阀</span>
+                    {(valves[selected.data.id] != null || valveDraft[selected.data.id] != null) && <button onClick={() => resetValves(selected.data.id)} className="text-[9px] text-purple-400 hover:text-purple-200">重置</button>}
+                  </div>
+                  <input type="range" min="0" max="100" step="5" value={Math.round((valveDraft[selected.data.id] ?? valves[selected.data.id] ?? 1) * 100)} onChange={e => onValveChange(selected.data.id, Number(e.target.value))} className="w-full accent-purple-500" />
+                  <div className="flex justify-between text-[9px] text-gray-500"><span>关闭</span><span className="text-purple-300 font-bold">{Math.round((valveDraft[selected.data.id] ?? valves[selected.data.id] ?? 1) * 100)}%</span><span>全开</span></div>
+                  {(valves[selected.data.id] != null && valveDraft[selected.data.id] == null) && <div className="text-[9px] leading-3 text-purple-400/80 mt-0.5">已生效,拖动调整后松手重新仿真</div>}
+                </div>
               </>)}
             </div>
           )}
