@@ -75,13 +75,14 @@ const SHARED = {
   overflowDisc: new THREE.CircleGeometry(1, 20), // 单位圆,半径用 scale 缩放(积水圆盘共享几何)
 };
 
-function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false }: {
-  diam: number; depth: number; depthFraction: number; flow: number; flowDir: string; landcover: string; previewRatio?: number; animate?: boolean; compact?: boolean;
+function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false, onCanvas }: {
+  diam: number; depth: number; depthFraction: number; flow: number; flowDir: string; landcover: string; previewRatio?: number; animate?: boolean; compact?: boolean; onCanvas?: (c: HTMLCanvasElement | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const latest = useRef({ diam, depth, depthFraction, flow, flowDir, previewRatio, compact });
   latest.current = { diam, depth, depthFraction, flow, flowDir, previewRatio, compact };
   const displayFill = useRef(0); // 显示充满度(平滑过渡到目标值,方案切换/时间轴跳转时变化过程可见)
+  useEffect(() => { if (onCanvas) onCanvas(canvasRef.current); }, [onCanvas]); // 截图用
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -370,6 +371,21 @@ export default function SandboxPage() {
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"static" | "dynamic">("static");
   const [selected, setSelected] = useState<any>(null);
+  // 3D 悬浮迷你横截面:选中管道时跟随管道中点(billboard),ref 直改 style 避免每帧 setState
+  const [floatPipeId, setFloatPipeId] = useState<string | null>(null);
+  const floatPipeIdRef = useRef<string | null>(null);
+  const floatRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { const id = selected?.type === "pipe" ? selected.data.id : null; floatPipeIdRef.current = id; setFloatPipeId(id); }, [selected]);
+  // 横截面放大模态 + 截图(当前选中管道)
+  const [zoomPipeId, setZoomPipeId] = useState<string | null>(null);
+  const [snapCanvas, setSnapCanvas] = useState<HTMLCanvasElement | null>(null);
+  const downloadSnap = () => {
+    if (!snapCanvas) return;
+    const a = document.createElement("a");
+    a.href = snapCanvas.toDataURL("image/png");
+    a.download = `sandbox-${zoomPipeId || "pipe"}.png`;
+    a.click();
+  };
   const [layers, setLayers] = useState<Record<string, boolean>>({ sc: true, pipes: true, nodes: true, ground: true });
   const [stats, setStats] = useState({ nodes: 0, pipes: 0, scs: 0 });
   const [vertEx, setVertEx] = useState(5);
@@ -705,6 +721,21 @@ export default function SandboxPage() {
         // 溢流红环闪烁(积水圆盘为 MeshBasicMaterial 无 emissive,自动跳过)
         const flick = 0.35 + 0.45 * Math.sin(performance.now() * 0.008);
         scene.traverse(o => { const m = o as any; if (m?.userData?.overflowRing && m.isMesh && m.material?.emissiveIntensity != null) m.material.emissiveIntensity = flick; });
+        // 3D 悬浮迷你横截面:管道中点投影到屏幕坐标,div 跟随(billboard 效果)
+        if (floatPipeIdRef.current && floatRef.current) {
+          const ends = pipeEndsMap.current.get(floatPipeIdRef.current);
+          if (ends) {
+            const mid = new THREE.Vector3((ends.fx + ends.tx) / 2, (ends.fy + ends.ty) / 2, (ends.fz + ends.tz) / 2);
+            mid.project(camera);
+            const rect = cr.current?.getBoundingClientRect();
+            if (rect && mid.z < 1) {
+              const sx = (mid.x * 0.5 + 0.5) * rect.width, sy = (-mid.y * 0.5 + 0.5) * rect.height;
+              const el = floatRef.current;
+              el.style.left = sx + "px"; el.style.top = sy + "px";
+              el.style.display = "block";
+            } else if (floatRef.current) floatRef.current.style.display = "none";
+          } else if (floatRef.current) floatRef.current.style.display = "none";
+        } else if (floatRef.current) floatRef.current.style.display = "none";
         renderer.render(scene, camera);
       };
       animate();
@@ -1388,8 +1419,62 @@ export default function SandboxPage() {
         <span className="ml-auto text-[9px] text-gray-500">{stats.nodes}节点 · {stats.pipes}管 · {stats.scs}汇水区</span>
       </div>
 
-      {/* ── Three.js canvas ── */}
-      <div ref={cr} className="flex-1" />
+      {/* ── Three.js canvas + 3D 悬浮迷你横截面 + 放大模态 ── */}
+      <div className="relative flex-1">
+        <div ref={cr} className="absolute inset-0" />
+        {floatPipeId && (() => {
+          const ld = (dynRes?.links as any)?.[floatPipeId];
+          const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === floatPipeId);
+          if (!ld) return null;
+          return (
+            <div ref={floatRef} className="absolute hidden z-20 pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: 0, top: 0 }}>
+              <div className="bg-black/85 backdrop-blur rounded-md border border-cyan-700/60 p-1 shadow-lg">
+                <div className="text-[8px] text-cyan-300 font-bold mb-0.5 text-center">{floatPipeId} · {((ld.depthFraction?.[dynStep] ?? 0) * 100).toFixed(0)}%</div>
+                <PipeCrossSection
+                  diam={pp?.diam || 0.3}
+                  depth={ld.depth?.[dynStep] ?? 0}
+                  depthFraction={ld.depthFraction?.[dynStep] ?? 0}
+                  flow={ld.flow?.[dynStep] ?? 0}
+                  flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`}
+                  landcover={landcover}
+                  previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(floatPipeId)}
+                  compact
+                />
+              </div>
+            </div>
+          );
+        })()}
+        {zoomPipeId && (() => {
+          const ld = (dynRes?.links as any)?.[zoomPipeId];
+          const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === zoomPipeId);
+          if (!ld) return null;
+          return (
+            <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center" onClick={() => setZoomPipeId(null)}>
+              <div onClick={e => e.stopPropagation()} className="bg-gray-900 rounded-lg border border-gray-600 p-3 shadow-2xl">
+                <div className="flex items-center justify-between mb-2 gap-6">
+                  <span className="font-bold text-sm text-gray-200">🔵 {zoomPipeId} 横截面放大</span>
+                  <span className="text-[10px] text-gray-500">{pp ? `${pp.from} → ${pp.to}` : ""} · {landcover === "green" ? "🟢 绿色海绵" : landcover === "gray" ? "🟠 灰色强开发" : "⚪ 现状"}</span>
+                  <button onClick={() => setZoomPipeId(null)} className="text-gray-400 hover:text-white text-sm">✕</button>
+                </div>
+                <PipeCrossSection
+                  diam={pp?.diam || 0.3}
+                  depth={ld.depth?.[dynStep] ?? 0}
+                  depthFraction={ld.depthFraction?.[dynStep] ?? 0}
+                  flow={ld.flow?.[dynStep] ?? 0}
+                  flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`}
+                  landcover={landcover}
+                  previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(zoomPipeId)}
+                  onCanvas={setSnapCanvas}
+                />
+                <div className="flex gap-2 mt-2">
+                  <button onClick={downloadSnap} className="flex-1 py-1.5 bg-cyan-800 hover:bg-cyan-700 rounded text-xs font-bold text-white">📷 下载 PNG</button>
+                  <button onClick={() => setZoomPipeId(null)} className="flex-1 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-bold text-gray-200">关闭</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
 
       {/* ── STATIC property panel — all Chinese ── */}
       {mode === "static" && selected && (
@@ -1631,6 +1716,10 @@ export default function SandboxPage() {
                   <div className="flex justify-between text-[9px] text-gray-500"><span>关闭</span><span className="text-purple-300 font-bold">{Math.round((valveDraft[selected.data.id] ?? valves[selected.data.id] ?? 1) * 100)}%</span><span>全开</span></div>
                   {(valves[selected.data.id] != null && valveDraft[selected.data.id] == null) && <div className="text-[9px] leading-3 text-purple-400/80 mt-0.5">已生效,拖动调整后松手重新仿真</div>}
                 </div>}
+                <div className="flex gap-1 mt-1">
+                  <button onClick={() => setZoomPipeId(selected.data.id)} className="flex-1 py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold text-gray-300">🔍 放大</button>
+                  <button onClick={() => setZoomPipeId(selected.data.id)} title="放大后可下载 PNG 截图" className="flex-1 py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold text-gray-300">📷 截图</button>
+                </div>
               </>)}
             </div>
           )}
