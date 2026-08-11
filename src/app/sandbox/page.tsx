@@ -936,8 +936,9 @@ export default function SandboxPage() {
   // ═══════════════════════════════════════════════════════════
   const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green", overrideValves?: Record<string, number>, overrideStorages?: Array<{ nodeId: string; capacity: number }>, overrideGreenLevel?: number) => {
     const reqSeq = ++simSeqRef.current;
-    // 取消待执行的雨强防抖重跑(避免旧闭包竞态覆盖新方案状态)
+    // 取消待执行的雨强/绿色强度防抖重跑(避免旧闭包竞态覆盖新方案状态)
     if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
+    if (greenTimerRef.current) { clearTimeout(greenTimerRef.current); greenTimerRef.current = null; }
     setRainPreview(null);
     setDynPhase("loading"); setDynStep(0);
     abortRef.current?.abort();
