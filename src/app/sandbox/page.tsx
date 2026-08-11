@@ -658,10 +658,11 @@ export default function SandboxPage() {
     abortRef.current = ctrl;
     const simIntensity = overrideIntensity ?? dynI;
     const simLandcover = overrideLandcover ?? landcover;
+    let tid: ReturnType<typeof setTimeout> | null = null;
     try {
-      const tid = setTimeout(() => ctrl.abort(), 90000);
+      tid = setTimeout(() => ctrl.abort(), 90000);
       const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, landcover: simLandcover }), signal: ctrl.signal });
-      clearTimeout(tid);
+      if (tid) { clearTimeout(tid); tid = null; }
       if (abortRef.current === ctrl) abortRef.current = null;
       const d = await res.json();
       if (!d.ok) throw new Error(d.error || "API error");
@@ -692,6 +693,7 @@ export default function SandboxPage() {
         }
       }
     } catch (e: any) { if (reqSeq !== simSeqRef.current) return; if (abortRef.current === ctrl) abortRef.current = null; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
+    finally { if (tid) clearTimeout(tid); }
   }, [dynI, landcover]);
 
   // 三方案对比:串行仿真 现状/绿色/灰色(后端为同步仿真,逐个请求),展示峰值差异
@@ -702,14 +704,15 @@ export default function SandboxPage() {
     setComparing(true); setCompareRes(null); setDynPhase("loading"); setDynStep(0);
     const results: Record<string, any> = {};
     const schemes: Array<["default" | "green" | "gray", string]> = [["default", "现状"], ["green", "绿色海绵"], ["gray", "灰色强开发"]];
+    let tid: ReturnType<typeof setTimeout> | null = null;
     try {
       for (const [lc, label] of schemes) {
         if (seq !== simSeqRef.current) return;
         const ctrl = new AbortController();
         abortRef.current = ctrl;
-        const tid = setTimeout(() => ctrl.abort(), 90000);
+        tid = setTimeout(() => ctrl.abort(), 90000);
         const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: dynI, landcover: lc }), signal: ctrl.signal });
-        clearTimeout(tid);
+        if (tid) { clearTimeout(tid); tid = null; }
         if (abortRef.current === ctrl) abortRef.current = null;
         const d = await res.json();
         if (!d.ok) throw new Error(`${label}方案: ${d.error || "API error"}`);
@@ -719,7 +722,7 @@ export default function SandboxPage() {
       setCompareRes(results);
       setDynRes(results.default); setSimId(results.default.simulationId || ""); setDynPhase("ready");
     } catch (e: any) { if (seq !== simSeqRef.current) return; setDynPhase("config"); if (e.name !== "AbortError") alert("对比仿真失败: " + e.message); }
-    finally { setComparing(false); }
+    finally { if (tid) clearTimeout(tid); setComparing(false); }
   }, [dynI, comparing]);
 
   const clearWaterMeshes = useCallback(() => {
