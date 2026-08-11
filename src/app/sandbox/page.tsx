@@ -70,6 +70,8 @@ const SHARED = {
   overflowRing: new THREE.TorusGeometry(0.28, 0.05, 8, 10),
   flowParticle: new THREE.SphereGeometry(0.14, 6, 6),
   flowParticleMat: new THREE.MeshBasicMaterial({ color: "#7fd4ff", transparent: true, opacity: 0.85 }),
+  storageTank: new THREE.CylinderGeometry(1.1, 1.1, 1.4, 16),
+  storageWater: new THREE.CylinderGeometry(0.9, 0.9, 1, 12),
 };
 
 function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false }: {
@@ -351,6 +353,7 @@ export default function SandboxPage() {
   const pipeMeshMap = useRef<Map<string, THREE.Mesh>>(new Map());
   const pipeEndsMap = useRef<Map<string, { fx: number; fy: number; fz: number; tx: number; ty: number; tz: number }>>(new Map());
   const flowParticleMap = useRef<Map<string, THREE.Mesh>>(new Map());
+  const storageMeshMap = useRef<Map<string, { grp: THREE.Group; tank: THREE.Mesh; water: THREE.Mesh }>>(new Map());
   const waterMeshMap = useRef<Map<string, THREE.Mesh>>(new Map());
   const spanRef = useRef(300);
   const simSeqRef = useRef(0);
@@ -373,6 +376,15 @@ export default function SandboxPage() {
   const valveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const valvesRef = useRef<Record<string, number>>({});
   useEffect(() => { valvesRef.current = valves; }, [valves]);
+  // 蓄水设施 state(声明须在着色 effect 之前)
+  interface StorageFac { id: string; nodeId: string; capacity: number }
+  const [storages, setStorages] = useState<StorageFac[]>([]);
+  const [placingStorage, setPlacingStorage] = useState(false);
+  const [storageSel, setStorageSel] = useState<string | null>(null);
+  const placingRef = useRef(false);
+  const storageSelRef = useRef<string | null>(null);
+  useEffect(() => { placingRef.current = placingStorage; }, [placingStorage]);
+  useEffect(() => { storageSelRef.current = storageSel; }, [storageSel]);
   const [landcover, setLandcover] = useState<"default" | "gray" | "green">("default");
   // 雨强预览:拖动滑条时即时缩放横截面水位,松手防抖后真实仿真覆盖
   const [rainPreview, setRainPreview] = useState<number | null>(null);
@@ -510,10 +522,20 @@ export default function SandboxPage() {
         for (const h of hits) {
           let o: any = h.object;
           while (o) {
-            if (o.userData?.type) return o;
+            if (o.userData?.type || o.userData?.storage) return o;
             if (o.userData?.particle || o.userData?.water) break;
             o = o.parent;
           }
+        }
+        return null;
+      };
+      // 地面拾取:放置/移动蓄水池时求地面交点坐标
+      const groundPoint = (nx: number, ny: number): { x: number; z: number } | null => {
+        raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
+        const hits = raycaster.intersectObjects(scene.children, true);
+        for (const h of hits) {
+          let o: any = h.object;
+          while (o) { if (o.userData?.type === "ground") return { x: h.point.x, z: h.point.z }; o = o.parent; }
         }
         return null;
       };
@@ -523,8 +545,20 @@ export default function SandboxPage() {
         const moved = Math.hypot(e.clientX - clickStart.x, e.clientY - clickStart.y);
         if (moved > 5) return;
         const rect = renderer.domElement.getBoundingClientRect();
-        const obj = pick(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1, ny = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        // 放置/移动蓄水池模式:点击任意地面位置 → 吸附最近节点
+        if (placingRef.current || storageSelRef.current) {
+          const gp = groundPoint(nx, ny);
+          if (gp) { placeStorage(gp.x, gp.z); return; }
+        }
+        const obj = pick(nx, ny);
         if (obj) {
+          // 点击蓄水池:选中(显示容量/删除控制),不干扰管道选中
+          if (obj.userData?.storage) {
+            setStorageSel(obj.userData.storageId as string);
+            if (selRef.current) { resetHL(selRef.current); selRef.current = null; setSelected(null); }
+            return;
+          }
           if (selRef.current !== obj) { if (selRef.current) resetHL(selRef.current); selRef.current = obj; hlObj(obj); setSelected({ type: obj.userData.type, data: obj.userData.data }); }
           flyToObj(obj);
         } else if (selRef.current) { resetHL(selRef.current); selRef.current = null; setSelected(null); }
@@ -711,6 +745,7 @@ export default function SandboxPage() {
     groundGeom.rotateX(-Math.PI / 2);
     const groundMesh = new THREE.Mesh(groundGeom, new THREE.MeshStandardMaterial({ color: GROUND_COLOR, roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: true }));
     groundMesh.position.y = gndY; groundMesh.receiveShadow = true; groundMesh.renderOrder = 0;
+    groundMesh.userData = { type: "ground" };
     grp.ground.add(groundMesh);
 
     const gridStep = Math.ceil(span / 15 / 10) * 10 || 20;
@@ -835,7 +870,7 @@ export default function SandboxPage() {
   // ═══════════════════════════════════════════════════════════
   // DYNAMIC MODE — kept from working backend, visuals cleaned
   // ═══════════════════════════════════════════════════════════
-  const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green", overrideValves?: Record<string, number>) => {
+  const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green", overrideValves?: Record<string, number>, overrideStorages?: Array<{ nodeId: string; capacity: number }>) => {
     const reqSeq = ++simSeqRef.current;
     // 取消待执行的雨强防抖重跑(避免旧闭包竞态覆盖新方案状态)
     if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
@@ -847,10 +882,11 @@ export default function SandboxPage() {
     const simIntensity = overrideIntensity ?? dynI;
     const simLandcover = overrideLandcover ?? landcover;
     const simValves = overrideValves ?? valves;
+    const simStorages = overrideStorages ?? storagesRef.current.map(s => ({ nodeId: s.nodeId, capacity: s.capacity }));
     let tid: ReturnType<typeof setTimeout> | null = null;
     try {
       tid = setTimeout(() => ctrl.abort(), 90000);
-      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, landcover: simLandcover, valves: Object.keys(simValves).length ? simValves : undefined }), signal: ctrl.signal });
+      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, landcover: simLandcover, valves: Object.keys(simValves).length ? simValves : undefined, storages: simStorages.length ? simStorages : undefined }), signal: ctrl.signal });
       if (tid) { clearTimeout(tid); tid = null; }
       if (abortRef.current === ctrl) abortRef.current = null;
       const d = await res.json();
@@ -1046,7 +1082,50 @@ export default function SandboxPage() {
         mat.emissiveIntensity = 0.55;
       }
     });
-  }, [dynStep, dynRes, vertEx, heatmap, selected, rainPreview, valves, valveDraft]);
+
+    // 蓄水设施 3D:半透明青色罐体(挂在最近节点)+ 内部水位随节点水深涨落;选中罐体白亮
+    const nodesById = new Map((dataRef.current?.nodes as any[])?.map((n: any) => [n.id, n]) || []);
+    const seenSt = new Set<string>();
+    storages.forEach(fac => {
+      const n = nodesById.get(fac.nodeId);
+      if (!n) return;
+      seenSt.add(fac.id);
+      let g = storageMeshMap.current.get(fac.id);
+      if (!g) {
+        const tank = new THREE.Mesh(SHARED.storageTank, new THREE.MeshStandardMaterial({ color: "#2bd4c8", transparent: true, opacity: 0.35, roughness: 0.2, metalness: 0.1, emissive: "#0a4a46", emissiveIntensity: 0.3 }));
+        tank.position.y = 0.72;
+        const water = new THREE.Mesh(SHARED.storageWater, new THREE.MeshStandardMaterial({ color: "#2a9dd8", transparent: true, opacity: 0.85, roughness: 0.1, metalness: 0.05 }));
+        (water.material as any)._isWater = true;
+        water.position.y = 0.1; water.scale.y = 0.001;
+        const grp = new THREE.Group();
+        grp.add(tank); grp.add(water);
+        grp.position.set(n.x, 0, n.z);
+        (grp as any).userData = { storage: true, storageId: fac.id };
+        sceneRef.current?.add(grp);
+        g = { grp, tank, water }; storageMeshMap.current.set(fac.id, g);
+      }
+      g.grp.position.set(n.x, 0, n.z);
+      // 水位:节点当前水深相对最大水深(罐内 0.1-1.25m)
+      const nd = (dynRes as any)?.nodes?.[fac.nodeId];
+      const depth = nd?.depth?.[dynStep] ?? 0;
+      const maxD = (dynRes as any)?.summary?.maxDepth?.value || 1;
+      const lvl = Math.max(0.001, Math.min(1, (depth / Math.max(0.05, maxD)) * 1.1));
+      g.water.scale.y = lvl; g.water.position.y = 0.1 + (1.15 * lvl) / 2;
+      // 选中白亮
+      const tankMat = g.tank.material as THREE.MeshStandardMaterial;
+      tankMat.emissiveIntensity = storageSel === fac.id ? 0.9 : 0.3;
+      tankMat.opacity = storageSel === fac.id ? 0.6 : 0.35;
+    });
+    // 移除已删除蓄水池的 3D 对象
+    for (const [id, g] of storageMeshMap.current) {
+      if (!seenSt.has(id)) {
+        sceneRef.current?.remove(g.grp);
+        g.tank.geometry.dispose(); (g.tank.material as THREE.Material).dispose();
+        g.water.geometry.dispose(); (g.water.material as THREE.Material).dispose();
+        storageMeshMap.current.delete(id);
+      }
+    }
+  }, [dynStep, dynRes, vertEx, heatmap, selected, rainPreview, valves, valveDraft, storages, storageSel]);
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
@@ -1101,6 +1180,44 @@ export default function SandboxPage() {
     loadSim(undefined, undefined, nv);
   };
 
+  // ─── 蓄水设施:放置/选中/移动/容量/删除(改造节点洼地面积 Aponded,削峰) ───
+  const storagesRef = useRef<StorageFac[]>([]);
+  useEffect(() => { storagesRef.current = storages; }, [storages]);
+  const nearestNodeId = (x: number, z: number): string | null => {
+    const nodes = (dataRef.current?.nodes as any[]) || [];
+    let best: string | null = null, bd = Infinity;
+    for (const n of nodes) { const d = (n.x - x) ** 2 + (n.z - z) ** 2; if (d < bd) { bd = d; best = n.id; } }
+    return best;
+  };
+  const placeStorage = (x: number, z: number, nodeId?: string) => {
+    const nid = nodeId || nearestNodeId(x, z);
+    if (!nid) return;
+    const existing = storageSelRef.current ? storagesRef.current.find(s => s.id === storageSelRef.current) : null;
+    if (existing) {
+      // 移动选中蓄水池到新节点
+      const next = storagesRef.current.map(s => s.id === existing.id ? { ...s, nodeId: nid } : s);
+      storagesRef.current = next; setStorages(next);
+    } else {
+      const fac: StorageFac = { id: `st-${Date.now().toString(36)}`, nodeId: nid, capacity: 500 };
+      storagesRef.current = [...storagesRef.current, fac]; setStorages(storagesRef.current);
+    }
+    setStorageSel(existing ? existing.id : storageSelRef.current);
+    if (placingRef.current) setPlacingStorage(false);
+    loadSim(undefined, undefined, undefined, storagesRef.current);
+  };
+  const changeStorageCapacity = (id: string, cap: number) => {
+    const next = storagesRef.current.map(s => s.id === id ? { ...s, capacity: cap } : s);
+    storagesRef.current = next; setStorages(next);
+    if (storageCapTimerRef.current) { clearTimeout(storageCapTimerRef.current); storageCapTimerRef.current = null; }
+    storageCapTimerRef.current = setTimeout(() => loadSim(undefined, undefined, undefined, storagesRef.current), 500);
+  };
+  const removeStorage = (id: string) => {
+    storagesRef.current = storagesRef.current.filter(s => s.id !== id); setStorages(storagesRef.current);
+    if (storageSel === id) setStorageSel(null);
+    loadSim(undefined, undefined, undefined, storagesRef.current);
+  };
+  const storageCapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // 卸载清理防抖/提示定时器(防卸载后 setState/fetch)
   useEffect(() => () => {
     if (rainTimer.current) clearTimeout(rainTimer.current);
@@ -1108,6 +1225,7 @@ export default function SandboxPage() {
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
     if (traceTimerRef.current) clearTimeout(traceTimerRef.current);
     if (valveTimerRef.current) clearTimeout(valveTimerRef.current);
+    if (storageCapTimerRef.current) clearTimeout(storageCapTimerRef.current);
   }, []);
 
   // 当前时间步风险统计:满管管道 / 溢流节点
@@ -1301,7 +1419,19 @@ export default function SandboxPage() {
                 {landcover !== "default" && <div className="mt-1 text-[9px] leading-3.5 text-gray-500">{landcover === "green" ? "增加透水铺装与绿地,降低不透水率" : "增加硬化地面,提高不透水率"}</div>}
               </div>
               <button onClick={() => loadSim()} className="w-full py-1.5 bg-cyan-800 rounded font-bold text-xs hover:bg-cyan-700 transition-colors">{dynRes ? "🔄 重新仿真" : "📊 加载仿真结果"}</button>
+              <button onClick={() => setPlacingStorage(v => !v)} className={`w-full py-1 rounded text-[10px] font-bold transition-colors ${placingStorage ? "bg-teal-600 text-white ring-1 ring-teal-300" : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}>🪣 {placingStorage ? "点击地面放置蓄水池…" : `放蓄水池(${storages.length})`}</button>
               {Object.keys(valves).length > 0 && <button onClick={() => resetValves()} className="w-full py-1 bg-purple-900/70 rounded text-[10px] font-bold hover:bg-purple-800/70 transition-colors">♻ 重置全部阀门({Object.keys(valves).length})</button>}
+              {storageSel && (() => { const fac = storages.find(s => s.id === storageSel); if (!fac) return null; return (
+                <div className="rounded bg-teal-950/50 border border-teal-800/70 p-1.5 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-teal-300">🪣 蓄水池 @ {fac.nodeId}</span>
+                    <button onClick={() => removeStorage(fac.id)} className="text-[9px] text-red-400 hover:text-red-300">🗑 删除</button>
+                  </div>
+                  <input type="range" min="50" max="5000" step="50" value={fac.capacity} onChange={e => changeStorageCapacity(fac.id, Number(e.target.value))} className="w-full accent-teal-400" />
+                  <div className="flex justify-between text-[9px] text-gray-500"><span>容量</span><span className="text-teal-300 font-bold">{fac.capacity} m³</span></div>
+                  <div className="text-[9px] leading-3 text-teal-400/80">点击其他位置可移动(吸附最近节点)· 容量越大削峰越明显</div>
+                </div>
+              ); })()}
               <button onClick={runCompare} disabled={comparing} className="w-full py-1.5 bg-violet-900 rounded font-bold text-xs hover:bg-violet-800 transition-colors disabled:opacity-40">{comparing ? "⏳ 对比中…" : "⚖️ 三方案对比"}</button>
               {compareRes && (
                 <div className="border-t border-gray-700 pt-1.5 mt-1 space-y-1">
