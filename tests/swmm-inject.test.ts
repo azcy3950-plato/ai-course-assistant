@@ -33,7 +33,7 @@ describe("applyValvesStorages", () => {
     expect(xs.split("\t")[2]).toBe((1.0 * (0.3 + 0.7 * 0.5)).toFixed(4)); // 0.6500
     const xs2 = r.text.split("\n").find(l => l.startsWith("P2\t"))!;
     expect(xs2.split("\t")[2]).toBe((0.8 * 1).toFixed(4)); // k=1 原直径
-    expect(r.affected.valves).toEqual(["P1", "P2"]); // P3 不存在被忽略
+    expect(r.affected.valves).toEqual(["P1", "P2"]); // P3 非 CIRCULAR 被守卫忽略
   });
 
   it("蓄水容量折算 Aponded(容量/0.5),缺省 Aponded 补列,记录 affected", () => {
