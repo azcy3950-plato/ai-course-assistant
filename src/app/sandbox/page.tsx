@@ -549,7 +549,7 @@ export default function SandboxPage() {
       };
       renderer.domElement.addEventListener("mousemove", e => {
         if (tooltipRef.current) { tooltipRef.current.style.left = (e.clientX + 14) + "px"; tooltipRef.current.style.top = (e.clientY + 12) + "px"; }
-        if (dragging) { if (hoverObj) { hoverObj = null; setHoverInfo(null); } return; }
+        if (dragging) { if (hoverObj) { if (hoverObj !== selRef.current && hoverObj.material) { const hm = hoverObj.material as any; if (hm.userData?.hoverEmissive != null) hm.emissiveIntensity = hm.userData.hoverEmissive; } hoverObj = null; setHoverInfo(null); } return; }
         // raycast 节流 50ms(位置更新保持实时,拾取不拖慢渲染)
         const nowT = performance.now();
         if (nowT - lastHoverRay < 50) return;
