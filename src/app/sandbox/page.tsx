@@ -489,6 +489,13 @@ export default function SandboxPage() {
         const cs = camState.current;
         focusAnim = { t0: performance.now(), from: { ...cs }, to: { ...cs, tx: x, tz: z, dist: Math.max(span * 0.4, cs.dist * 0.55) } };
       };
+      // 对象聚焦中心:管道/汇水区 mesh.position 恒为原点(几何为绝对坐标),须用包围盒中心
+      const flyToObj = (obj: any) => {
+        try {
+          const box = new THREE.Box3().setFromObject(obj);
+          flyTo((box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2);
+        } catch { flyTo(obj.position.x, obj.position.z); }
+      };
       // 拾取:过滤水柱/粒子等装饰对象,返回带 type 的可交互对象
       const pick = (nx: number, ny: number): any => {
         raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
@@ -512,7 +519,7 @@ export default function SandboxPage() {
         const obj = pick(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         if (obj) {
           if (selRef.current !== obj) { if (selRef.current) resetHL(selRef.current); selRef.current = obj; hlObj(obj); setSelected({ type: obj.userData.type, data: obj.userData.data }); }
-          flyTo(obj.position.x, obj.position.z);
+          flyToObj(obj);
         } else if (selRef.current) { resetHL(selRef.current); selRef.current = null; setSelected(null); }
       });
 
@@ -549,7 +556,7 @@ export default function SandboxPage() {
       };
       renderer.domElement.addEventListener("mousemove", e => {
         if (tooltipRef.current) { tooltipRef.current.style.left = (e.clientX + 14) + "px"; tooltipRef.current.style.top = (e.clientY + 12) + "px"; }
-        if (dragging) { if (hoverObj) { if (hoverObj !== selRef.current && hoverObj.material) { const hm = hoverObj.material as any; if (hm.userData?.hoverEmissive != null) hm.emissiveIntensity = hm.userData.hoverEmissive; } hoverObj = null; setHoverInfo(null); } return; }
+        if (dragging) { if (hoverObj) { if (hoverObj !== selRef.current && hoverObj.material) { const hm = hoverObj.material as any; if (hm.userData?.hoverEmissive != null && hm.emissiveIntensity === hm.userData.hoverSet) hm.emissiveIntensity = hm.userData.hoverEmissive; } hoverObj = null; setHoverInfo(null); } return; }
         // raycast 节流 50ms(位置更新保持实时,拾取不拖慢渲染)
         const nowT = performance.now();
         if (nowT - lastHoverRay < 50) return;
@@ -560,14 +567,17 @@ export default function SandboxPage() {
           // 离开旧对象:恢复其原 emissiveIntensity(若未恢复)
           if (hoverObj && hoverObj !== selRef.current && hoverObj.material) {
             const hm = hoverObj.material as any;
-            if (hm.userData?.hoverEmissive != null) hm.emissiveIntensity = hm.userData.hoverEmissive;
+            if (hm.userData?.hoverEmissive != null && hm.emissiveIntensity === hm.userData.hoverSet) hm.emissiveIntensity = hm.userData.hoverEmissive;
           }
           if (obj) {
             const m = obj as THREE.Mesh;
             if (m.material && !(m.material as any)._isWater && obj !== selRef.current) {
               const mat = m.material as any;
-              if (mat.userData?.hoverEmissive === undefined) mat.userData = { ...(mat.userData || {}), hoverEmissive: mat.emissiveIntensity };
-              mat.emissiveIntensity = Math.max(mat.emissiveIntensity || 0, 0.28);
+              if (mat.userData?.hoverEmissive === undefined) {
+                const orig = mat.emissiveIntensity;
+                mat.userData = { ...(mat.userData || {}), hoverEmissive: orig, hoverSet: Math.max(orig, 0.28) };
+              }
+              mat.emissiveIntensity = mat.userData.hoverSet;
             }
           }
           hoverObj = obj;
@@ -577,7 +587,7 @@ export default function SandboxPage() {
       renderer.domElement.addEventListener("mouseleave", () => {
         if (hoverObj && hoverObj !== selRef.current && hoverObj.material) {
           const hm = hoverObj.material as any;
-          if (hm.userData?.hoverEmissive != null) hm.emissiveIntensity = hm.userData.hoverEmissive;
+          if (hm.userData?.hoverEmissive != null && hm.emissiveIntensity === hm.userData.hoverSet) hm.emissiveIntensity = hm.userData.hoverEmissive;
         }
         hoverObj = null; setHoverInfo(null);
       });
@@ -1261,9 +1271,11 @@ export default function SandboxPage() {
                           // 峰值卡片一键跳转:载入该方案结果并跳到全局峰值时刻(3D/横截面/时间轴同步)
                           const rs = compareRes[lc];
                           if (!rs) return;
-                          // 竞态防护:作废在途 loadSim/对比请求
+                          // 竞态防护:作废在途 loadSim/对比请求与雨强防抖
                           simSeqRef.current++;
                           abortRef.current?.abort();
+                          if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
+                          setRainPreview(null);
                           setLandcover(lc);
                           prevSimRef.current = dynRes; // 供 Δ 对比提示
                           setDynRes(rs); setSimId(rs.simulationId || ""); setDynPhase("ready");
