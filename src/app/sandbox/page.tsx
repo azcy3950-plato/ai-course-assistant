@@ -1056,7 +1056,7 @@ export default function SandboxPage() {
     if (guide === 1 && selected?.type === "pipe") setGuide(2);
     else if (guide === 2 && landcover !== "default") setGuide(3);
     else if (guide === 3 && draggedRainRef.current) { setGuide(0); }
-  }, [guide, selected, landcover]);
+  }, [guide, selected, landcover, dynI]);
   const finishGuide = () => { setGuide(0); };
 
   // 卸载清理防抖/提示定时器(防卸载后 setState/fetch)
