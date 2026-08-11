@@ -178,7 +178,7 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
       draw(0); // 静态模式(如三方案对比):一次性绘制,零 rAF 空转
     }
     return () => cancelAnimationFrame(raf);
-  }, [animate]);
+  }, [animate, diam, depth, depthFraction, flow, previewRatio]);
 
   return (
     <div className={`rounded-lg border border-gray-700 bg-black/80 ${latest.current.compact ? "p-0.5" : "p-1.5"}`}>
@@ -1592,7 +1592,7 @@ export default function SandboxPage() {
                 <div className="mb-1 text-[10px] text-gray-500">下垫面方案</div>
                 <div className="grid grid-cols-3 gap-1">
                   {([["default", "⚪ 现状"], ["green", "🟢 绿色海绵"], ["gray", "🟠 灰色强开发"]] as const).map(([val, label]) => (
-                    <button key={val} onClick={() => { if (val === landcover) return; setLandcover(val); setRainPreview(null); loadSim(undefined, val); }} className={`py-1 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-green-700 text-white" : val === "gray" ? "bg-orange-700 text-white" : "bg-gray-600 text-white") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{label}</button>
+                    <button key={val} onClick={() => { if (val === landcover) return; if (greenTimerRef.current) { clearTimeout(greenTimerRef.current); greenTimerRef.current = null; } setLandcover(val); setRainPreview(null); loadSim(undefined, val); }} className={`py-1 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-green-700 text-white" : val === "gray" ? "bg-orange-700 text-white" : "bg-gray-600 text-white") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{label}</button>
                   ))}
                 </div>
                 {landcover !== "default" && <div className="mt-1 text-[9px] leading-3.5 text-gray-500">{landcover === "green" ? "增加透水铺装与绿地,降低不透水率" : "增加硬化地面,提高不透水率"}</div>}
