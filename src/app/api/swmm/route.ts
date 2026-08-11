@@ -306,8 +306,10 @@ export async function POST(req: NextRequest) {
     const valves: Record<string, number> = {};
     if (body.valves != null && typeof body.valves === "object" && !Array.isArray(body.valves)) {
       for (const [k, v] of Object.entries(body.valves as Record<string, unknown>).slice(0, 50)) {
+        // 仅接受数字或非空数字串,null/""/布尔等非法值忽略(避免 Number(null)=0 误关阀门)
+        const okType = typeof v === "number" || (typeof v === "string" && v.trim() !== "");
         const n = Number(v);
-        if (Number.isFinite(n) && k.length <= 64) valves[k] = Math.max(0, Math.min(1, n));
+        if (okType && Number.isFinite(n) && k.length <= 64) valves[k] = Math.max(0, Math.min(1, n));
       }
     }
     const storages: Array<{ nodeId: string; capacity: number }> = [];
