@@ -1732,8 +1732,11 @@ export default function SandboxPage() {
                 {selected?.type === "pipe" && <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span>}
               </div>
               <div className="grid grid-cols-3 gap-1">
-                {topPipes.map((p) => (
-                  <button key={p.id} onClick={() => { const mesh = pipeMeshMap.current.get(p.id); if (mesh) { if (selRef.current !== mesh) { if (selRef.current) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id: p.id } }); } } }} className="text-left" title={`${p.id} ${p.from}→${p.to} 充满度 ${(p.df * 100).toFixed(0)}%`}>
+                {topPipes.map((p) => {
+                  const hl = highlightRef.current;
+                  const inHl = hl && Date.now() < hl.until && hl.top.some(([id]) => id === p.id);
+                  return (
+                  <button key={p.id} onClick={() => { const mesh = pipeMeshMap.current.get(p.id); if (mesh) { if (selRef.current !== mesh) { if (selRef.current) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id: p.id } }); } } }} className={`text-left rounded ${inHl ? "ring-2 ring-amber-400 animate-pulse" : ""}`} title={`${p.id} ${p.from}→${p.to} 充满度 ${(p.df * 100).toFixed(0)}%`}>
                     <div className="text-[8px] text-gray-400 truncate">{p.id}</div>
                     <PipeCrossSection
                       diam={p.diam}
@@ -1746,7 +1749,8 @@ export default function SandboxPage() {
                       compact
                     />
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
             );
