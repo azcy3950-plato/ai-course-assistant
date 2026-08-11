@@ -1008,7 +1008,7 @@ export default function SandboxPage() {
       let wm = waterMeshMap.current.get(nid);
       // 先清理热力图/溢流环(含 early-return 路径,防止水深回落后圆盘残留)
       const childrenToRemove = group.children.filter(c => (c as any).userData?.overflowRing);
-      childrenToRemove.forEach(c => { group.remove(c); const m = c as THREE.Mesh; if (m.geometry && m.geometry !== SHARED.heatDisc && m.geometry !== SHARED.overflowRing) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; if (mat) mat.dispose(); });
+      childrenToRemove.forEach(c => { group.remove(c); const m = c as THREE.Mesh; if (m.geometry && m.geometry !== SHARED.heatDisc && m.geometry !== SHARED.overflowRing && m.geometry !== SHARED.overflowDisc) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; if (mat) mat.dispose(); });
       if (depth < 0.003) { if (wm) wm.visible = false; return; }
       if (!wm) {
         const wGeom = SHARED.waterCyl; // 共享几何(性能:推演不再每步 new Geometry)
