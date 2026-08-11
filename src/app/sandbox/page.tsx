@@ -150,7 +150,7 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
       ctx.textAlign = "center";
       ctx.fillText(`d=${L.diam.toFixed(2)}m 充满度=${(fillRatio * 100).toFixed(0)}%`, cx, h - 6);
       ctx.fillStyle = "rgba(80,170,230,0.9)";
-      ctx.fillText(`水深 ${(L.depth * L.previewRatio).toFixed(2)}m · ${flow >= 0 ? "→" : "←"} ${Math.abs(flow).toFixed(2)}m³/s`, cx, 10);
+      ctx.fillText(`水深 ${Math.min(L.depth * L.previewRatio, L.diam).toFixed(2)}m · ${flow >= 0 ? "→" : "←"} ${Math.abs(flow).toFixed(2)}m³/s`, cx, 10);
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
@@ -356,6 +356,8 @@ export default function SandboxPage() {
   const prevSimRef = useRef<any>(null);
   const [schemeMsg, setSchemeMsg] = useState<{ text: string; color: string } | null>(null);
   const schemeMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Δ 高亮由着色 effect 统一应用(避免被 effect 重着色覆盖),until 后自然过期
+  const highlightRef = useRef<{ top: Array<[string, number]>; until: number } | null>(null);
   // 首次进入动态模式引导气泡(一次性,localStorage 记忆)
   const [showTip, setShowTip] = useState(false);
   const [dynRes, setDynRes] = useState<any>(null);
@@ -647,6 +649,9 @@ export default function SandboxPage() {
   // ═══════════════════════════════════════════════════════════
   const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green") => {
     const reqSeq = ++simSeqRef.current;
+    // 取消待执行的雨强防抖重跑(避免旧闭包竞态覆盖新方案状态)
+    if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
+    setRainPreview(null);
     setDynPhase("loading"); setDynStep(0);
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -677,15 +682,13 @@ export default function SandboxPage() {
         }
         const top = diffs.sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 5);
         if (top.length) {
-          top.forEach(([id, dv]) => { const m = pipeMeshMap.current.get(id); if (m) { const mat = m.material as THREE.MeshStandardMaterial; mat.color.set(dv < 0 ? "#2e7d32" : "#e65100"); mat.emissive.set(dv < 0 ? "#0f3d13" : "#5a2500"); mat.emissiveIntensity = 0.65; } });
+          // 高亮交给着色 effect 统一应用(存 ref,until 后自然过期,不再被重着色覆盖)
+          highlightRef.current = { top, until: Date.now() + 5000 };
           const down = top.filter(([, v]) => v < 0).length, up = top.filter(([, v]) => v > 0).length;
-          const msg = landcover === "green" ? `🟢 绿色海绵:${down} 条管道水量下降` : landcover === "gray" ? `🟠 灰色强开发:${up} 条管道水量上升` : `⚪ 已恢复现状基准`;
-          setSchemeMsg({ text: msg, color: landcover === "green" ? "text-green-400" : landcover === "gray" ? "text-orange-400" : "text-gray-300" });
+          const msg = simLandcover === "green" ? `🟢 绿色海绵:${down} 条管道水量下降` : simLandcover === "gray" ? `🟠 灰色强开发:${up} 条管道水量上升` : `⚪ 已恢复现状基准`;
+          setSchemeMsg({ text: msg, color: simLandcover === "green" ? "text-green-400" : simLandcover === "gray" ? "text-orange-400" : "text-gray-300" });
           if (schemeMsgTimer.current) clearTimeout(schemeMsgTimer.current);
           schemeMsgTimer.current = setTimeout(() => setSchemeMsg(null), 4000);
-          setTimeout(() => {
-            top.forEach(([id]) => { const m = pipeMeshMap.current.get(id); if (m) { const mat = m.material as THREE.MeshStandardMaterial; mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; } });
-          }, 5000);
         }
       }
     } catch (e: any) { if (reqSeq !== simSeqRef.current) return; if (abortRef.current === ctrl) abortRef.current = null; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
@@ -782,12 +785,25 @@ export default function SandboxPage() {
       const ld = linkData[pid]; const flows = ld?.flow; const flow = (flows && dynStep < flows.length) ? flows[dynStep] : 0;
       const cap = ld?.capacity; const capacity = (cap && dynStep < cap.length) ? cap[dynStep] : 0;
       const absFlow = Math.abs(flow); const mat = mesh.material as THREE.MeshStandardMaterial;
-      if (absFlow < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; return; }
-      const maxF = ts.summary?.maxFlow?.value || 0.1; const ratio = Math.min(1, absFlow / maxF);
-      const isFull = capacity > 0.98;
-      mat.color.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.4 + ratio * 0.25));
-      mat.emissive.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
-      mat.emissiveIntensity = isFull ? 0.5 : 0.08 + ratio * 0.4;
+      if (absFlow < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
+      else {
+        const maxF = ts.summary?.maxFlow?.value || 0.1; const ratio = Math.min(1, absFlow / maxF);
+        const isFull = capacity > 0.98;
+        mat.color.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.4 + ratio * 0.25));
+        mat.emissive.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
+        mat.emissiveIntensity = isFull ? 0.5 : 0.08 + ratio * 0.4;
+      }
+      // 切方案 Δ 高亮:effect 统一应用(未被重着色覆盖),until 后自然过期
+      const hl = highlightRef.current;
+      if (hl && Date.now() < hl.until) {
+        const hit = hl.top.find(([id]) => id === pid);
+        if (hit) {
+          const dv = hit[1];
+          mat.color.set(dv < 0 ? "#2e7d32" : "#e65100");
+          mat.emissive.set(dv < 0 ? "#0f3d13" : "#5a2500");
+          mat.emissiveIntensity = 0.65;
+        }
+      }
     });
   }, [dynStep, dynRes, vertEx, heatmap]);
 
@@ -804,6 +820,12 @@ export default function SandboxPage() {
       }
     } catch { /* 隐私模式忽略 */ }
   }, [mode]);
+
+  // 卸载清理防抖/提示定时器(防卸载后 setState/fetch)
+  useEffect(() => () => {
+    if (rainTimer.current) clearTimeout(rainTimer.current);
+    if (schemeMsgTimer.current) clearTimeout(schemeMsgTimer.current);
+  }, []);
 
   // 当前时间步风险统计:满管管道 / 溢流节点
   const riskStats = useMemo(() => {
