@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import crypto from 'crypto';
+import { applyValvesStorages } from '@/lib/swmm-inject';
 
 // ─── Task store ───
 interface SimTask {
@@ -300,6 +301,24 @@ export async function POST(req: NextRequest) {
     const rawIntensity = body.intensity == null ? NaN : Number(body.intensity);
     const intensity = Number.isFinite(rawIntensity) ? Math.max(10, Math.min(500, rawIntensity)) : 80;
     const landcover = ["gray", "green"].includes(body.landcover) ? body.landcover : undefined;
+
+    // 阀门(pipeId → 开度 0-1)与蓄水设施(nodeId → 容量 m³):类型校验 + 数值钳制,非法值忽略
+    const valves: Record<string, number> = {};
+    if (body.valves && typeof body.valves === "object" && !Array.isArray(body.valves)) {
+      for (const [k, v] of Object.entries(body.valves as Record<string, unknown>)) {
+        const n = Number(v);
+        if (Number.isFinite(n) && k.length <= 64) valves[k] = Math.max(0, Math.min(1, n));
+      }
+    }
+    const storages: Array<{ nodeId: string; capacity: number }> = [];
+    if (Array.isArray(body.storages)) {
+      for (const s of body.storages as Array<{ nodeId?: unknown; capacity?: unknown }>) {
+        if (s && typeof s.nodeId === "string" && s.nodeId && s.nodeId.length <= 64) {
+          const cap = Number(s.capacity);
+          if (Number.isFinite(cap) && cap > 0) storages.push({ nodeId: s.nodeId, capacity: Math.min(5000, Math.max(50, cap)) });
+        }
+      }
+    }
     cleanupStaleTasks();
 
     // 并发限流:同时在跑的仿真(含排队中的 running)超过上限时拒绝,防认证用户并发耗尽服务器
@@ -321,6 +340,13 @@ export async function POST(req: NextRequest) {
 
     const originalInp = join(process.cwd(), 'public', 'zijing_inp.inp');
     const tempInp = modifyRainfall(originalInp, intensity, simDir, landcover);
+    // 阀门/蓄水注入:在雨强与下垫面修改后的文本上再改直径/洼地面积
+    let affected = { valves: [] as string[], storages: [] as string[] };
+    if (Object.keys(valves).length > 0 || storages.length > 0) {
+      const injected = applyValvesStorages(readFileSync(tempInp, 'utf-8'), valves, storages);
+      writeFileSync(tempInp, injected.text, 'utf-8');
+      affected = injected.affected;
+    }
 
     try {
       const result = runSimulation(tempInp, simulationId, simDir);
@@ -335,6 +361,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         ok: true, simulationId, status: 'completed',
         parameters: { intensity, landcover: landcover || 'default' },
+        affected,
         ...result,
       });
     } catch (err: any) {
