@@ -305,7 +305,9 @@ export async function POST(req: NextRequest) {
     // 阀门(pipeId → 开度 0-1)与蓄水设施(nodeId → 容量 m³):类型校验 + 数值钳制,非法值忽略
     const valves: Record<string, number> = {};
     if (body.valves != null && typeof body.valves === "object" && !Array.isArray(body.valves)) {
-      for (const [k, v] of Object.entries(body.valves as Record<string, unknown>).slice(0, 50)) {
+      const entries = Object.entries(body.valves as Record<string, unknown>);
+      if (entries.length > 50) console.log(`[SWMM] valves 超限截断:${entries.length}→50`);
+      for (const [k, v] of entries.slice(0, 50)) {
         // 仅接受数字或非空数字串,null/""/布尔等非法值忽略(避免 Number(null)=0 误关阀门)
         const parsed = parseValveValue(v);
         if (parsed != null && k.length <= 64) valves[k] = parsed;
@@ -313,6 +315,7 @@ export async function POST(req: NextRequest) {
     }
     const storages: Array<{ nodeId: string; capacity: number }> = [];
     if (Array.isArray(body.storages)) {
+      if (body.storages.length > 20) console.log(`[SWMM] storages 超限截断:${body.storages.length}→20`);
       for (const s of (body.storages as Array<{ nodeId?: unknown; capacity?: unknown }>).slice(0, 20)) {
         if (s && typeof s.nodeId === "string" && s.nodeId && s.nodeId.length <= 64) {
           const cap = Number(s.capacity);

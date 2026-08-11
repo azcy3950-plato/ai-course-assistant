@@ -72,6 +72,7 @@ const SHARED = {
   flowParticleMat: new THREE.MeshBasicMaterial({ color: "#7fd4ff", transparent: true, opacity: 0.85 }),
   storageTank: new THREE.CylinderGeometry(1.1, 1.1, 1.4, 16),
   storageWater: new THREE.CylinderGeometry(0.9, 0.9, 1, 12),
+  overflowDisc: new THREE.CircleGeometry(1, 20), // 单位圆,半径用 scale 缩放(积水圆盘共享几何)
 };
 
 function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false }: {
@@ -1037,10 +1038,12 @@ export default function SandboxPage() {
         group.add(ring);
       }
       if (ponding > 0.01) {
-        // 溢流积水圆盘:半径/透明度随地表积水体积实时涨(灾情可视化)
-        const pGeom = new THREE.CircleGeometry(Math.min(1.6, 0.35 + ponding * 0.08), 20);
-        const pDisc = new THREE.Mesh(pGeom, new THREE.MeshBasicMaterial({ color: "#3aa0ff", transparent: true, opacity: Math.min(0.45, 0.15 + ponding * 0.02), depthWrite: false }));
-        pDisc.position.y = groundY + 0.015; pDisc.rotation.x = -Math.PI / 2; (pDisc as any).userData = { overflowRing: true };
+        // 溢流积水圆盘:半径/透明度随地表积水体积实时涨(共享几何+scale 缩放,避免每步 new Geometry 的 GC 抖动)
+        const pDisc = new THREE.Mesh(SHARED.overflowDisc, new THREE.MeshBasicMaterial({ color: "#3aa0ff", transparent: true, opacity: Math.min(0.45, 0.15 + ponding * 0.02), depthWrite: false }));
+        pDisc.position.y = groundY + 0.015; pDisc.rotation.x = -Math.PI / 2;
+        const r = Math.min(1.6, 0.35 + ponding * 0.08);
+        pDisc.scale.set(r, r, 1);
+        (pDisc as any).userData = { overflowRing: true };
         group.add(pDisc);
         // 溢流节点红环(静态环 + 闪烁由 animate 统一驱动)
         const ringGeom = SHARED.overflowRing; // 共享几何
