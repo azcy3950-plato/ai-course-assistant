@@ -1161,6 +1161,19 @@ export default function SandboxPage() {
     else if (guide === 3 && draggedRainRef.current) { setGuide(0); }
   }, [guide, selected, landcover, dynI]);
   const finishGuide = () => { setGuide(0); };
+  // 引导完成后一次性提示动手玩法(仅首次)
+  useEffect(() => {
+    if (guide === 0) {
+      try {
+        if (!localStorage.getItem("sandbox-hands-v1")) {
+          localStorage.setItem("sandbox-hands-v1", "1");
+          setSchemeMsg({ text: "💡 试试:点击管道调🚰调节阀 · 点「🪣 放蓄水池」削峰", color: "text-teal-300" });
+          if (schemeMsgTimer.current) clearTimeout(schemeMsgTimer.current);
+          schemeMsgTimer.current = setTimeout(() => setSchemeMsg(null), 6000);
+        }
+      } catch { /* 忽略 */ }
+    }
+  }, [guide]);
 
   // ─── 管道调节阀:开度预览/防抖生效/重置(与雨强滑条同「预览→重跑」模式) ───
   const valveRatio = (pid: string) => {
@@ -1494,6 +1507,9 @@ export default function SandboxPage() {
                     {riskStats.overflowNodes.length > 0 && <div className="flex justify-between"><span className="text-red-300/80">溢流节点</span><span className="text-red-300 font-bold">{riskStats.overflowNodes.length} 个</span></div>}
                     <div className="text-[9px] leading-3 text-red-400/70">满管: {riskStats.fullPipes.slice(0, 5).join(", ")}{riskStats.fullPipes.length > 5 ? ` 等${riskStats.fullPipes.length}条` : ""} · 溢流: {riskStats.overflowNodes.slice(0, 5).join(", ")}{riskStats.overflowNodes.length > 5 ? ` 等${riskStats.overflowNodes.length}个` : ""}</div>
                   </div>
+                )}
+                {(Object.keys(valves).length > 0 || storages.length > 0) && (
+                  <div className="flex justify-between"><span className="text-gray-500">动手改造</span><span className="text-gray-300">🚰 阀门 {Object.keys(valves).length} · 🪣 蓄水 {storages.length}</span></div>
                 )}
               </div>)}
             </div>
