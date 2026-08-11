@@ -358,6 +358,7 @@ export default function SandboxPage() {
   const schemeMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Δ 高亮由着色 effect 统一应用(避免被 effect 重着色覆盖),until 后自然过期
   const highlightRef = useRef<{ top: Array<[string, number]>; until: number } | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 首次进入动态模式引导气泡(一次性,localStorage 记忆)
   const [showTip, setShowTip] = useState(false);
   const [dynRes, setDynRes] = useState<any>(null);
@@ -684,7 +685,14 @@ export default function SandboxPage() {
         const top = diffs.sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 5);
         if (top.length) {
           // 高亮交给着色 effect 统一应用(存 ref,until 后自然过期,不再被重着色覆盖)
+          if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
           highlightRef.current = { top, until: Date.now() + 5000 };
+          // 过期时强制清除材质(推演静止时 effect 不再重跑,高亮不会残留)
+          highlightTimerRef.current = setTimeout(() => {
+            highlightRef.current = null;
+            highlightTimerRef.current = null;
+            top.forEach(([id]) => { const m = pipeMeshMap.current.get(id); if (m) { const mat = m.material as THREE.MeshStandardMaterial; mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; } });
+          }, 5200);
           const down = top.filter(([, v]) => v < 0).length, up = top.filter(([, v]) => v > 0).length;
           const msg = simLandcover === "green" ? `🟢 绿色海绵:${down} 条管道水量下降` : simLandcover === "gray" ? `🟠 灰色强开发:${up} 条管道水量上升` : `⚪ 已恢复现状基准`;
           setSchemeMsg({ text: msg, color: simLandcover === "green" ? "text-green-400" : simLandcover === "gray" ? "text-orange-400" : "text-gray-300" });
@@ -828,6 +836,7 @@ export default function SandboxPage() {
   useEffect(() => () => {
     if (rainTimer.current) clearTimeout(rainTimer.current);
     if (schemeMsgTimer.current) clearTimeout(schemeMsgTimer.current);
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
   }, []);
 
   // 当前时间步风险统计:满管管道 / 溢流节点
@@ -1139,7 +1148,7 @@ export default function SandboxPage() {
       {/* ── Timeline (dynamic only) ── */}
       {/* 方案切换结果状态条 */}
       {schemeMsg && mode === "dynamic" && (
-        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-10 bg-black/85 border border-gray-700 rounded-lg px-3 py-1.5 text-[11px] font-bold whitespace-nowrap shadow-lg">{schemeMsg.text}</div>
+        <div className={`absolute bottom-14 left-1/2 -translate-x-1/2 z-10 bg-black/85 border border-gray-700 rounded-lg px-3 py-1.5 text-[11px] font-bold whitespace-nowrap shadow-lg ${schemeMsg.color}`}>{schemeMsg.text}</div>
       )}
       {/* 首次进入引导气泡 */}
       {showTip && mode === "dynamic" && (
