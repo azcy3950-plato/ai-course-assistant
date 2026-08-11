@@ -1125,12 +1125,12 @@ export default function SandboxPage() {
       tankMat.emissiveIntensity = storageSel === fac.id ? 0.9 : 0.3;
       tankMat.opacity = storageSel === fac.id ? 0.6 : 0.35;
     });
-    // 移除已删除蓄水池的 3D 对象
+    // 移除已删除蓄水池的 3D 对象(仅 dispose 实例材质,共享几何由 SHARED 统一管理)
     for (const [id, g] of storageMeshMap.current) {
       if (!seenSt.has(id)) {
         sceneRef.current?.remove(g.grp);
-        g.tank.geometry.dispose(); (g.tank.material as THREE.Material).dispose();
-        g.water.geometry.dispose(); (g.water.material as THREE.Material).dispose();
+        (g.tank.material as THREE.Material).dispose();
+        (g.water.material as THREE.Material).dispose();
         storageMeshMap.current.delete(id);
       }
     }

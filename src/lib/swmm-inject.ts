@@ -22,10 +22,10 @@ export function applyValvesStorages(
     if (inJunc && upper.startsWith("[")) inJunc = false;
     if (line.trim() === "" || line.trim().startsWith(";") || line.trim().startsWith("[")) { out.push(line); continue; }
     const parts = line.trim().split(/\s+/);
-    // [XSECTIONS] Name Shape Geom1 Geom2 ... :Geom1 为圆管直径(m)
+    // [XSECTIONS] Name Shape Geom1 Geom2 ... :Geom1 为圆管直径(m),仅 CIRCULAR 缩放
     if (inXS && parts.length >= 3 && valves) {
       const k = valves[parts[0]];
-      if (typeof k === "number" && Number.isFinite(k) && k >= 0 && k <= 1) {
+      if (typeof k === "number" && Number.isFinite(k) && k >= 0 && k <= 1 && parts[1].toUpperCase() === "CIRCULAR") {
         const d = parseFloat(parts[2]);
         if (Number.isFinite(d) && d > 0) {
           parts[2] = (d * (0.3 + 0.7 * k)).toFixed(4);
