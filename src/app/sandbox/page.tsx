@@ -366,6 +366,7 @@ export default function SandboxPage() {
 
   // Dynamic state
   const [dynI, setDynI] = useState(80);
+  const draggedRainRef = useRef(false); // 用户是否曾拖动过雨强滑条(引导第 3 步完成条件)
   const [landcover, setLandcover] = useState<"default" | "gray" | "green">("default");
   // 雨强预览:拖动滑条时即时缩放横截面水位,松手防抖后真实仿真覆盖
   const [rainPreview, setRainPreview] = useState<number | null>(null);
@@ -1054,8 +1055,8 @@ export default function SandboxPage() {
     if (!guide) return;
     if (guide === 1 && selected?.type === "pipe") setGuide(2);
     else if (guide === 2 && landcover !== "default") setGuide(3);
-    else if (guide === 3 && (rainPreview != null || dynI !== 100)) { setGuide(0); }
-  }, [guide, selected, landcover, rainPreview, dynI]);
+    else if (guide === 3 && draggedRainRef.current) { setGuide(0); }
+  }, [guide, selected, landcover]);
   const finishGuide = () => { setGuide(0); };
 
   // 卸载清理防抖/提示定时器(防卸载后 setState/fetch)
@@ -1234,7 +1235,7 @@ export default function SandboxPage() {
                   if (rainTimer.current) clearTimeout(rainTimer.current);
                   rainTimer.current = setTimeout(() => { // 松手 500ms 防抖后真实仿真
                     setRainPreview(null);
-                    if (v !== dynI) { setDynI(v); loadSim(v); } else { setDynPhase("config"); if (dynRes) setDynRes(null); }
+                    if (v !== dynI) { draggedRainRef.current = true; setDynI(v); loadSim(v); } else { setDynPhase("config"); if (dynRes) setDynRes(null); }
                   }, 500);
                 }} className="w-full accent-cyan-500 mt-0.5 h-1.5" /></div>
               {/* 暴雨情景预设:一键设置重现期并仿真 */}
