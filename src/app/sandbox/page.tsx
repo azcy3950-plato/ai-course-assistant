@@ -389,7 +389,6 @@ export default function SandboxPage() {
   // 3D 变化百分比标签(切方案/调雨强后 Top5 管道上方悬浮 ▼/▲%,5s 消失)
   const [deltaLabels, setDeltaLabels] = useState<Array<{ id: string; text: string; color: string }>>([]);
   const deltaLabelsRef = useRef<Array<{ id: string; el: HTMLDivElement | null }>>([]);
-  useEffect(() => { deltaLabelsRef.current = deltaLabels.map(l => ({ id: l.id, el: null })); }, [deltaLabels]);
   const [layers, setLayers] = useState<Record<string, boolean>>({ sc: true, pipes: true, nodes: true, ground: true });
   const [stats, setStats] = useState({ nodes: 0, pipes: 0, scs: 0 });
   const [vertEx, setVertEx] = useState(5);
@@ -1504,7 +1503,7 @@ export default function SandboxPage() {
           );
         })()}
         {deltaLabels.map(l => (
-          <div key={l.id} ref={el => { const it = deltaLabelsRef.current.find(x => x.id === l.id); if (it) it.el = el; }} className="absolute hidden z-30 pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: 0, top: 0 }}>
+          <div key={l.id} ref={el => { if (!el) return; let it = deltaLabelsRef.current.find(x => x.id === l.id); if (!it) { it = { id: l.id, el: null }; deltaLabelsRef.current.push(it); } it.el = el; }} className="absolute hidden z-30 pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: 0, top: 0 }}>
             <div className="bg-black/80 border border-gray-600 rounded px-1 py-0.5 text-[10px] font-bold shadow" style={{ color: l.color }}>{l.text}</div>
           </div>
         ))}
@@ -1707,7 +1706,7 @@ export default function SandboxPage() {
           {dynPhase === "loading" && <div className="text-center py-3"><div className="animate-spin text-lg mb-1">⏳</div><div className="text-[10px] text-gray-400">运行 SWMM 仿真…</div><button onClick={() => { abortRef.current?.abort(); setDynPhase("config"); }} className="mt-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-[10px] text-gray-300">✕ 取消</button></div>}
 
           {/* 方案分屏左右对比:compareRes 时同管道现状 vs 当前方案(各取峰值步),中央 VS */}
-          {compareRes && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && (() => {
+          {compareRes && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && (() => {
             const cmpPipe = (selected?.type === "pipe" ? selected.data.id : null) || (topPipes[0]?.id);
             if (!cmpPipe || !compareRes.default?.links?.[cmpPipe]) return null;
             const curKey = landcover === "gray" ? "gray" : landcover === "green" ? "green" : "default";
