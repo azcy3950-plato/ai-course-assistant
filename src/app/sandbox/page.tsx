@@ -144,13 +144,13 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
         }
       }
 
-      // 标注
+      // 标注(compact 降字号防裁切)
       ctx.fillStyle = "#9fb2c0";
-      ctx.font = "9px monospace";
+      ctx.font = L.compact ? "8px monospace" : "9px monospace";
       ctx.textAlign = "center";
-      ctx.fillText(`d=${L.diam.toFixed(2)}m 充满度=${(fillRatio * 100).toFixed(0)}%`, cx, h - 6);
+      ctx.fillText(L.compact ? `${(fillRatio * 100).toFixed(0)}%` : `d=${L.diam.toFixed(2)}m 充满度=${(fillRatio * 100).toFixed(0)}%`, cx, h - 5);
       ctx.fillStyle = "rgba(80,170,230,0.9)";
-      ctx.fillText(`水深 ${Math.min(L.depth * L.previewRatio, L.diam).toFixed(2)}m · ${flow >= 0 ? "→" : "←"} ${Math.abs(flow).toFixed(2)}m³/s`, cx, 10);
+      ctx.fillText(L.compact ? `${flow >= 0 ? "→" : "←"}${Math.abs(flow).toFixed(2)}` : `水深 ${Math.min(L.depth * L.previewRatio, L.diam).toFixed(2)}m · ${flow >= 0 ? "→" : "←"} ${Math.abs(flow).toFixed(2)}m³/s`, cx, 9);
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
