@@ -211,7 +211,7 @@ function ChartPanel({ selected, dynRes, dynStep, timeStepCount, currentTimeLabel
   }, [compareRes]);
 
   function makeOption(title: string, data: number[], yLabel: string, color: string) {
-    const markData = dynStep < data.length ? [{ xAxis: timestamps[dynStep] ?? dynStep }] : [];
+    const markData = dynStep < data.length ? [{ xAxis: `${(timestamps[dynStep] ?? dynStep).toFixed(1)}h` }] : [];
     return {
       backgroundColor: 'transparent',
       grid: { top: 28, right: 12, bottom: 24, left: 48 },
@@ -1407,7 +1407,7 @@ export default function SandboxPage() {
           timeStepCount={timeStepCount}
           currentTimeLabel={currentTimeLabel}
           compareRes={compareRes}
-          onSeek={(step) => { setDynStep(step); setDynPlay(false); }}
+          onSeek={(step) => { setDynStep(step); setDynPlay(false); setDynPhase("paused"); }}
         />
       )}
 
