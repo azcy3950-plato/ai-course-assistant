@@ -81,6 +81,7 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const latest = useRef({ diam, depth, depthFraction, flow, flowDir, previewRatio, compact });
   latest.current = { diam, depth, depthFraction, flow, flowDir, previewRatio, compact };
+  const displayFill = useRef(0); // 显示充满度(平滑过渡到目标值,方案切换/时间轴跳转时变化过程可见)
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -98,8 +99,13 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
     let raf = 0;
     const draw = (now: number) => {
       const L = latest.current;
-      // 雨强预览:水位按 previewRatio 缩放(拖动滑条即见变化)
-      const fillRatio = Math.min(1, Math.max(0, (L.depthFraction || 0) * L.previewRatio));
+      // 雨强预览:水位按 previewRatio 缩放(拖动滑条即见变化);动态模式显示值每帧平滑过渡
+      const targetFill = Math.min(1, Math.max(0, (L.depthFraction || 0) * L.previewRatio));
+      if (animate) {
+        displayFill.current += (targetFill - displayFill.current) * 0.12;
+        if (Math.abs(targetFill - displayFill.current) < 0.0015) displayFill.current = targetFill;
+      } else displayFill.current = targetFill;
+      const fillRatio = displayFill.current;
       const flow = L.flow;
 
       // 管壁
@@ -1544,25 +1550,45 @@ export default function SandboxPage() {
 
           {dynPhase === "loading" && <div className="text-center py-3"><div className="animate-spin text-lg mb-1">⏳</div><div className="text-[10px] text-gray-400">运行 SWMM 仿真…</div><button onClick={() => { abortRef.current?.abort(); setDynPhase("config"); }} className="mt-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-[10px] text-gray-300">✕ 取消</button></div>}
 
-          {/* 管网横截面:默认展示当前最满管道(不用先点管道);选中管道时由下方区块接管 */}
-          {!selected && autoPipeId && dynRes?.links?.[autoPipeId] && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && (() => {
-            const ld = dynRes.links[autoPipeId] as any;
-            const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === autoPipeId);
+          {/* 管网横截面:Top3 最满管道并排(选中管道置顶);推演中三列一起动 */}
+          {(dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && (() => {
+            const links = dynRes?.links;
+            if (!links) return null;
+            const entries = Object.entries(links as Record<string, any>).map(([id, ld]) => {
+              const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === id);
+              return { id, df: ld?.depthFraction?.[dynStep] ?? 0, diam: pp?.diam || 0.3, from: pp?.from ?? "?", to: pp?.to ?? "?" };
+            }).filter(x => x.df > 0.001);
+            entries.sort((a, b) => b.df - a.df);
+            const top = entries.slice(0, 3);
+            if (selected?.type === "pipe" && top.length && !top.find(t => t.id === selected.data.id)) {
+              const sel = entries.find(e => e.id === selected.data.id);
+              if (sel) { top.pop(); top.unshift(sel); }
+            }
+            if (!top.length) return null;
+            const ldOf = (id: string) => (links as Record<string, any>)[id];
             return (
             <div className="border-t border-gray-700 mt-2 pt-1.5">
               <div className="flex items-center justify-between mb-1">
-                <div className="font-bold text-xs text-gray-300">▬ {autoPipeId}<span className="ml-1 text-[9px] font-normal text-cyan-400">当前最满</span></div>
-                <span className="text-[9px] text-gray-500">点击其他管道切换</span>
+                <div className="font-bold text-xs text-gray-300">🔵 管网横截面 <span className="ml-1 text-[9px] font-normal text-cyan-400">最满 Top{top.length} · 点击切换</span></div>
+                {selected?.type === "pipe" && <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span>}
               </div>
-              <PipeCrossSection
-                diam={pp?.diam || 0.3}
-                depth={ld.depth?.[dynStep] ?? 0}
-                depthFraction={ld.depthFraction?.[dynStep] ?? 0}
-                flow={ld.flow?.[dynStep] ?? 0}
-                flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`}
-                landcover={landcover}
-                previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(autoPipeId)}
-              />
+              <div className="grid grid-cols-3 gap-1">
+                {top.map((p) => (
+                  <button key={p.id} onClick={() => { const mesh = pipeMeshMap.current.get(p.id); if (mesh) { if (selRef.current !== mesh) { if (selRef.current) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id: p.id } }); } } }} className="text-left" title={`${p.id} ${p.from}→${p.to} 充满度 ${(p.df * 100).toFixed(0)}%`}>
+                    <div className="text-[8px] text-gray-400 truncate">{p.id}</div>
+                    <PipeCrossSection
+                      diam={p.diam}
+                      depth={(ldOf(p.id).depth?.[dynStep] ?? 0)}
+                      depthFraction={p.df}
+                      flow={ldOf(p.id).flow?.[dynStep] ?? 0}
+                      flowDir={`${p.from} → ${p.to}`}
+                      landcover={landcover}
+                      previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(p.id)}
+                      compact
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
             );
           })()}
