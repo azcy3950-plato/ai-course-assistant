@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
     // 阀门(pipeId → 开度 0-1)与蓄水设施(nodeId → 容量 m³):类型校验 + 数值钳制,非法值忽略
     const valves: Record<string, number> = {};
     if (body.valves != null && typeof body.valves === "object" && !Array.isArray(body.valves)) {
-      for (const [k, v] of Object.entries(body.valves as Record<string, unknown>)) {
+      for (const [k, v] of Object.entries(body.valves as Record<string, unknown>).slice(0, 50)) {
         const n = Number(v);
         if (Number.isFinite(n) && k.length <= 64) valves[k] = Math.max(0, Math.min(1, n));
       }
@@ -340,12 +340,18 @@ export async function POST(req: NextRequest) {
 
     const originalInp = join(process.cwd(), 'public', 'zijing_inp.inp');
     const tempInp = modifyRainfall(originalInp, intensity, simDir, landcover);
-    // 阀门/蓄水注入:在雨强与下垫面修改后的文本上再改直径/洼地面积
+    // 阀门/蓄水注入:在雨强与下垫面修改后的文本上再改直径/洼地面积(失败即标记 task failed,不滞留 running 至超时)
     let affected = { valves: [] as string[], storages: [] as string[] };
-    if (Object.keys(valves).length > 0 || storages.length > 0) {
-      const injected = applyValvesStorages(readFileSync(tempInp, 'utf-8'), valves, storages);
-      writeFileSync(tempInp, injected.text, 'utf-8');
-      affected = injected.affected;
+    try {
+      if (Object.keys(valves).length > 0 || storages.length > 0) {
+        const injected = applyValvesStorages(readFileSync(tempInp, 'utf-8'), valves, storages);
+        writeFileSync(tempInp, injected.text, 'utf-8');
+        affected = injected.affected;
+      }
+    } catch (err: any) {
+      task.status = 'failed'; task.error = err.message; task.completedAt = Date.now();
+      tasks.set(simulationId, task);
+      throw err;
     }
 
     try {

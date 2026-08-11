@@ -54,4 +54,15 @@ describe("applyValvesStorages", () => {
     expect(r.affected.storages).toEqual([]);
     expect(r.text.split("\n").find(l => l.trim().startsWith("P1 "))!.trim().split(/\s+/)[2]).toBe("1.0");
   });
+
+  it("非 CIRCULAR 截面不缩放 + k=0 缩到 0.3d", () => {
+    const inp2 = inp + "P3               RECT_OPEN 1.5     0\n";
+    const r = applyValvesStorages(inp2, { P3: 0.5, P1: 0 });
+    // RECT_OPEN 跳过,geom1 不变
+    expect(r.text.split("\n").find(l => l.trim().startsWith("P3 "))!.trim().split(/\s+/)[2]).toBe("1.5");
+    // k=0 → d * 0.3
+    const p1row = r.text.split("\n").find(l => l.trim().split(/\s+/)[0] === "P1")!;
+    expect(p1row.trim().split(/\s+/)[2]).toBe((1.0 * 0.3).toFixed(4));
+    expect(r.affected.valves).toEqual(["P1"]);
+  });
 });

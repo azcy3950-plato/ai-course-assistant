@@ -1592,8 +1592,8 @@ export default function SandboxPage() {
                   landcover={landcover}
                   previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * valveRatio(selected.data.id)}
                 />
-                {/* 调节阀控制(动手型交互):拖动即时预览横截面,松手防抖后重跑仿真 */}
-                <div className="mt-1.5 rounded bg-purple-950/40 border border-purple-900/60 p-1.5">
+                {/* 调节阀控制(动手型交互):拖动即时预览横截面,松手防抖后重跑仿真;仅圆形截面管道可调(后端仅注入 CIRCULAR) */}
+                {(!selected.data.shape || String(selected.data.shape).toUpperCase() === "CIRCULAR") && <div className="mt-1.5 rounded bg-purple-950/40 border border-purple-900/60 p-1.5">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] font-bold text-purple-300">🚰 调节阀</span>
                     {(valves[selected.data.id] != null || valveDraft[selected.data.id] != null) && <button onClick={() => resetValves(selected.data.id)} className="text-[9px] text-purple-400 hover:text-purple-200">重置</button>}
@@ -1601,7 +1601,7 @@ export default function SandboxPage() {
                   <input type="range" min="0" max="100" step="5" value={Math.round((valveDraft[selected.data.id] ?? valves[selected.data.id] ?? 1) * 100)} onChange={e => onValveChange(selected.data.id, Number(e.target.value))} className="w-full accent-purple-500" />
                   <div className="flex justify-between text-[9px] text-gray-500"><span>关闭</span><span className="text-purple-300 font-bold">{Math.round((valveDraft[selected.data.id] ?? valves[selected.data.id] ?? 1) * 100)}%</span><span>全开</span></div>
                   {(valves[selected.data.id] != null && valveDraft[selected.data.id] == null) && <div className="text-[9px] leading-3 text-purple-400/80 mt-0.5">已生效,拖动调整后松手重新仿真</div>}
-                </div>
+                </div>}
               </>)}
             </div>
           )}
