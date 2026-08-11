@@ -687,11 +687,25 @@ export default function SandboxPage() {
           // 高亮交给着色 effect 统一应用(存 ref,until 后自然过期,不再被重着色覆盖)
           if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
           highlightRef.current = { top, until: Date.now() + 5000 };
-          // 过期时强制清除材质(推演静止时 effect 不再重跑,高亮不会残留)
+          // 过期时强制清除高亮(推演静止时 effect 不再重跑,高亮不会残留);有流量的管道按 effect 公式恢复流量色,不覆盖着色
           highlightTimerRef.current = setTimeout(() => {
             highlightRef.current = null;
             highlightTimerRef.current = null;
-            top.forEach(([id]) => { const m = pipeMeshMap.current.get(id); if (m) { const mat = m.material as THREE.MeshStandardMaterial; mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; } });
+            const s = kbState.current;
+            const maxF = s.dynRes?.summary?.maxFlow?.value || 0.1;
+            top.forEach(([id]) => {
+              const m = pipeMeshMap.current.get(id); if (!m) return;
+              const mat = m.material as THREE.MeshStandardMaterial;
+              const flows = (s.dynRes as any)?.links?.[id]?.flow;
+              const flow = (flows && s.dynStep < flows.length) ? flows[s.dynStep] : 0;
+              if (Math.abs(flow) < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
+              else {
+                const ratio = Math.min(1, Math.abs(flow) / maxF);
+                mat.color.set(new THREE.Color().setHSL(0.55 - ratio * 0.35, 0.7, 0.4 + ratio * 0.25));
+                mat.emissive.set(new THREE.Color().setHSL(0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
+                mat.emissiveIntensity = 0.08 + ratio * 0.4;
+              }
+            });
           }, 5200);
           const down = top.filter(([, v]) => v < 0).length, up = top.filter(([, v]) => v > 0).length;
           const msg = simLandcover === "green" ? `🟢 绿色海绵:${down} 条管道水量下降` : simLandcover === "gray" ? `🟠 灰色强开发:${up} 条管道水量上升` : `⚪ 已恢复现状基准`;
