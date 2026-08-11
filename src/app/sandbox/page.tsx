@@ -386,6 +386,10 @@ export default function SandboxPage() {
     a.download = `sandbox-${zoomPipeId || "pipe"}.png`;
     a.click();
   };
+  // 3D 变化百分比标签(切方案/调雨强后 Top5 管道上方悬浮 ▼/▲%,5s 消失)
+  const [deltaLabels, setDeltaLabels] = useState<Array<{ id: string; text: string; color: string }>>([]);
+  const deltaLabelsRef = useRef<Array<{ id: string; el: HTMLDivElement | null }>>([]);
+  useEffect(() => { deltaLabelsRef.current = deltaLabels.map(l => ({ id: l.id, el: null })); }, [deltaLabels]);
   const [layers, setLayers] = useState<Record<string, boolean>>({ sc: true, pipes: true, nodes: true, ground: true });
   const [stats, setStats] = useState({ nodes: 0, pipes: 0, scs: 0 });
   const [vertEx, setVertEx] = useState(5);
@@ -718,6 +722,21 @@ export default function SandboxPage() {
           wm.scale.y += (ud.targetScaleY - wm.scale.y) * 0.08;
           wm.position.y += (ud.targetY - wm.position.y) * 0.08;
         });
+        // 3D 变化百分比标签:Top5 管道上方投影跟随
+        for (const dl of deltaLabelsRef.current) {
+          const el = dl.el;
+          if (!el) continue;
+          const ends = pipeEndsMap.current.get(dl.id);
+          if (!ends) { el.style.display = "none"; continue; }
+          const mid = new THREE.Vector3((ends.fx + ends.tx) / 2, (ends.fy + ends.ty) / 2 + 0.4, (ends.fz + ends.tz) / 2);
+          mid.project(camera);
+          const rect = cr.current?.getBoundingClientRect();
+          if (rect && mid.z < 1) {
+            el.style.left = ((mid.x * 0.5 + 0.5) * rect.width) + "px";
+            el.style.top = ((-mid.y * 0.5 + 0.5) * rect.height) + "px";
+            el.style.display = "block";
+          } else el.style.display = "none";
+        }
         // 溢流红环闪烁(积水圆盘为 MeshBasicMaterial 无 emissive,自动跳过)
         const flick = 0.35 + 0.45 * Math.sin(performance.now() * 0.008);
         scene.traverse(o => { const m = o as any; if (m?.userData?.overflowRing && m.isMesh && m.material?.emissiveIntensity != null) m.material.emissiveIntensity = flick; });
@@ -949,6 +968,12 @@ export default function SandboxPage() {
         }
         const top = diffs.sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 5);
         if (top.length) {
+          // 3D 变化百分比标签:▼ 减水(绿)/▲ 增水(橙),5s 后随高亮一并清除
+          setDeltaLabels(top.map(([id, v]) => {
+            const b = maxAbs(prev.links[id]?.flow);
+            const pct = (b != null && Math.abs(b) > 0.01) ? (v / Math.abs(b)) * 100 : 0;
+            return { id, text: `${v < 0 ? "▼" : "▲"}${Math.abs(pct).toFixed(1)}%`, color: v < 0 ? "#4ade80" : "#fb923c" };
+          }));
           // 高亮交给着色 effect 统一应用(存 ref,until 后自然过期,不再被重着色覆盖)
           if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
           highlightRef.current = { top, until: Date.now() + 5000 };
@@ -956,6 +981,7 @@ export default function SandboxPage() {
           highlightTimerRef.current = setTimeout(() => {
             highlightRef.current = null;
             highlightTimerRef.current = null;
+            setDeltaLabels([]);
             const s = kbState.current;
             const maxF = s.dynRes?.summary?.maxFlow?.value || 0.1;
             top.forEach(([id]) => {
@@ -1389,6 +1415,23 @@ export default function SandboxPage() {
   const curLinkData = (mode === "dynamic" && selected?.type === "pipe" && dynRes?.links) ? dynRes.links[selected.data.id] : null;
   // Links now use velocity + depthFraction (not flow) — correct SWMM per-step API
 
+  // 组件级:Top3 最满管道(选中置顶),供 Top3 区块与分屏对比共用
+  const topPipes = (() => {
+    const links = dynRes?.links;
+    if (!links) return [];
+    const entries = Object.entries(links as Record<string, any>).map(([id, ld]) => {
+      const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === id);
+      return { id, df: ld?.depthFraction?.[dynStep] ?? 0, diam: pp?.diam || 0.3, from: pp?.from ?? "?", to: pp?.to ?? "?" };
+    }).filter(x => x.df > 0.001);
+    entries.sort((a, b) => b.df - a.df);
+    const top = entries.slice(0, 3);
+    if (selected?.type === "pipe" && top.length && !top.find(t => t.id === selected.data.id)) {
+      const sel = entries.find(e => e.id === selected.data.id);
+      if (sel) { top.pop(); top.unshift(sel); }
+    }
+    return top;
+  })();
+
   // ═══════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════
@@ -1444,6 +1487,11 @@ export default function SandboxPage() {
             </div>
           );
         })()}
+        {deltaLabels.map(l => (
+          <div key={l.id} ref={el => { const it = deltaLabelsRef.current.find(x => x.id === l.id); if (it) it.el = el; }} className="absolute hidden z-30 pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: 0, top: 0 }}>
+            <div className="bg-black/80 border border-gray-600 rounded px-1 py-0.5 text-[10px] font-bold shadow" style={{ color: l.color }}>{l.text}</div>
+          </div>
+        ))}
         {zoomPipeId && (() => {
           const ld = (dynRes?.links as any)?.[zoomPipeId];
           const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === zoomPipeId);
@@ -1635,30 +1683,56 @@ export default function SandboxPage() {
 
           {dynPhase === "loading" && <div className="text-center py-3"><div className="animate-spin text-lg mb-1">⏳</div><div className="text-[10px] text-gray-400">运行 SWMM 仿真…</div><button onClick={() => { abortRef.current?.abort(); setDynPhase("config"); }} className="mt-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-[10px] text-gray-300">✕ 取消</button></div>}
 
+          {/* 方案分屏左右对比:compareRes 时同管道现状 vs 当前方案(各取峰值步),中央 VS */}
+          {compareRes && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && (() => {
+            const cmpPipe = (selected?.type === "pipe" ? selected.data.id : null) || (topPipes[0]?.id);
+            if (!cmpPipe || !compareRes.default?.links?.[cmpPipe]) return null;
+            const curKey = landcover === "gray" ? "gray" : landcover === "green" ? "green" : "default";
+            if (curKey === "default") return null;
+            const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === cmpPipe);
+            const peakOf = (rs: any) => { const flows = rs?.links?.[cmpPipe]?.flow || []; let pk = 0; flows.forEach((v: number, i: number) => { if (Math.abs(v) > Math.abs(flows[pk] ?? 0)) pk = i; }); return pk; };
+            const mk = (rs: any, label: string, color: string) => {
+              const pk = peakOf(rs);
+              const ld = rs.links[cmpPipe];
+              return (
+                <div className="flex-1 min-w-0">
+                  <div className={`text-[8px] text-center font-bold mb-0.5 ${color}`}>{label}</div>
+                  <PipeCrossSection
+                    diam={pp?.diam || 0.3}
+                    depth={ld.depth?.[pk] ?? 0}
+                    depthFraction={ld.depthFraction?.[pk] ?? 0}
+                    flow={ld.flow?.[pk] ?? 0}
+                    flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`}
+                    landcover={label === "现状" ? "default" : landcover}
+                    animate={false}
+                    compact
+                  />
+                </div>
+              );
+            };
+            return (
+              <div className="border-t border-gray-700 mt-2 pt-1.5">
+                <div className="text-[10px] font-bold text-gray-300 mb-1">⚖️ 方案对比 <span className="text-[8px] font-normal text-gray-500">{cmpPipe} · 峰值时刻</span></div>
+                <div className="flex items-center gap-1">
+                  {mk(compareRes.default, "现状", "text-gray-400")}
+                  <span className="text-[9px] font-black text-yellow-400 px-0.5">VS</span>
+                  {mk(compareRes[curKey], landcover === "green" ? "绿色海绵" : "灰色强开发", landcover === "green" ? "text-green-400" : "text-orange-400")}
+                </div>
+              </div>
+            );
+          })()}
           {/* 管网横截面:Top3 最满管道并排(选中管道置顶);推演中三列一起动 */}
-          {(dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && (() => {
-            const links = dynRes?.links;
-            if (!links) return null;
-            const entries = Object.entries(links as Record<string, any>).map(([id, ld]) => {
-              const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === id);
-              return { id, df: ld?.depthFraction?.[dynStep] ?? 0, diam: pp?.diam || 0.3, from: pp?.from ?? "?", to: pp?.to ?? "?" };
-            }).filter(x => x.df > 0.001);
-            entries.sort((a, b) => b.df - a.df);
-            const top = entries.slice(0, 3);
-            if (selected?.type === "pipe" && top.length && !top.find(t => t.id === selected.data.id)) {
-              const sel = entries.find(e => e.id === selected.data.id);
-              if (sel) { top.pop(); top.unshift(sel); }
-            }
-            if (!top.length) return null;
-            const ldOf = (id: string) => (links as Record<string, any>)[id];
+          {(dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && topPipes.length > 0 && (() => {
+            const links = dynRes?.links as Record<string, any>;
+            const ldOf = (id: string) => links[id];
             return (
             <div className="border-t border-gray-700 mt-2 pt-1.5">
               <div className="flex items-center justify-between mb-1">
-                <div className="font-bold text-xs text-gray-300">🔵 管网横截面 <span className="ml-1 text-[9px] font-normal text-cyan-400">最满 Top{top.length} · 点击切换</span></div>
+                <div className="font-bold text-xs text-gray-300">🔵 管网横截面 <span className="ml-1 text-[9px] font-normal text-cyan-400">最满 Top{topPipes.length} · 点击切换</span></div>
                 {selected?.type === "pipe" && <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span>}
               </div>
               <div className="grid grid-cols-3 gap-1">
-                {top.map((p) => (
+                {topPipes.map((p) => (
                   <button key={p.id} onClick={() => { const mesh = pipeMeshMap.current.get(p.id); if (mesh) { if (selRef.current !== mesh) { if (selRef.current) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id: p.id } }); } } }} className="text-left" title={`${p.id} ${p.from}→${p.to} 充满度 ${(p.df * 100).toFixed(0)}%`}>
                     <div className="text-[8px] text-gray-400 truncate">{p.id}</div>
                     <PipeCrossSection
