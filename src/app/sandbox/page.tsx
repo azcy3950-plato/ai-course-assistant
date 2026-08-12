@@ -75,12 +75,12 @@ const SHARED = {
   overflowDisc: new THREE.CircleGeometry(1, 20), // 单位圆,半径用 scale 缩放(积水圆盘共享几何)
 };
 
-function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false, onCanvas }: {
-  diam: number; depth: number; depthFraction: number; flow: number; flowDir: string; landcover: string; previewRatio?: number; animate?: boolean; compact?: boolean; onCanvas?: (c: HTMLCanvasElement | null) => void;
+function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false, size = "md", onCanvas }: {
+  diam: number; depth: number; depthFraction: number; flow: number; flowDir: string; landcover: string; previewRatio?: number; animate?: boolean; compact?: boolean; size?: "md" | "lg"; onCanvas?: (c: HTMLCanvasElement | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const latest = useRef({ diam, depth, depthFraction, flow, flowDir, previewRatio, compact });
-  latest.current = { diam, depth, depthFraction, flow, flowDir, previewRatio, compact };
+  const latest = useRef({ diam, depth, depthFraction, flow, flowDir, previewRatio, compact, size });
+  latest.current = { diam, depth, depthFraction, flow, flowDir, previewRatio, compact, size };
   const displayFill = useRef(0); // 显示充满度(平滑过渡到目标值,方案切换/时间轴跳转时变化过程可见)
   useEffect(() => { if (onCanvas) onCanvas(canvasRef.current); }, [onCanvas]); // 截图用
 
@@ -88,7 +88,7 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    const w = latest.current.compact ? 88 : 180, h = latest.current.compact ? 74 : 150;
+    const w = latest.current.compact ? 88 : latest.current.size === "lg" ? 340 : 180, h = latest.current.compact ? 74 : latest.current.size === "lg" ? 240 : 150;
     canvas.width = w * dpr; canvas.height = h * dpr;
     canvas.style.width = w + "px"; canvas.style.height = h + "px";
     const ctx = canvas.getContext("2d");
@@ -379,6 +379,11 @@ export default function SandboxPage() {
   // 横截面放大模态 + 截图(当前选中管道)
   const [zoomPipeId, setZoomPipeId] = useState<string | null>(null);
   const [snapCanvas, setSnapCanvas] = useState<HTMLCanvasElement | null>(null);
+  // 横截面大图模式:大画布 + 滚轮缩放(1-3x)+ 拖动平移
+  const [bigView, setBigView] = useState(false);
+  const [bigZoom, setBigZoom] = useState(1);
+  const [bigPos, setBigPos] = useState({ x: 0, y: 0 });
+  const bigDragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
   const downloadSnap = () => {
     if (!snapCanvas) return;
     const a = document.createElement("a");
@@ -1512,6 +1517,41 @@ export default function SandboxPage() {
             <div className="bg-black/80 border border-gray-600 rounded px-1 py-0.5 text-[10px] font-bold shadow" style={{ color: l.color }}>{l.text}</div>
           </div>
         ))}
+        {bigView && (() => {
+          const bid = (selected?.type === "pipe" ? selected.data.id : null) || topPipes[0]?.id || null;
+          if (!bid) return null;
+          const ld = (dynRes?.links as any)?.[bid];
+          const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === bid);
+          return (
+            <div className="absolute right-3 top-16 z-40 w-[430px] max-w-[90%] bg-gray-950/95 border border-gray-700 rounded-lg shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-2 py-1 bg-gray-900 border-b border-gray-700">
+                <span className="font-bold text-xs text-cyan-300">🔍 横截面大图 · {bid}</span>
+                <span className="text-[9px] text-gray-500">滚轮缩放 · 拖动平移</span>
+                <button onClick={() => setBigView(false)} className="text-gray-400 hover:text-white text-xs px-1">✕</button>
+              </div>
+              <div className="relative h-[300px] overflow-hidden" onWheel={e => setBigZoom(z => Math.max(1, Math.min(3, z - Math.sign(e.deltaY) * 0.15)))} onMouseDown={e => { bigDragRef.current = { sx: e.clientX, sy: e.clientY, px: bigPos.x, py: bigPos.y }; }} onMouseMove={e => { const d = bigDragRef.current; if (d) setBigPos({ x: d.px + (e.clientX - d.sx), y: d.py + (e.clientY - d.sy) }); }} onMouseUp={() => { bigDragRef.current = null; }} onMouseLeave={() => { bigDragRef.current = null; }}>
+                <div className="absolute inset-0 flex items-center justify-center" style={{ transform: `translate(${bigPos.x}px, ${bigPos.y}px) scale(${bigZoom})` }}>
+                  <PipeCrossSection
+                    diam={pp?.diam || 0.3}
+                    depth={ld?.depth?.[dynStep] ?? 0}
+                    depthFraction={ld?.depthFraction?.[dynStep] ?? 0}
+                    flow={ld?.flow?.[dynStep] ?? 0}
+                    flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`}
+                    landcover={landcover}
+                    previewRatio={(rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1) * greenPreviewRatio * valveRatio(bid)}
+                    size="lg"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1 bg-gray-900 border-t border-gray-700 text-[10px]">
+                <span className="text-gray-400">充满度 <span className="text-cyan-300 font-bold">{(ld?.depthFraction?.[dynStep] ?? 0) * 100}%</span></span>
+                <span className="text-gray-400">流量 <span className="text-cyan-300 font-bold">{(ld?.flow?.[dynStep] ?? 0).toFixed(2)} m³/s</span></span>
+                <span className="text-gray-500">缩放 {bigZoom.toFixed(1)}x</span>
+                <button onClick={() => { setBigZoom(1); setBigPos({ x: 0, y: 0 }); }} className="text-gray-400 hover:text-cyan-300">↺ 复位</button>
+              </div>
+            </div>
+          );
+        })()}
         {zoomPipeId && (() => {
           const ld = (dynRes?.links as any)?.[zoomPipeId];
           const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === zoomPipeId);
@@ -1772,7 +1812,10 @@ export default function SandboxPage() {
             <div className="border-t border-gray-700 mt-2 pt-1.5">
               <div className="flex items-center justify-between mb-1">
                 <div className="font-bold text-xs text-gray-300">🔵 管网横截面 <span className="ml-1 text-[9px] font-normal text-cyan-400">最满 Top{topPipes.length} · 点击切换</span></div>
-                {dynPhase === "ready" && dynStep === 0 ? <span className="text-[8px] text-yellow-400/90">初始时刻 · 点开始推演看全过程</span> : selected?.type === "pipe" ? <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span> : null}
+                <div className="flex items-center gap-1">
+                  {dynPhase === "ready" && dynStep === 0 ? <span className="text-[8px] text-yellow-400/90">初始时刻 · 点开始推演看全过程</span> : selected?.type === "pipe" ? <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span> : null}
+                  <button onClick={() => setBigView(v => !v)} className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${bigView ? "bg-cyan-700 text-white" : "bg-gray-800 text-cyan-400 hover:bg-gray-700"}`}>🔍 大图</button>
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-1">
                 {topPipes.map((p) => {
