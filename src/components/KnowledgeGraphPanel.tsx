@@ -49,7 +49,7 @@ export default function KnowledgeGraphPanel(p: Props) {
   const [hover, setHover] = useState<KnowledgeNode | null>(null);
   const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
   const [viewAnim, setViewAnim] = useState(false);
-  const dragRef = useRef<{ startX: number; startY: number; tx: number; ty: number; active: boolean; moved: boolean; nodeId: string | null; baseX: number; baseY: number; prevDx: number; prevDy: number; lastT: number; vel: { x: number; y: number } }>({ startX: 0, startY: 0, tx: 0, ty: 0, active: false, moved: false, nodeId: null, baseX: 0, baseY: 0, prevDx: 0, prevDy: 0, lastT: 0, vel: { x: 0, y: 0 } });
+  const dragRef = useRef<{ startX: number; startY: number; tx: number; ty: number; active: boolean; moved: boolean; nodeId: string | null; baseX: number; baseY: number; dx: number; dy: number; prevDx: number; prevDy: number; lastT: number; vel: { x: number; y: number } }>({ startX: 0, startY: 0, tx: 0, ty: 0, active: false, moved: false, nodeId: null, baseX: 0, baseY: 0, dx: 0, dy: 0, prevDx: 0, prevDy: 0, lastT: 0, vel: { x: 0, y: 0 } });
   const clickTimer = useRef<number | null>(null);
   const [nodeDrag, setNodeDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
 
@@ -84,15 +84,19 @@ export default function KnowledgeGraphPanel(p: Props) {
   const kickTimerRef = useRef<number | null>(null);
   useEffect(() => () => { if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); }, []);
 
-  // 节点拖拽时的弹簧位移:被拖节点 1.0,一阶邻居 0.38,二阶邻居 0.14;松手后惯性涟漪 0.5
+  // 节点拖拽后的自由摆放位置(松手停留,覆盖算法布局);重置/换网时清空
+  const [nodeLayoutOverrides, setNodeLayoutOverrides] = useState<Map<string, { x: number; y: number }>>(new Map());
+  useEffect(() => { setNodeLayoutOverrides(new Map()); }, [visible.nodes]);
+
+  // 节点拖拽时的弹簧位移:被拖节点 1.0,一阶邻居 0.45,二阶邻居 0.18;松手后惯性涟漪 0.5
   const springOffsets = useMemo(() => {
     const out = new Map<string, { x: number; y: number }>();
     if (nodeDrag) {
       out.set(nodeDrag.id, { x: nodeDrag.dx, y: nodeDrag.dy });
       const first = new Set<string>();
       adj.get(nodeDrag.id)?.forEach((nid) => first.add(nid));
-      first.forEach((nid) => out.set(nid, { x: nodeDrag.dx * 0.38, y: nodeDrag.dy * 0.38 }));
-      first.forEach((nid) => adj.get(nid)?.forEach((n2) => { if (n2 !== nodeDrag.id && !first.has(n2)) out.set(n2, { x: nodeDrag.dx * 0.14, y: nodeDrag.dy * 0.14 }); }));
+      first.forEach((nid) => out.set(nid, { x: nodeDrag.dx * 0.45, y: nodeDrag.dy * 0.45 }));
+      first.forEach((nid) => adj.get(nid)?.forEach((n2) => { if (n2 !== nodeDrag.id && !first.has(n2)) out.set(n2, { x: nodeDrag.dx * 0.18, y: nodeDrag.dy * 0.18 }); }));
       return out;
     }
     if (springKick && lastDragIdRef.current) {
@@ -164,12 +168,12 @@ export default function KnowledgeGraphPanel(p: Props) {
         const nodeId = nodeEl.getAttribute("data-node-id") || "";
         const pl = placedByIdRef.current.get(nodeId);
         (nodeEl as Element).setPointerCapture(e.pointerId);
-        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId, baseX: pl?.x ?? 0, baseY: pl?.y ?? 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
+        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId, baseX: pl?.x ?? 0, baseY: pl?.y ?? 0, dx: 0, dy: 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
         setNodeDrag({ id: nodeId, dx: 0, dy: 0 });
       } else {
         // 画布平移
         el.setPointerCapture(e.pointerId);
-        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId: null, baseX: 0, baseY: 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
+        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId: null, baseX: 0, baseY: 0, dx: 0, dy: 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
       }
     };
     const onPointerMove = (e: PointerEvent) => {
@@ -179,6 +183,7 @@ export default function KnowledgeGraphPanel(p: Props) {
       if (dragRef.current.nodeId) {
         const dx = (e.clientX - dragRef.current.startX) / rs;
         const dy = (e.clientY - dragRef.current.startY) / rs;
+        dragRef.current.dx = dx; dragRef.current.dy = dy;
         // 速度估计(用于松手惯性)
         const now = performance.now();
         const dt = now - dragRef.current.lastT;
@@ -191,7 +196,8 @@ export default function KnowledgeGraphPanel(p: Props) {
         setView((v) => ({ ...v, tx: dragRef.current.tx + (e.clientX - dragRef.current.startX) / rs, ty: dragRef.current.ty + (e.clientY - dragRef.current.startY) / rs }));
       }
     };
-    const onPointerUp = () => { if (dragRef.current.active) { const d = dragRef.current; dragRef.current.active = false; if (d.nodeId) { lastDragIdRef.current = d.nodeId; const vx = Math.max(-40, Math.min(40, d.vel.x * 0.4)); const vy = Math.max(-40, Math.min(40, d.vel.y * 0.4)); if (Math.abs(vx) + Math.abs(vy) > 8) { setSpringKick({ x: vx, y: vy }); if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); kickTimerRef.current = window.setTimeout(() => setSpringKick(null), 380); } } setNodeDrag(null); } };
+    const onPointerUp = () => { if (dragRef.current.active) { const d = dragRef.current; dragRef.current.active = false; if (d.nodeId) { lastDragIdRef.current = d.nodeId; const vx = Math.max(-40, Math.min(40, d.vel.x * 0.4)); const vy = Math.max(-40, Math.min(40, d.vel.y * 0.4)); if (Math.abs(vx) + Math.abs(vy) > 8) { setSpringKick({ x: vx, y: vy }); if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); kickTimerRef.current = window.setTimeout(() => setSpringKick(null), 380); } // 自由摆放:松手后节点停留在拖到的新位置(不再弹回),可随时重置
+        setNodeLayoutOverrides((prev) => { const next = new Map(prev); next.set(d.nodeId!, { x: d.baseX + d.dx, y: d.baseY + d.dy }); return next; }); } setNodeDrag(null); } };
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove);
@@ -315,11 +321,12 @@ export default function KnowledgeGraphPanel(p: Props) {
                 // 完整图模式:选中节点时其余淡化;未选中时仅焦点范围外轻微淡化(仍可见)
                 const dimmed = selectedId !== null && selectedId !== undefined ? (selectedId !== node.id && !selectionIds.has(node.id)) : (focusSet.size > 0 && !isRelated);
                 const spring = springOffsets.get(node.id);
-                const fx = spring ? x + spring.x : x;
-                const fy = spring ? y + spring.y : y;
+                const base = nodeLayoutOverrides.get(node.id) || { x, y };
+                const fx = base.x + (spring?.x || 0);
+                const fy = base.y + (spring?.y || 0);
                 const radius = radiusOf(depth);
                 const lines = wrapLabel(node.name);
-                return <g key={node.id} data-node-id={node.id} className={`node-shell${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.45 : 1, transition: "opacity .3s ease, transform .6s cubic-bezier(0.34, 1.56, 0.64, 1)", cursor: "grab", transform: `translate(${fx}px, ${fy}px)` }}
+                return <g key={node.id} data-node-id={node.id} className={`node-shell${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.45 : 1, transition: nodeDrag ? "opacity .3s ease" : "opacity .3s ease, transform .6s cubic-bezier(0.34, 1.56, 0.64, 1)", cursor: "grab", transform: `translate(${fx}px, ${fy}px)` }}
                   onClick={(e) => { e.stopPropagation(); if (dragRef.current.moved) { dragRef.current.moved = false; return; } if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; return; } clickTimer.current = window.setTimeout(() => { clickTimer.current = null; p.onNodeClick(node); }, 220); }}
                   onDoubleClick={(e) => { e.stopPropagation(); if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; } p.onExpand(node); }}
                   onMouseEnter={() => setHover(node)}
@@ -353,7 +360,7 @@ export default function KnowledgeGraphPanel(p: Props) {
           </div>
         )}
       </div>
-      <div className="relative z-10 border-t border-[rgba(105,126,165,0.12)] bg-white/70 px-3 py-1.5 text-[10px] text-[#6f7e97] backdrop-blur">完整知识图谱 · 拖动节点/画布 · 滚轮缩放 · 点击选择 · 双击展开</div>
+      <div className="relative z-10 flex items-center gap-2 border-t border-[rgba(105,126,165,0.12)] bg-white/70 px-3 py-1.5 text-[10px] text-[#6f7e97] backdrop-blur"><span>完整知识图谱 · 拖动节点/画布 · 滚轮缩放 · 点击选择 · 双击展开 · 拖动松手后节点停留</span>{nodeLayoutOverrides.size > 0 && <button onClick={() => setNodeLayoutOverrides(new Map())} className="ml-auto shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 font-semibold text-amber-700 transition hover:bg-amber-100" title="清空手动摆放,回到算法布局">🔄 重置布局</button>}</div>
     </div>
   );
 }
