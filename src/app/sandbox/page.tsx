@@ -1710,6 +1710,18 @@ export default function SandboxPage() {
       {schemeMsg && mode === "dynamic" && (
         <div className={`absolute bottom-14 left-1/2 -translate-x-1/2 z-10 bg-black/85 border border-gray-700 rounded-lg px-3 py-1.5 text-[11px] font-bold whitespace-nowrap shadow-lg ${schemeMsg.color}`}>{schemeMsg.text}</div>
       )}
+      {/* 3D 主窗口降雨曲线浮层(docx:主窗口展示降雨情景的降雨曲线,当前时刻标记同步) */}
+      {mode === "dynamic" && dynRes?.ok && (
+        <div className="absolute left-3 top-16 z-10 w-[220px] bg-black/80 border border-gray-700 rounded-lg px-2 py-1.5 pointer-events-none">
+          <div className="flex justify-between text-[9px] mb-0.5"><span className="text-cyan-400 font-bold">🌧 {RAIN_SCENARIOS.find(s => s.pct === dynI)?.label || `${dynI}%`} 降雨曲线</span><span className="text-gray-500">峰值 {rainCurvePeak(dynI).toFixed(1)} mm/h</span></div>
+          <svg viewBox="0 0 200 44" className="w-full rounded bg-blue-950/30 border border-blue-900/50" preserveAspectRatio="none">
+            <polyline points={rainCurvePoints(dynI)} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
+            <line x1="0" y1="40" x2="200" y2="40" stroke="#334155" strokeWidth="0.5" />
+            {timeStepCount > 1 && <line x1={(dynStep / (timeStepCount - 1)) * 200} y1="2" x2={(dynStep / (timeStepCount - 1)) * 200} y2="40" stroke="#ffd54f" strokeWidth="1" strokeDasharray="3 2" />}
+          </svg>
+          <div className="flex justify-between text-[8px] text-gray-500"><span>0 min</span><span className="text-yellow-400/80">{currentTimeLabel}</span><span>120 min</span></div>
+        </div>
+      )}
       {/* 分步新手引导卡片 */}
       {guide > 0 && mode === "dynamic" && (
         <div className="absolute left-2 bottom-28 z-20 bg-cyan-950/95 border border-cyan-600 rounded-lg px-3 py-2 text-[11px] text-cyan-100 max-w-[260px] shadow-xl">
