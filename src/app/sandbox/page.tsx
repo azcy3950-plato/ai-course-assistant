@@ -1279,7 +1279,7 @@ export default function SandboxPage() {
   const curLinkData = (mode === "dynamic" && selected?.type === "pipe" && dynRes?.links) ? dynRes.links[selected.data.id] : null;
   // Links now use velocity + depthFraction (not flow) — correct SWMM per-step API
 
-  // 组件级:最满管道列表(数量可配 2-6;选中置顶),供 TopN 区块与分屏对比共用
+  // 组件级:最满管道列表(数量可配 2-6;选中置顶),供 TopN 区块共用
   const topPipes = (() => {
     const links = dynRes?.links;
     if (!links) return [];
