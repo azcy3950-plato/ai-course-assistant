@@ -277,13 +277,14 @@ export default function TeacherPage() {
             <div className="bg-white rounded-xl border border-[var(--color-border)] p-6">
               <h3 className="text-sm font-bold mb-4">📊 知识库概览</h3>
               <div className="grid grid-cols-2 gap-4">
-                {[["文档总数", files.length, "bg-blue-50 text-blue-700"], ["向量分块", 0, "bg-green-50 text-green-700"], ["章节数", 0, "bg-purple-50 text-purple-700"], ["引用页数", 0, "bg-amber-50 text-amber-700"]].map(([label, val, cls]) => (
+                {[["文档总数", files.length, "bg-blue-50 text-blue-700"], ["知识网络", 8, "bg-green-50 text-green-700"], ["图谱节点", 257, "bg-purple-50 text-purple-700"], ["向量分块", "未启用", "bg-amber-50 text-amber-700"]].map(([label, val, cls]) => (
                   <div key={String(label)} className={`${cls} rounded-lg p-4 text-center`}>
                     <div className="text-2xl font-bold">{String(val)}</div>
                     <div className="text-xs opacity-70 mt-1">{String(label)}</div>
                   </div>
                 ))}
               </div>
+              <div className="mt-3 text-[11px] leading-4 text-[var(--color-text-muted)]">文档数来自 OSS 存储真实列表;知识网络/图谱节点为内置 8 网络 257 节点;向量索引未启用,当前问答基于关键词检索 + AI 生成。</div>
             </div>
             <div className="bg-white rounded-xl border border-[var(--color-border)] p-6">
               <h3 className="text-sm font-bold mb-4">📑 文档列表</h3>
@@ -291,7 +292,7 @@ export default function TeacherPage() {
               : <div className="space-y-3">{files.map(f => (
                 <div key={f.key} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                   <div className="flex items-center gap-3"><span>{fileIcon(f.name)}</span><div className="text-xs font-medium truncate max-w-[200px]">{f.name}</div></div>
-                  <span className="text-[10px] text-[var(--color-text-muted)]">待向量化</span>
+                  <span className="text-[10px] text-[var(--color-text-muted)]">{(f.size / 1024).toFixed(1)} KB · {f.lastModified ? new Date(f.lastModified).toLocaleString("zh-CN") : "—"}</span>
                 </div>
               ))}</div>}
             </div>
@@ -299,10 +300,11 @@ export default function TeacherPage() {
           <div className="bg-white rounded-xl border border-[var(--color-border)] p-6 mt-6">
             <h3 className="text-sm font-bold mb-4">⚙️ 管理操作</h3>
             <div className="flex flex-wrap gap-3">
-              <button className="px-4 py-2 text-sm border border-[var(--color-border)] rounded-lg hover:bg-gray-50">🔄 重建向量索引</button>
-              <button className="px-4 py-2 text-sm border border-[var(--color-border)] rounded-lg hover:bg-gray-50">📥 导出知识库</button>
-              <button className="px-4 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50">🗑 清空知识库</button>
+              <button disabled title="向量索引未启用" className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-400 cursor-not-allowed">🔄 重建向量索引(未启用)</button>
+              <button disabled title="向量索引未启用" className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-400 cursor-not-allowed">📥 导出知识库(未启用)</button>
+              <button disabled title="向量索引未启用" className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-400 cursor-not-allowed">🗑 清空知识库(未启用)</button>
             </div>
+            <div className="mt-2 text-[11px] text-[var(--color-text-muted)]">向量索引/导出/清空依赖向量化服务,当前未启用;文档上传与问答(关键词检索)正常可用。</div>
           </div>
         </div>
       )}
