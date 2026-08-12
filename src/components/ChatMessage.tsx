@@ -90,7 +90,7 @@ export default function ChatMessage({ message, onReferenceClick, highlightedRef,
                 >
                   <span className="font-medium text-[var(--color-primary)]">[{ref.id}]</span>{' '}
                   <span className="text-[var(--color-text-secondary)]">
-                    {ref.docName} · {ref.chapter} · 第{ref.page}页
+                    {ref.docName}{ref.chapter ? ` · ${ref.chapter}` : ''}{ref.page ? ` · 第${ref.page}页` : ''}
                   </span>
                 </button>
               ))}

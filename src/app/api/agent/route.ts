@@ -408,7 +408,7 @@ export async function POST(req: NextRequest) {
     if (action === "guided_free") {
       const question = String(params.question || "");
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
-      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
+      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : await searchLocalChunks(question).catch(() => []);
       const graphContext = await matchGraphContext(question, embedding, chunks, userEmail);
       const text = await callDeepSeek([
         { role: "system", content: `${GUIDED_PROMPT}\n${buildTurnPrompt(question, graphContext, chunks)}` },
@@ -441,7 +441,7 @@ export async function POST(req: NextRequest) {
       const question = String(params.question || "").trim();
       if (!question) return NextResponse.json({ error: "问题不能为空" }, { status: 400 });
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
-      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
+      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : await searchLocalChunks(question).catch(() => []);
       const graphContext = await matchGraphContext(question, embedding, chunks, userEmail).catch(() => null);
       if (userEmail && graphContext) {
         const progress = await recordNodeInteraction(userEmail, graphContext.focusNode.id, "question").catch(() => undefined);
@@ -465,7 +465,7 @@ export async function POST(req: NextRequest) {
       const totalTurns = 3;
       const history = sanitizeHistory(params.history || []);
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
-      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
+      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : await searchLocalChunks(question).catch(() => []);
       const graphContext = await matchGraphContext(question, embedding, chunks, userEmail).catch(() => null);
       const graphFacts = graphContext ? buildSocraticFacts(graphContext, chunks) : "（图谱上下文暂不可用，请基于课程常识引导，不得编造具体节点）";
       const prompt = SOCRATIC_PROMPT
@@ -521,7 +521,7 @@ export async function POST(req: NextRequest) {
         4: "接近答案：海绵城市通过就地入渗、蓄滞调蓄削减径流总量与峰值，从而减少内涝——按这个思路组织你的答案。",
       };
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
-      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
+      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : await searchLocalChunks(question).catch(() => []);
       const graphContext = await matchGraphContext(question, embedding, chunks, userEmail).catch(() => null);
       const prompt = SOCRATIC_PROMPT
         .replace("{{GRAPH_CONTEXT}}", graphContext ? buildSocraticFacts(graphContext, chunks) : "（图谱上下文暂不可用，请基于课程常识引导，不得编造具体节点）")

@@ -228,16 +228,17 @@ export async function recordNodeInteraction(
   if (!userEmail || !nodeId) return undefined;
   await ensureKnowledgeGraphSchema();
   const questionIncrement = kind === "question" ? 1 : 0;
+  const studyIncrement = kind === "study" ? 1 : 0;
   const { rows } = await pool.query(
     `INSERT INTO student_node_progress
        (user_email, node_id, question_count, study_count, last_studied_at)
-     VALUES ($1,$2,$3,1,now())
+     VALUES ($1,$2,$3,$4,now())
      ON CONFLICT (user_email, node_id) DO UPDATE SET
        question_count = student_node_progress.question_count + $3,
-       study_count = student_node_progress.study_count + 1,
+       study_count = student_node_progress.study_count + $4,
        last_studied_at = now()
      RETURNING *`,
-    [userEmail, nodeId, questionIncrement],
+    [userEmail, nodeId, questionIncrement, studyIncrement],
   );
   const row = rows[0];
   if (!row) return undefined;

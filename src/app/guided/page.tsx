@@ -94,16 +94,21 @@ export default function GuidedPage() {
   const [masteryStats, setMasteryStats] = useState<NetworkMastery[]>([]);
   const [weakList, setWeakList] = useState<KnowledgeNode[]>([]);
 
-  // 掌握度仪表盘:网络就绪后拉一次全部节点 progress,按网络聚合均值 + 最薄弱 3 节点
-  useEffect(() => {
+  // 掌握度刷新:拉全部节点 progress,更新仪表盘/薄弱列表,并同步当前图节点 progress(色阶实时)
+  const refreshMastery = useCallback(() => {
     if (networks.length === 0) return;
     fetch("/api/knowledge-graph?network=all", { headers: { Authorization: `Bearer ${getAuthToken()}` } })
       .then((r) => r.json()).then((d) => {
         if (!d.graph?.nodes?.length) return;
         setMasteryStats(computeNetworkMastery(d.graph.nodes, networks.map((n) => n.id)));
         setWeakList(weakestNodes(d.graph.nodes, 3));
+        setCurrentGraph((g) => ({ ...g, nodes: g.nodes.map((n) => d.graph.nodes.find((m: KnowledgeNode) => m.id === n.id) || n) }));
+        setFullGraph((g) => ({ ...g, nodes: g.nodes.map((n) => d.graph.nodes.find((m: KnowledgeNode) => m.id === n.id) || n) }));
       }).catch(() => undefined);
   }, [networks]);
+
+  // 掌握度仪表盘:网络就绪后拉一次全部节点 progress,按网络聚合均值 + 最薄弱 3 节点
+  useEffect(() => { refreshMastery(); }, [refreshMastery]);
 
   const switchNetwork = (id: string, focusId?: string) => {
     if (id === activeNetwork && !focusId) return;
@@ -200,7 +205,7 @@ export default function GuidedPage() {
         if (mySeq !== reqSeqRef.current) return; // 新对话已清空,丢弃迟到响应
         const ids = data.graphContext ? setCurrentFromContext(data.graphContext) : []; const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[];
         const kind = data.status === "complete" ? "final" : (data.status === "mastered" ? "info" : "answer");
-        if (data.status === "complete" || data.status === "mastered") { setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); }
+        if (data.status === "complete" || data.status === "mastered") { setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); refreshMastery(); } // 收束后即时刷新掌握度(色阶/仪表盘联动)
         else setTurn((t) => Math.min(MAX_TURNS, t + 1));
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.response || "继续思考一下，你离答案很近了。", pending: false, nodeIds: ids, concepts, kind } : m));
       } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: "已停止生成。你可以继续回答或提出新问题。", pending: false, kind: "info" } : m)); }

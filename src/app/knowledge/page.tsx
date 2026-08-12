@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useChat } from '@/contexts/ChatContext';
 import { useApp, getAuthToken } from '@/contexts/AppContext';
 import { useLearning } from '@/contexts/LearningContext';
@@ -114,6 +114,16 @@ export default function KnowledgePage() {
     // Re-send
     handleSend(lastUserMsg);
   }, [activeConv, loading, handleSend, chatState.conversations]);
+
+  // 右侧引用面板:优先取当前会话最后一条 assistant 消息的引用(会话切换/刷新后不回退),流式中回退到 allReferences
+  const panelReferences = useMemo(() => {
+    const msgs = activeConv?.messages || [];
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "assistant" && m.references?.length) return m.references as Reference[];
+    }
+    return allReferences;
+  }, [activeConv?.messages, allReferences]);
 
   const handleReferenceClick = useCallback((refId: number) => {
     setHighlightedRef(prev => prev === refId ? null : refId);
@@ -260,7 +270,7 @@ export default function KnowledgePage() {
         </div>
 
         <div className="flex-1 p-3 space-y-2">
-          {allReferences.length === 0 ? (
+          {panelReferences.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-3xl mb-2">📭</div>
               <p className="text-xs text-[var(--color-text-muted)]">
@@ -271,7 +281,7 @@ export default function KnowledgePage() {
               </p>
             </div>
           ) : (
-            allReferences.map(ref => (
+            panelReferences.map((ref: Reference) => (
               <div key={ref.id} id={`source-${ref.id}`}>
                 <SourceCard
                   reference={ref}
