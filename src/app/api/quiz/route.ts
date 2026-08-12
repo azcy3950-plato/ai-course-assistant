@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ needsQuiz: false, recordCount, nextAt: 5 - recordCount });
     }
 
-    const graph = await loadKnowledgeGraph(email);
+    const graph = await loadKnowledgeGraph(email, "all");
     const recentNodeIds = new Set<string>(recent.flatMap((record: any) => Array.isArray(record.topics) ? record.topics : []));
     const allowedNodes = graph.nodes.filter((node) => recentNodeIds.has(node.id));
     const quizNodes = allowedNodes.length ? allowedNodes : graph.nodes.slice(0, 5);

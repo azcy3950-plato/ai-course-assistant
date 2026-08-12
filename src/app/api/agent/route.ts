@@ -347,7 +347,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "node_quiz") {
-      const graph = await loadKnowledgeGraph(userEmail);
+      const graph = await loadKnowledgeGraph(userEmail, "all");
       const node = graph.nodes.find((item) => item.id === params.nodeId);
       if (!node) return NextResponse.json({ error: "知识图谱数据库中不存在该节点" }, { status: 404 });
       if (userEmail) await recordNodeInteraction(userEmail, node.id, "study");

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verify } from "jsonwebtoken";
 import {
   buildSuggestedPath,
+  listNetworks,
   loadKnowledgeGraph,
   recordNodeInteraction,
 } from "@/lib/knowledge-graph";
@@ -22,9 +23,11 @@ export async function GET(req: NextRequest) {
   try {
     const userEmail = getUserEmail(req);
     if (!userEmail) return NextResponse.json({ error: "未登录" }, { status: 401 });
-    const graph = await loadKnowledgeGraph(userEmail);
+    const networkId = req.nextUrl.searchParams.get("network") || "overview";
+    const graph = await loadKnowledgeGraph(userEmail, networkId);
     return NextResponse.json({
       graph,
+      networks: listNetworks(),
       suggestedPath: buildSuggestedPath(graph),
     });
   } catch (error) {

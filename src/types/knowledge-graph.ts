@@ -7,7 +7,9 @@ export type KnowledgeRelationType =
 
 export type KnowledgeResourceType = "ppt" | "textbook" | "case" | "reference";
 
-export type KnowledgeNodeCategory = "core" | "method" | "goal" | "factor" | "benefit";
+export type KnowledgeNodeCategory =
+  | "core" | "category" | "concept" | "method" | "standard" | "case" | "detail"
+  | "goal" | "factor" | "benefit";
 
 export interface KnowledgeGraphSource {
   id: string;
