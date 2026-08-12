@@ -67,7 +67,28 @@ export default function GuidedPage() {
   const dragging = useRef(false);
   const [resizing, setResizing] = useState(false);
 
-  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); let restoredFocus = false; const initialNodesRef: KnowledgeNode[] = []; fetch("/api/knowledge-graph?network=overview", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setNetworks(d.networks || []); initialNodesRef.push(...d.graph.nodes); if (!restoredFocus) setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); try { const raw = localStorage.getItem(CHAT_STORAGE_KEY); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed.messages)) { const msgs = (parsed.messages as ChatMessage[]).filter((m) => m && typeof m.content === "string" && !m.pending); if (msgs.length) { setMessages(msgs); const lastNodes = [...msgs].reverse().find((m) => m.nodeIds?.length)?.nodeIds; if (lastNodes?.length) { const validNode = lastNodes.find((id: string) => initialNodesRef.some((n) => n.id === id)); if (validNode) { restoredFocus = true; setFocusIds([validNode]); } } } } if (parsed.socratic && typeof parsed.socratic.active === "boolean") { setSocraticActive(parsed.socratic.active); if (typeof parsed.socratic.question === "string") setSocraticQuestion(parsed.socratic.question); if (typeof parsed.socratic.turn === "number") setTurn(parsed.socratic.turn); if (typeof parsed.socratic.hintLevel === "number") setHintLevel(parsed.socratic.hintLevel); } } } catch { /* 旧数据/隐私模式忽略 */ } }, []);
+  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); fetch("/api/knowledge-graph?network=overview", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setNetworks(d.networks || []); // 网络数据就绪后再恢复对话焦点(校验 id 归属当前网络,避免跨网络残留焦点)
+      try {
+        const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed.messages)) {
+            const msgs = (parsed.messages as ChatMessage[]).filter((m) => m && typeof m.content === "string" && !m.pending);
+            if (msgs.length) {
+              setMessages(msgs);
+              const lastNodes = [...msgs].reverse().find((m) => m.nodeIds?.length)?.nodeIds;
+              if (lastNodes?.length) {
+                const validNode = lastNodes.find((id: string) => d.graph.nodes.some((n: KnowledgeNode) => n.id === id));
+                setFocusIds(validNode ? [validNode] : d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id));
+                return;
+              }
+            }
+          }
+          if (parsed.socratic && typeof parsed.socratic.active === "boolean") { setSocraticActive(parsed.socratic.active); if (typeof parsed.socratic.question === "string") setSocraticQuestion(parsed.socratic.question); if (typeof parsed.socratic.turn === "number") setTurn(parsed.socratic.turn); if (typeof parsed.socratic.hintLevel === "number") setHintLevel(parsed.socratic.hintLevel); }
+        }
+      } catch { /* 旧数据/隐私模式忽略 */ }
+      setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id));
+    }).catch(() => undefined); }, []);
   // 切换知识网络:加载对应网络图谱,保留对话(不打断学习上下文),重置选中与聚焦
   const switchNetwork = (id: string, focusId?: string) => {
     if (id === activeNetwork && !focusId) return;
