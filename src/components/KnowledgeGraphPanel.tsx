@@ -220,7 +220,11 @@ export default function KnowledgeGraphPanel(p: Props) {
     return set;
   }, [p.selectedNodeId, visible.edges]);
 
-  const kindOf = (n: KnowledgeNode) => KIND_META[n.category] || DEFAULT_KIND;
+  const kindOf = (n: KnowledgeNode) => {
+    // 支持按网络分色(全部展开模式):node.color 优先于 category 配色
+    if (n.color) return { label: n.category, color: n.color, tint: n.color + "22" };
+    return KIND_META[n.category] || DEFAULT_KIND;
+  };
   const radiusOf = (depth: number) => (depth === 0 ? 36 : depth === 1 ? 25 : 19);
   const edgeFocus = (e: { source: string; target: string }) => (relatedIds.has(e.source) && relatedIds.has(e.target)) || (e.source === selectedId || e.target === selectedId);
 
