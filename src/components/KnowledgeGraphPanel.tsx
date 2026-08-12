@@ -49,7 +49,7 @@ export default function KnowledgeGraphPanel(p: Props) {
   const [hover, setHover] = useState<KnowledgeNode | null>(null);
   const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
   const [viewAnim, setViewAnim] = useState(false);
-  const dragRef = useRef<{ startX: number; startY: number; tx: number; ty: number; active: boolean; moved: boolean; nodeId: string | null; baseX: number; baseY: number }>({ startX: 0, startY: 0, tx: 0, ty: 0, active: false, moved: false, nodeId: null, baseX: 0, baseY: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; tx: number; ty: number; active: boolean; moved: boolean; nodeId: string | null; baseX: number; baseY: number; prevDx: number; prevDy: number; lastT: number; vel: { x: number; y: number } }>({ startX: 0, startY: 0, tx: 0, ty: 0, active: false, moved: false, nodeId: null, baseX: 0, baseY: 0, prevDx: 0, prevDy: 0, lastT: 0, vel: { x: 0, y: 0 } });
   const clickTimer = useRef<number | null>(null);
   const [nodeDrag, setNodeDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
 
@@ -78,17 +78,28 @@ export default function KnowledgeGraphPanel(p: Props) {
     return map;
   }, [visible.edges, visible.nodes]);
 
-  // 节点拖拽时的弹簧位移:被拖节点 1.0,一阶邻居 0.38,二阶邻居 0.14
+  // 松手惯性涟漪(弹簧物理):一阶邻居被速度带一下再回弹
+  const [springKick, setSpringKick] = useState<{ x: number; y: number } | null>(null);
+  const lastDragIdRef = useRef<string | null>(null);
+  const kickTimerRef = useRef<number | null>(null);
+  useEffect(() => () => { if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); }, []);
+
+  // 节点拖拽时的弹簧位移:被拖节点 1.0,一阶邻居 0.38,二阶邻居 0.14;松手后惯性涟漪 0.5
   const springOffsets = useMemo(() => {
     const out = new Map<string, { x: number; y: number }>();
-    if (!nodeDrag) return out;
-    out.set(nodeDrag.id, { x: nodeDrag.dx, y: nodeDrag.dy });
-    const first = new Set<string>();
-    adj.get(nodeDrag.id)?.forEach((nid) => first.add(nid));
-    first.forEach((nid) => out.set(nid, { x: nodeDrag.dx * 0.38, y: nodeDrag.dy * 0.38 }));
-    first.forEach((nid) => adj.get(nid)?.forEach((n2) => { if (n2 !== nodeDrag.id && !first.has(n2)) out.set(n2, { x: nodeDrag.dx * 0.14, y: nodeDrag.dy * 0.14 }); }));
+    if (nodeDrag) {
+      out.set(nodeDrag.id, { x: nodeDrag.dx, y: nodeDrag.dy });
+      const first = new Set<string>();
+      adj.get(nodeDrag.id)?.forEach((nid) => first.add(nid));
+      first.forEach((nid) => out.set(nid, { x: nodeDrag.dx * 0.38, y: nodeDrag.dy * 0.38 }));
+      first.forEach((nid) => adj.get(nid)?.forEach((n2) => { if (n2 !== nodeDrag.id && !first.has(n2)) out.set(n2, { x: nodeDrag.dx * 0.14, y: nodeDrag.dy * 0.14 }); }));
+      return out;
+    }
+    if (springKick && lastDragIdRef.current) {
+      adj.get(lastDragIdRef.current)?.forEach((nid) => out.set(nid, { x: springKick.x * 0.5, y: springKick.y * 0.5 }));
+    }
     return out;
-  }, [adj, nodeDrag]);
+  }, [adj, nodeDrag, springKick]);
 
   const fit = useCallback((ids?: string[], force = false) => {
     if (!placed.length) return;
@@ -153,12 +164,12 @@ export default function KnowledgeGraphPanel(p: Props) {
         const nodeId = nodeEl.getAttribute("data-node-id") || "";
         const pl = placedByIdRef.current.get(nodeId);
         (nodeEl as Element).setPointerCapture(e.pointerId);
-        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId, baseX: pl?.x ?? 0, baseY: pl?.y ?? 0 };
+        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId, baseX: pl?.x ?? 0, baseY: pl?.y ?? 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
         setNodeDrag({ id: nodeId, dx: 0, dy: 0 });
       } else {
         // 画布平移
         el.setPointerCapture(e.pointerId);
-        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId: null, baseX: 0, baseY: 0 };
+        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId: null, baseX: 0, baseY: 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
       }
     };
     const onPointerMove = (e: PointerEvent) => {
@@ -168,12 +179,19 @@ export default function KnowledgeGraphPanel(p: Props) {
       if (dragRef.current.nodeId) {
         const dx = (e.clientX - dragRef.current.startX) / rs;
         const dy = (e.clientY - dragRef.current.startY) / rs;
+        // 速度估计(用于松手惯性)
+        const now = performance.now();
+        const dt = now - dragRef.current.lastT;
+        if (dt > 0) {
+          dragRef.current.vel = { x: (dx - dragRef.current.prevDx) / dt * 16, y: (dy - dragRef.current.prevDy) / dt * 16 };
+          dragRef.current.prevDx = dx; dragRef.current.prevDy = dy; dragRef.current.lastT = now;
+        }
         setNodeDrag({ id: dragRef.current.nodeId, dx, dy });
       } else {
         setView((v) => ({ ...v, tx: dragRef.current.tx + (e.clientX - dragRef.current.startX) / rs, ty: dragRef.current.ty + (e.clientY - dragRef.current.startY) / rs }));
       }
     };
-    const onPointerUp = () => { if (dragRef.current.active) { dragRef.current.active = false; setNodeDrag(null); } };
+    const onPointerUp = () => { if (dragRef.current.active) { const d = dragRef.current; dragRef.current.active = false; if (d.nodeId) { lastDragIdRef.current = d.nodeId; const vx = Math.max(-40, Math.min(40, d.vel.x * 0.4)); const vy = Math.max(-40, Math.min(40, d.vel.y * 0.4)); if (Math.abs(vx) + Math.abs(vy) > 8) { setSpringKick({ x: vx, y: vy }); if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); kickTimerRef.current = window.setTimeout(() => setSpringKick(null), 380); } } setNodeDrag(null); } };
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove);
@@ -296,7 +314,7 @@ export default function KnowledgeGraphPanel(p: Props) {
                 const fy = spring ? y + spring.y : y;
                 const radius = radiusOf(depth);
                 const lines = wrapLabel(node.name);
-                return <g key={node.id} data-node-id={node.id} className={`node-shell${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.45 : 1, transition: "opacity .3s ease, transform .55s cubic-bezier(0.22, 0.61, 0.36, 1)", cursor: "grab", transform: `translate(${fx}px, ${fy}px)` }}
+                return <g key={node.id} data-node-id={node.id} className={`node-shell${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.45 : 1, transition: "opacity .3s ease, transform .6s cubic-bezier(0.34, 1.56, 0.64, 1)", cursor: "grab", transform: `translate(${fx}px, ${fy}px)` }}
                   onClick={(e) => { e.stopPropagation(); if (dragRef.current.moved) { dragRef.current.moved = false; return; } if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; return; } clickTimer.current = window.setTimeout(() => { clickTimer.current = null; p.onNodeClick(node); }, 220); }}
                   onDoubleClick={(e) => { e.stopPropagation(); if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; } p.onExpand(node); }}
                   onMouseEnter={() => setHover(node)}
