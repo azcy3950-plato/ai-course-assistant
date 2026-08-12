@@ -1,0 +1,80 @@
+/**
+ * document_chunks 关键词检索构造器(纯函数,无副作用,可单测)。
+ *
+ * 用于无向量 embedding 时的本地兜底检索:把问题切词后构造参数化 ILIKE 查询,
+ * 按命中词数排序取前 N 条。所有用户输入只进入参数(参数化防注入),
+ * 词内的 LIKE 通配符(% / _)会被转义。
+ */
+
+export interface KeywordSearchQuery {
+  sql: string;
+  params: string[];
+}
+
+/** 常见停用词/疑问助词:切词后长度 >= 2 且不在该集合的词才会参与检索 */
+const STOP_WORDS = new Set([
+  "什么", "怎么", "如何", "为什么", "哪些", "哪个", "多少", "一下",
+  "可以", "请问", "帮我", "介绍", "说说", "讲讲", "这个", "那个",
+  "一个", "还有", "没有", "应该", "需要", "知道", "了解",
+]);
+
+/** 从词首剥离的疑问/引导词(循环剥离,如「什么是海绵城市」→「海绵城市」) */
+const HEAD_STOP = ["什么是", "为什么", "怎么", "什么", "如何", "哪些", "哪个", "请问", "帮我", "介绍", "说说", "讲讲", "可以", "应该", "需要", "是", "有"];
+
+/** 从词尾剥离的助词/常见后缀(如「渗透铺装如何工作」→「渗透铺装」) */
+const TAIL_STOP = ["一下", "如何", "怎么", "什么", "可以", "应该", "需要", "工作", "使用", "处理", "建设", "的", "了", "吗", "呢", "啊", "吧"];
+
+/** 中文/英文标点与空白分隔符 */
+const SPLIT_RE = /[，。！？、；：,.!?;:\s\n\r"'“”‘’（）()【】\[\]《》<>/\\\-—–]+/;
+
+function trimStop(t: string): string {
+  let out = t;
+  for (let i = 0; i < 8; i++) {
+    let changed = false;
+    for (const w of HEAD_STOP) {
+      if (out.startsWith(w) && out.length > w.length) { out = out.slice(w.length); changed = true; break; }
+    }
+    for (const w of TAIL_STOP) {
+      if (out.endsWith(w) && out.length > w.length) { out = out.slice(0, out.length - w.length); changed = true; break; }
+    }
+    if (!changed) break;
+  }
+  return out;
+}
+
+function escapeLike(word: string): string {
+  return word.replace(/[\\%_]/g, (ch) => "\\" + ch);
+}
+
+export function buildKeywordSearch(question: string, limit = 6): KeywordSearchQuery {
+  const seen = new Set<string>();
+  const words: string[] = [];
+  for (const token of question.split(SPLIT_RE)) {
+    const t = trimStop(token.trim());
+    if (t.length < 2 || STOP_WORDS.has(t) || seen.has(t)) continue;
+    seen.add(t);
+    words.push(t);
+  }
+
+  // 无有效词:退化为按 doc_name 顺序取前 N 条(仍来自知识库,而非图谱数据)
+  if (words.length === 0) {
+    return {
+      sql: "SELECT doc_name, chapter, content, file_url, 0 AS hit_score FROM document_chunks ORDER BY doc_name LIMIT " + limit,
+      params: [],
+    };
+  }
+
+  const conds = words.map((_, i) => `(content ILIKE $${i + 1} OR doc_name ILIKE $${i + 1} OR chapter ILIKE $${i + 1})`);
+  const scores = words
+    .map((_, i) => `(CASE WHEN content ILIKE $${i + 1} THEN 1 ELSE 0 END) + (CASE WHEN doc_name ILIKE $${i + 1} THEN 1 ELSE 0 END) + (CASE WHEN chapter ILIKE $${i + 1} THEN 1 ELSE 0 END)`)
+    .join(" + ");
+
+  return {
+    sql: `SELECT doc_name, chapter, content, file_url, (${scores}) AS hit_score
+FROM document_chunks
+WHERE ${conds.join(" OR ")}
+ORDER BY hit_score DESC, content
+LIMIT ${limit}`,
+    params: words.map((w) => `%${escapeLike(w)}%`),
+  };
+}

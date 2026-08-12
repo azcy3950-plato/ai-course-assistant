@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, ReactNode, useCallback, useEffect } from 'react';
-import { Conversation, Message } from '@/types';
+import { Conversation, Message, Reference } from '@/types';
 
 interface ChatState {
   conversations: Conversation[];
@@ -14,7 +14,7 @@ type ChatAction =
   | { type: 'ADD_MESSAGE'; payload: { conversationId: string; message: Message } }
   | { type: 'DELETE_CONVERSATION'; payload: string }
   | { type: 'UPDATE_TITLE'; payload: { id: string; title: string } }
-  | { type: 'UPDATE_LAST_MESSAGE'; payload: { conversationId: string; content: string } };
+  | { type: 'UPDATE_LAST_MESSAGE'; payload: { conversationId: string; content: string; references?: Reference[] } };
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
@@ -64,7 +64,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         conversations: state.conversations.map(c => {
           if (c.id !== action.payload.conversationId) return c;
           const msgs = [...c.messages];
-          if (msgs.length > 0) msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: action.payload.content };
+          if (msgs.length > 0) msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: action.payload.content, ...(action.payload.references ? { references: action.payload.references } : {}) };
           return { ...c, messages: msgs, updatedAt: Date.now() };
         }),
       };
@@ -84,7 +84,7 @@ interface ChatContextValue {
   addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => void;
   deleteConversation: (id: string) => void;
   updateTitle: (id: string, title: string) => void;
-  updateLastMessage: (conversationId: string, content: string) => void;
+  updateLastMessage: (conversationId: string, content: string, references?: Reference[]) => void;
   getActiveConversation: () => Conversation | undefined;
 }
 
@@ -149,8 +149,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'UPDATE_TITLE', payload: { id, title } });
   }, []);
 
-  const updateLastMessage = useCallback((conversationId: string, content: string) => {
-    dispatch({ type: 'UPDATE_LAST_MESSAGE', payload: { conversationId, content } });
+  const updateLastMessage = useCallback((conversationId: string, content: string, references?: Reference[]) => {
+    dispatch({ type: 'UPDATE_LAST_MESSAGE', payload: { conversationId, content, references } });
   }, []);
 
   const getActiveConversation = useCallback(() => {

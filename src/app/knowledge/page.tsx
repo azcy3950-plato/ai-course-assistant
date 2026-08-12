@@ -53,16 +53,21 @@ export default function KnowledgePage() {
     try {
       let fullAnswer = '';
       const topicIds: string[] = []; // 本次提问命中的图谱节点 id(写入 records.topics)
+      let lastRefs: Reference[] | undefined;
       const response = await queryKnowledgeAgentStream(content, (text) => {
         fullAnswer = text;
-        if (activeConv) updateLastMessage(activeConv.id, text);
+        if (activeConv) updateLastMessage(activeConv.id, text, lastRefs);
       }, (refs) => {
+        lastRefs = refs; // 流式完成时写回当前消息 → 消息底部引用列表显示
         setAllReferences(refs);
       }, (ctx) => {
         if (ctx?.focusNode?.id && !topicIds.includes(ctx.focusNode.id)) {
           topicIds.push(ctx.focusNode.id, ...(ctx.highlightNodeIds || []).slice(0, 4).filter((id: string) => !topicIds.includes(id)));
         }
       });
+
+      // 流结束后确保引用已挂到消息(最后一段文本更新已携带 lastRefs)
+      if (activeConv && lastRefs?.length) updateLastMessage(activeConv.id, fullAnswer, lastRefs);
 
       // Auto-title
       if (activeConv.title === '新对话') {

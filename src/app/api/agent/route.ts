@@ -7,7 +7,7 @@ import {
   matchGraphContext,
   recordNodeInteraction,
 } from "@/lib/knowledge-graph";
-import { NETWORK_DEFS } from "@/lib/knowledge-map-data";
+import { buildKeywordSearch } from "@/lib/keyword-search";
 import type { GraphContext, KnowledgeNode } from "@/types";
 
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
@@ -241,8 +241,8 @@ function buildSocraticFacts(graphContext: GraphContext, chunks: RetrievedChunk[]
 async function prepareKnowledgeTurn(question: string, userEmail: string) {
   const embeddings = DASHSCOPE_KEY ? await getEmbeddings([question]).catch(() => []) : [];
   const questionEmbedding = embeddings[0];
-  // 图谱匹配已纯关键词化,不再每问全量 hydrate 节点 embedding(避免浪费与拖慢首 token)
-  const chunks = questionEmbedding ? await searchChunks(questionEmbedding).catch(() => []) : searchLocalChunks(question);
+  // 参考资料永远来自知识库 document_chunks:有 embedding 走向量检索,否则关键词检索(图谱仅作节点聚焦上下文)
+  const chunks = questionEmbedding ? await searchChunks(questionEmbedding).catch(() => []) : await searchLocalChunks(question).catch(() => []);
   const graphContext = await matchGraphContext(question, questionEmbedding, chunks, userEmail);
   if (userEmail) {
     const progress = await recordNodeInteraction(userEmail, graphContext.focusNode.id, "question");
@@ -256,22 +256,24 @@ async function prepareKnowledgeTurn(question: string, userEmail: string) {
   };
 }
 
-// 无向量库/DASHSCOPE 时:本地关键词检索 NETWORK_DEFS(章节级),返回可引用伪片段(LLM 有料可答)
-function searchLocalChunks(question: string): RetrievedChunk[] {
-  const q = question.toLowerCase();
-  const out: RetrievedChunk[] = [];
-  for (const def of NETWORK_DEFS) {
-    for (const section of def.sections) {
-      const text = [def.title, section.full, section.summary, ...(section.items || [])].join(" ").toLowerCase();
-      const hit = [def.title, section.full, section.label].filter((t) => t.length >= 2).some((t) => q.includes(t.toLowerCase())) ||
-        (section.items || []).some((item) => item.length >= 2 && q.includes(item.toLowerCase()));
-      if (hit) {
-        const content = `${section.summary || ""}${section.items?.length ? "\n要点:" + section.items.join("、") : ""}`;
-        out.push({ doc_name: def.title, chapter: section.full, content, file_url: undefined, similarity: 1 });
-      }
-    }
+// 无向量库/DASHSCOPE 时:关键词检索 document_chunks 知识库(参数化 ILIKE,按命中词数排序),返回可引用片段
+async function searchLocalChunks(question: string): Promise<RetrievedChunk[]> {
+  const pool = getPool();
+  if (!pool) return [];
+  try {
+    const { sql, params } = buildKeywordSearch(question);
+    const result = await pool.query(sql, params);
+    return result.rows.map((r) => ({
+      doc_name: r.doc_name,
+      chapter: r.chapter || "",
+      content: r.content || "",
+      file_url: r.file_url,
+      similarity: Number(r.hit_score || 0),
+    }));
+  } catch (err) {
+    console.error("[agent] searchLocalChunks:", (err as Error)?.message || err);
+    return [];
   }
-  return out.slice(0, 6);
 }
 
 function extractJsonArray(text: string): unknown[] {
