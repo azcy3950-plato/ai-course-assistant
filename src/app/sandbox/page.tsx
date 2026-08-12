@@ -1438,7 +1438,10 @@ export default function SandboxPage() {
     if (!links) return [];
     const entries = Object.entries(links as Record<string, any>).map(([id, ld]) => {
       const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === id);
-      return { id, df: ld?.depthFraction?.[dynStep] ?? 0, diam: pp?.diam || 0.3, from: pp?.from ?? "?", to: pp?.to ?? "?" };
+      // 按全曲线最大充满度排序(ready 态 t=0 充满度≈0 也能显示 Top3)
+      const dfArr = ld?.depthFraction || [];
+      const df = dfArr.length ? Math.max(0, ...dfArr) : 0;
+      return { id, df, diam: pp?.diam || 0.3, from: pp?.from ?? "?", to: pp?.to ?? "?" };
     }).filter(x => x.df > 0.001);
     entries.sort((a, b) => b.df - a.df);
     const top = entries.slice(0, 3);
@@ -1769,7 +1772,7 @@ export default function SandboxPage() {
             <div className="border-t border-gray-700 mt-2 pt-1.5">
               <div className="flex items-center justify-between mb-1">
                 <div className="font-bold text-xs text-gray-300">🔵 管网横截面 <span className="ml-1 text-[9px] font-normal text-cyan-400">最满 Top{topPipes.length} · 点击切换</span></div>
-                {dynPhase === "ready" ? <span className="text-[8px] text-yellow-400/90">初始时刻 · 点开始推演看全过程</span> : selected?.type === "pipe" ? <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span> : null}
+                {dynPhase === "ready" && dynStep === 0 ? <span className="text-[8px] text-yellow-400/90">初始时刻 · 点开始推演看全过程</span> : selected?.type === "pipe" ? <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span> : null}
               </div>
               <div className="grid grid-cols-3 gap-1">
                 {topPipes.map((p) => {
