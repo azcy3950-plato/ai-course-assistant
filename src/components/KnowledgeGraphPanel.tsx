@@ -239,6 +239,11 @@ export default function KnowledgeGraphPanel(p: Props) {
   }, [p.selectedNodeId, visible.edges]);
 
   const kindOf = (n: KnowledgeNode) => {
+    // 掌握度色阶:已学过(有 progress)按掌握度变色——≥50 已掌握(绿)/<50 学习中(蓝);未学保持原分类色
+    if (n.progress?.mastery !== undefined) {
+      const color = n.progress.mastery >= 50 ? "#17b97b" : "#3b82f6";
+      return { label: `掌握度 ${n.progress.mastery}%`, color, tint: color + "22" };
+    }
     // 支持按网络分色(全部展开模式):node.color 优先于 category 配色
     if (n.color) return { label: n.category, color: n.color, tint: n.color + "22" };
     return KIND_META[n.category] || DEFAULT_KIND;
@@ -333,6 +338,7 @@ export default function KnowledgeGraphPanel(p: Props) {
           <div className="fade-in pointer-events-none absolute left-3 top-20 z-20 max-w-xs rounded-2xl border border-[rgba(105,126,165,0.14)] bg-white/95 p-4 text-xs shadow-xl backdrop-blur">
             <div className="text-base font-bold text-[#183b8f]">{hover.name}</div>
             <div className="mt-1 text-[11px] font-semibold" style={{ color: kindOf(hover).color }}>{kindOf(hover).label}</div>
+            {hover.progress?.mastery !== undefined && <div className="mt-1.5 h-1.5 w-28 overflow-hidden rounded-full bg-[#e8edf7]"><div className="h-full rounded-full" style={{ width: `${hover.progress.mastery}%`, background: hover.progress.mastery >= 50 ? "#17b97b" : "#3b82f6" }} /></div>}
             <p className="mt-2 leading-5 text-[#42506b]">{hover.description || "暂无定义"}</p>
             <div className="mt-2 text-[11px] text-[#6f7e97]">拖动节点 · 双击展开 · 点击查看详情</div>
           </div>
@@ -342,6 +348,7 @@ export default function KnowledgeGraphPanel(p: Props) {
             <div className="mb-2 font-bold text-[#183b8f]">图例</div>
             {Object.entries(KIND_META).map(([k, v]) => <div key={k} className="flex items-center gap-2 py-0.5 font-medium text-[#3f4e68]"><span className="h-2.5 w-2.5 rounded-full" style={{ background: v.color, boxShadow: `0 0 0 4px ${v.tint}` }} />{v.label}</div>)}
             <div className="flex items-center gap-2 py-0.5 font-medium text-[#3f4e68]"><span className="h-2.5 w-2.5 rounded-full" style={{ background: DEFAULT_KIND.color, boxShadow: `0 0 0 4px ${DEFAULT_KIND.tint}` }} />{DEFAULT_KIND.label}</div>
+            <div className="mt-1 border-t border-[rgba(105,126,165,0.12)] pt-1.5"><div className="mb-1 font-semibold text-[#183b8f]">掌握度</div><div className="flex items-center gap-2 py-0.5 font-medium text-[#3f4e68]"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#17b97b", boxShadow: "0 0 0 4px rgba(23,185,123,0.16)" }} />已掌握(≥50%)</div><div className="flex items-center gap-2 py-0.5 font-medium text-[#3f4e68]"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#3b82f6", boxShadow: "0 0 0 4px rgba(59,130,246,0.16)" }} />学习中(&lt;50%)</div><div className="py-0.5 text-[#6f7e97]">未学节点保持分类色 · 答对一轮或完成讲解后掌握度上升</div></div>
             <div className="mt-2 border-t border-[rgba(105,126,165,0.12)] pt-2 text-[#6f7e97]">箭头方向由边标签表示 · 双击展开</div>
           </div>
         )}

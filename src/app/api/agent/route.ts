@@ -496,6 +496,10 @@ export async function POST(req: NextRequest) {
         : parsedOk
           ? fallbackResponse
           : (text || "").trim() || fallbackResponse;
+      // 掌握度联动:mastered(学生答到位)/complete(讲解收束)均记一次 study,节点掌握度上升(色阶联动)
+      if (userEmail && graphContext && (status === "mastered" || status === "complete")) {
+        await recordNodeInteraction(userEmail, graphContext.focusNode.id, "study").catch(() => undefined);
+      }
       return NextResponse.json({ status, response, turn, totalTurns, graphContext });
     }
 
