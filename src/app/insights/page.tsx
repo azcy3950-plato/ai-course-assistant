@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabase";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
 const COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444"];
-const keywords = ["暴雨重现期","SWMM模型","海绵城市","径流系数","LID","内涝成因","排水管网","年径流总量","设计标准","雨水调蓄","透水铺装","绿色屋顶","下沉式绿地","合流制","曼宁公式"];
 
 export default function InsightsPage() {
   const { state } = useApp();
@@ -51,13 +50,13 @@ export default function InsightsPage() {
   const dailyCount = new Array(7).fill(0);
   rangeRecords.forEach((r: any) => { if (r.created_at) dailyCount[new Date(r.created_at).getDay()]++; });
   const dailyData = weekDays.map((day, i) => ({ day, questions: dailyCount[i] }));
-  // 学习进步曲线:按最近 4 周聚合提问数与小测正确率
-  const trendData = [3, 2, 1, 0].map((w) => {
+  // 学习进步曲线:按最近 4 周聚合提问数与小测正确率(标签从旧到新,避免趋势误读)
+  const trendData = [3, 2, 1, 0].map((w, idx) => {
     const start = now - (w + 1) * 7 * 86400000, end = now - w * 7 * 86400000;
     const q = records.filter(r => { const t = r.created_at ? new Date(r.created_at).getTime() : 0; return t >= start && t < end; }).length;
     const qz = quizzes.filter(x => { const t = x.created_at ? new Date(x.created_at).getTime() : 0; return t >= start && t < end; });
     const rate = qz.length ? Math.round((qz.filter(x => x.is_correct).length / qz.length) * 100) : 0;
-    return { week: `近${4 - w}周`, 提问: q, 正确率: rate };
+    return { week: idx === 3 ? "本周" : `${w + 1}周前`, 提问: q, 正确率: rate };
   });
   // 学习关键词:records.keywords 聚合去重(替代固定列表)
   const keywordSet = new Set<string>();
@@ -140,9 +139,9 @@ export default function InsightsPage() {
         <div className="bg-white rounded-xl border border-[var(--color-border)] p-6">
           <h3 className="text-sm font-bold mb-4">🏷️ 学习关键词</h3>
           <div className="flex flex-wrap gap-2">
-            {keywords.map(k => (
+            {keywords.map((k, ki) => (
               <span key={k} className="px-3 py-1.5 rounded-lg text-xs font-medium"
-                style={{ backgroundColor: "hsl(" + Math.floor(Math.random() * 40 + 200) + ",60%,95%)", color: "var(--color-primary)" }}>{k}</span>
+                style={{ backgroundColor: "hsl(" + (200 + (ki * 37) % 40) + ",60%,95%)", color: "var(--color-primary)" }}>{k}</span>
             ))}
           </div>
         </div>
