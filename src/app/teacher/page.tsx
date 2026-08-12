@@ -6,12 +6,7 @@ import { useApp, getAuthToken } from "@/contexts/AppContext";
 import { supabase } from "@/lib/supabase";
 import { StudentStats } from "@/types";
 
-const mockStudents: StudentStats[] = [
-  { id: "stu-1", name: "张同学", totalSessions: 24, knowledgeQueries: 35, guidedCompleted: 2, sandboxSessions: 5, lastActive: Date.now() - 3600000 },
-  { id: "stu-2", name: "王同学", totalSessions: 18, knowledgeQueries: 22, guidedCompleted: 1, sandboxSessions: 3, lastActive: Date.now() - 7200000 },
-  { id: "stu-3", name: "李同学", totalSessions: 31, knowledgeQueries: 48, guidedCompleted: 3, sandboxSessions: 8, lastActive: Date.now() - 1800000 },
-  { id: "stu-4", name: "赵同学", totalSessions: 8, knowledgeQueries: 12, guidedCompleted: 0, sandboxSessions: 1, lastActive: Date.now() - 86400000 * 3 },
-];
+const mockStudents: StudentStats[] = []; // 已弃用:学生统计改为 /api/students 真实数据(users 表)
 
 interface OssFile {
   name: string;
@@ -62,6 +57,65 @@ export default function TeacherPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 真实学生数据(/api/students,users 表 + 学习聚合)
+  const [students, setStudents] = useState<any[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  // 行内管理操作
+  const [editingEmail, setEditingEmail] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [pwEmail, setPwEmail] = useState<string | null>(null);
+  const [pwValue, setPwValue] = useState("");
+  const [busyEmail, setBusyEmail] = useState<string | null>(null);
+  const [stuMsg, setStuMsg] = useState<{ email: string; ok: boolean; text: string } | null>(null);
+
+  const loadStudents = useCallback(async () => {
+    setLoadingStudents(true);
+    try {
+      const res = await fetch("/api/students", { headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` } });
+      if (res.ok) { const d = await res.json(); setStudents(d.students || []); }
+    } catch (e) { console.error(e); }
+    finally { setLoadingStudents(false); }
+  }, []);
+
+  useEffect(() => { if (authorized) loadStudents(); }, [authorized, loadStudents]);
+
+  const flashStu = (email: string, ok: boolean, text: string) => {
+    setStuMsg({ email, ok, text });
+    setTimeout(() => setStuMsg(null), 4000);
+  };
+  const renameStudent = async (email: string) => {
+    if (!editName.trim()) return;
+    setBusyEmail(email);
+    try {
+      const res = await fetch("/api/admin/student", { method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify({ email, name: editName.trim() }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { setEditingEmail(null); await loadStudents(); flashStu(email, true, "姓名已更新"); }
+      else flashStu(email, false, d.error || "更新失败");
+    } catch { flashStu(email, false, "网络错误"); }
+    finally { setBusyEmail(null); }
+  };
+  const resetStudentPassword = async (email: string) => {
+    if (pwValue.length < 6) return flashStu(email, false, "新密码至少 6 位");
+    setBusyEmail(email);
+    try {
+      const res = await fetch("/api/admin/student", { method: "PUT", headers: getAuthHeaders(), body: JSON.stringify({ email, password: pwValue }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { setPwEmail(null); setPwValue(""); flashStu(email, true, "密码已重置"); }
+      else flashStu(email, false, d.error || "重置失败");
+    } catch { flashStu(email, false, "网络错误"); }
+    finally { setBusyEmail(null); }
+  };
+  const deleteStudent = async (email: string, name: string) => {
+    if (!window.confirm(`确认删除学生「${name}」(${email})?其学习记录与小测成绩将一并删除,且不可恢复。`)) return;
+    setBusyEmail(email);
+    try {
+      const res = await fetch(`/api/admin/student?email=${encodeURIComponent(email)}`, { method: "DELETE", headers: getAuthHeaders() });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { await loadStudents(); flashStu(email, true, "学生已删除"); }
+      else flashStu(email, false, d.error || "删除失败");
+    } catch { flashStu(email, false, "网络错误"); }
+    finally { setBusyEmail(null); }
+  };
 
   const getAuthHeaders = useCallback(() => {
     return {
@@ -256,7 +310,7 @@ export default function TeacherPage() {
       {activeTab === "students" && (
         <div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            {[["👥", mockStudents.length, "学生总数"], ["💬", mockStudents.reduce((s, st) => s + st.knowledgeQueries, 0), "知识查询"], ["✅", mockStudents.reduce((s, st) => s + st.guidedCompleted, 0), "完成引导"], ["🗺️", mockStudents.reduce((s, st) => s + st.sandboxSessions, 0), "沙盘实验"]].map(([icon, val, label]) => (
+            {[["👥", students.length, "学生总数"], ["💬", students.reduce((s, st) => s + st.queryCount, 0), "知识查询"], ["✅", students.reduce((s, st) => s + st.quizTotal, 0), "小测次数"], ["🎯", students.length ? Math.round(students.reduce((s, st) => s + st.quizRate, 0) / students.length) : 0, "平均正确率%"]].map(([icon, val, label]) => (
               <div key={String(label)} className="bg-white rounded-xl border border-[var(--color-border)] p-4">
                 <div className="text-2xl mb-1">{icon}</div>
                 <div className="text-2xl font-bold">{String(val)}</div>
@@ -265,22 +319,54 @@ export default function TeacherPage() {
             ))}
           </div>
           <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
-            <div className="px-5 py-3 border-b"><h3 className="text-sm font-bold">学生详情</h3></div>
-            <div className="overflow-x-auto">
+            <div className="px-5 py-3 border-b flex items-center justify-between">
+              <h3 className="text-sm font-bold">学生详情(真实注册账号)</h3>
+              <button onClick={loadStudents} disabled={loadingStudents} className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-40">🔄 刷新</button>
+            </div>
+            {loadingStudents ? <div className="text-center text-sm text-[var(--color-text-muted)] py-10">加载中…</div>
+            : students.length === 0 ? <div className="text-center text-sm text-[var(--color-text-muted)] py-10">暂无注册学生(学生注册后显示在此)</div>
+            : <div className="overflow-x-auto">
               <table className="w-full text-sm"><thead><tr className="border-b bg-gray-50">
-                {["姓名","总访问","知识查询","完成引导","沙盘实验","最近活跃"].map(h => <th key={h} className="px-3 py-3 text-xs font-medium text-[var(--color-text-secondary)] text-center">{h}</th>)}
+                {["姓名","邮箱","知识查询","小测/正确率","最近活跃","管理"].map(h => <th key={h} className="px-3 py-3 text-xs font-medium text-[var(--color-text-secondary)] text-center">{h}</th>)}
               </tr></thead><tbody>
-              {mockStudents.map(stu => (
-                <tr key={stu.id} className="border-b hover:bg-gray-50">
-                  <td className="px-5 py-3 font-medium">{stu.name}</td>
-                  <td className="text-center px-3 py-3 text-[var(--color-text-secondary)]">{stu.totalSessions}</td>
-                  <td className="text-center px-3 py-3 text-[var(--color-text-secondary)]">{stu.knowledgeQueries}</td>
-                  <td className="text-center px-3 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${stu.guidedCompleted >= 2 ? "bg-green-100 text-green-700" : stu.guidedCompleted >= 1 ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-500"}`}>{stu.guidedCompleted}/3</span></td>
-                  <td className="text-center px-3 py-3 text-[var(--color-text-secondary)]">{stu.sandboxSessions}</td>
-                  <td className="text-right px-5 py-3 text-xs text-[var(--color-text-muted)]">{new Date(stu.lastActive).toLocaleDateString("zh-CN")}</td>
+              {students.map(stu => (
+                <tr key={stu.email} className="border-b hover:bg-gray-50">
+                  <td className="px-3 py-2 font-medium">
+                    {editingEmail === stu.email ? (
+                      <div className="flex items-center gap-1">
+                        <input value={editName} onChange={e => setEditName(e.target.value)} maxLength={30} className="w-24 border border-gray-300 rounded px-1.5 py-0.5 text-xs" />
+                        <button onClick={() => renameStudent(stu.email)} disabled={busyEmail === stu.email} className="text-[10px] px-1.5 py-0.5 bg-blue-600 text-white rounded">存</button>
+                        <button onClick={() => setEditingEmail(null)} className="text-[10px] px-1.5 py-0.5 bg-gray-200 rounded">✕</button>
+                      </div>
+                    ) : (
+                      <span className="flex items-center gap-1.5">{stu.name}
+                        <button title="修改姓名" onClick={() => { setEditingEmail(stu.email); setEditName(stu.name); }} className="text-[10px] text-blue-500 hover:text-blue-700">✏️</button>
+                      </span>
+                    )}
+                  </td>
+                  <td className="text-center px-3 py-2 text-xs text-[var(--color-text-secondary)]">{stu.email}</td>
+                  <td className="text-center px-3 py-2 text-[var(--color-text-secondary)]">{stu.queryCount}</td>
+                  <td className="text-center px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${stu.quizRate >= 70 ? "bg-green-100 text-green-700" : stu.quizRate >= 40 ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-500"}`}>{stu.quizTotal} 次 · {stu.quizRate}%</span></td>
+                  <td className="text-center px-3 py-2 text-xs text-[var(--color-text-muted)]">{stu.lastActive ? new Date(stu.lastActive).toLocaleString("zh-CN") : "—"}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center justify-center gap-1">
+                      {pwEmail === stu.email ? (
+                        <span className="flex items-center gap-1">
+                          <input type="password" value={pwValue} onChange={e => setPwValue(e.target.value)} placeholder="新密码≥6位" className="w-24 border border-gray-300 rounded px-1.5 py-0.5 text-xs" />
+                          <button onClick={() => resetStudentPassword(stu.email)} disabled={busyEmail === stu.email} className="text-[10px] px-1.5 py-0.5 bg-amber-600 text-white rounded">存</button>
+                          <button onClick={() => setPwEmail(null)} className="text-[10px] px-1.5 py-0.5 bg-gray-200 rounded">✕</button>
+                        </span>
+                      ) : (
+                        <button title="重置密码" onClick={() => { setPwEmail(stu.email); setPwValue(""); }} className="text-[10px] px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 rounded">🔑 重置密码</button>
+                      )}
+                      <button title="查看学习记录" onClick={() => router.push(`/teacher/students/${encodeURIComponent(stu.email)}`)} className="text-[10px] px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 rounded">📋 记录</button>
+                      <button title="删除学生账号" onClick={() => deleteStudent(stu.email, stu.name)} disabled={busyEmail === stu.email} className="text-[10px] px-1.5 py-0.5 bg-red-50 text-red-600 hover:bg-red-100 rounded disabled:opacity-40">🗑</button>
+                    </div>
+                  </td>
                 </tr>
               ))}</tbody></table>
-            </div>
+            </div>}
+            {stuMsg && <div className={`px-5 py-2 text-xs ${stuMsg.ok ? "text-green-700 bg-green-50" : "text-red-600 bg-red-50"}`}>{stuMsg.email}: {stuMsg.text}</div>}
           </div>
         </div>
       )}

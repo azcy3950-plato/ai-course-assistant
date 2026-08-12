@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { useApp } from "@/contexts/AppContext";
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 
 export default function StudentDetailPage() {
   const { state } = useApp();
@@ -15,7 +15,7 @@ export default function StudentDetailPage() {
     (async () => {
       if (state.role !== "teacher") return;
       try {
-        const r = await fetch("/api/students?email=" + encodeURIComponent(email));
+        const r = await fetch("/api/students?email=" + encodeURIComponent(email), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         if (r.ok) setData(await r.json());
       } catch (e) {}
       setLoading(false);
@@ -31,8 +31,8 @@ export default function StudentDetailPage() {
   return (
     <div className="max-w-5xl mx-auto px-6 py-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">{email}</h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mt-1">学生学习详情</p>
+        <h1 className="text-2xl font-bold">{s?.name || email}</h1>
+        <p className="text-sm text-[var(--color-text-secondary)] mt-1">{email} · 学生学习详情</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
