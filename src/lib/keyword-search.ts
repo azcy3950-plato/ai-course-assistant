@@ -47,19 +47,23 @@ function escapeLike(word: string): string {
 }
 
 export function buildKeywordSearch(question: string, limit = 6): KeywordSearchQuery {
+  // 防滥用:问题截断 200 字,参与检索的词数上限 8(每个词一条 OR 分支,超限会全表扫描)
+  const safeQuestion = String(question || "").slice(0, 200);
+  const safeLimit = Math.max(1, Math.min(20, Math.floor(Number(limit) || 6)));
   const seen = new Set<string>();
   const words: string[] = [];
-  for (const token of question.split(SPLIT_RE)) {
+  for (const token of safeQuestion.split(SPLIT_RE)) {
     const t = trimStop(token.trim());
     if (t.length < 2 || STOP_WORDS.has(t) || seen.has(t)) continue;
     seen.add(t);
     words.push(t);
+    if (words.length >= 8) break;
   }
 
   // 无有效词:退化为按 doc_name 顺序取前 N 条(仍来自知识库,而非图谱数据)
   if (words.length === 0) {
     return {
-      sql: "SELECT doc_name, chapter, content, file_url, 0 AS hit_score FROM document_chunks ORDER BY doc_name LIMIT " + limit,
+      sql: "SELECT doc_name, chapter, content, file_url, 0 AS hit_score FROM document_chunks ORDER BY doc_name LIMIT " + safeLimit,
       params: [],
     };
   }
@@ -74,7 +78,7 @@ export function buildKeywordSearch(question: string, limit = 6): KeywordSearchQu
 FROM document_chunks
 WHERE ${conds.join(" OR ")}
 ORDER BY hit_score DESC, content
-LIMIT ${limit}`,
+LIMIT ${safeLimit}`,
     params: words.map((w) => `%${escapeLike(w)}%`),
   };
 }
