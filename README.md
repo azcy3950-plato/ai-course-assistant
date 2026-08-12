@@ -118,3 +118,8 @@ graphContext
 ```bash
 node --env-file=.env.local mkuser.js teacher@example.com "YOUR_PASSWORD" "教师" teacher
 ```
+
+## 开发约定
+
+- 提交信息不要添加 `Co-Authored-By: Claude <noreply@anthropic.com>` 之类的 AI 署名行：GitHub 会把 Co-authored-by 计入 Contributors 列表。若使用 Claude Code 等工具，请关闭其自动署名（`~/.claude/settings.json` 中不启用 auto-accept 的合作者署名，或在提交前移除该行）。
+- 历史已清理：仓库全部提交已去除 AI 署名（改写于 2026-08）。
