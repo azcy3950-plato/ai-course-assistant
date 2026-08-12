@@ -384,6 +384,10 @@ export default function SandboxPage() {
   const [bigZoom, setBigZoom] = useState(1);
   const [bigPos, setBigPos] = useState({ x: 0, y: 0 });
   const bigDragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+  // 更多管道对比:数量 2-6(默认 3)+ 自选管道列表(空=自动 TopN)
+  const [pipeCount, setPipeCount] = useState(3);
+  const [customPipes, setCustomPipes] = useState<string[]>([]);
+  const [customOpen, setCustomOpen] = useState(false);
   const downloadSnap = () => {
     if (!snapCanvas) return;
     const a = document.createElement("a");
@@ -1437,7 +1441,7 @@ export default function SandboxPage() {
   const curLinkData = (mode === "dynamic" && selected?.type === "pipe" && dynRes?.links) ? dynRes.links[selected.data.id] : null;
   // Links now use velocity + depthFraction (not flow) — correct SWMM per-step API
 
-  // 组件级:Top3 最满管道(选中置顶),供 Top3 区块与分屏对比共用
+  // 组件级:最满管道列表(数量可配 2-6;选中置顶),供 TopN 区块与分屏对比共用
   const topPipes = (() => {
     const links = dynRes?.links;
     if (!links) return [];
@@ -1449,12 +1453,24 @@ export default function SandboxPage() {
       return { id, df, diam: pp?.diam || 0.3, from: pp?.from ?? "?", to: pp?.to ?? "?" };
     }).filter(x => x.df > 0.001);
     entries.sort((a, b) => b.df - a.df);
-    const top = entries.slice(0, 3);
+    const top = entries.slice(0, Math.max(2, Math.min(6, pipeCount)));
     if (selected?.type === "pipe" && top.length && !top.find(t => t.id === selected.data.id)) {
       const sel = entries.find(e => e.id === selected.data.id);
       if (sel) { top.pop(); top.unshift(sel); }
     }
     return top;
+  })();
+  // 自选管道模式:customPipes 非空时按 id 映射(缺失跳过,保序),否则自动 TopN
+  const shownPipes = customPipes.length
+    ? customPipes.map(id => { const ld = (dynRes?.links as Record<string, any>)?.[id]; if (!ld) return null; const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === id); const dfArr = ld.depthFraction || []; const df = dfArr.length ? Math.max(0, ...dfArr) : 0; return { id, df, diam: pp?.diam || 0.3, from: pp?.from ?? "?", to: pp?.to ?? "?" }; }).filter((x): x is NonNullable<typeof x> => x != null)
+    : topPipes;
+  // 自选面板候选:全管道按峰值充满度降序
+  const pickCandidates = (() => {
+    const links = dynRes?.links;
+    if (!links) return [];
+    const entries = Object.entries(links as Record<string, any>).map(([id, ld]) => { const dfArr = ld?.depthFraction || []; return { id, df: dfArr.length ? Math.max(0, ...dfArr) : 0 }; }).filter(x => x.df > 0.001);
+    entries.sort((a, b) => b.df - a.df);
+    return entries.slice(0, 20);
   })();
 
   // ═══════════════════════════════════════════════════════════
@@ -1517,6 +1533,30 @@ export default function SandboxPage() {
             <div className="bg-black/80 border border-gray-600 rounded px-1 py-0.5 text-[10px] font-bold shadow" style={{ color: l.color }}>{l.text}</div>
           </div>
         ))}
+        {customOpen && (
+          <div className="absolute right-3 top-16 z-40 w-[300px] bg-gray-950/95 border border-gray-700 rounded-lg shadow-2xl">
+            <div className="flex items-center justify-between px-2 py-1 bg-gray-900 border-b border-gray-700">
+              <span className="font-bold text-xs text-teal-300">➕ 自选管道(最多 6 条)</span>
+              <button onClick={() => setCustomOpen(false)} className="text-gray-400 hover:text-white text-xs px-1">✕</button>
+            </div>
+            <div className="max-h-[260px] overflow-y-auto p-1.5 space-y-0.5">
+              {pickCandidates.map(c => {
+                const on = customPipes.includes(c.id);
+                return (
+                  <label key={c.id} className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:bg-gray-800 rounded px-1 py-0.5">
+                    <input type="checkbox" checked={on} disabled={!on && customPipes.length >= 6} onChange={() => setCustomPipes(prev => on ? prev.filter(x => x !== c.id) : prev.length >= 6 ? prev : [...prev, c.id])} className="accent-teal-500" />
+                    <span className={on ? "text-teal-300 font-bold" : "text-gray-300"}>{c.id}</span>
+                    <span className="text-gray-500 ml-auto">{c.df > 0 ? (c.df * 100).toFixed(0) + "%" : ""}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="flex gap-1 p-1.5 border-t border-gray-700">
+              <button onClick={() => { setCustomPipes([]); setCustomOpen(false); }} className="flex-1 py-1 bg-gray-800 hover:bg-gray-700 rounded text-[10px] font-bold text-gray-300">清除(回自动 TopN)</button>
+              <button onClick={() => setCustomOpen(false)} className="flex-1 py-1 bg-teal-800 hover:bg-teal-700 rounded text-[10px] font-bold text-white">确定({customPipes.length}/6)</button>
+            </div>
+          </div>
+        )}
         {bigView && (() => {
           const bid = (selected?.type === "pipe" ? selected.data.id : null) || topPipes[0]?.id || null;
           if (!bid) return null;
@@ -1805,20 +1845,27 @@ export default function SandboxPage() {
             );
           })()}
           {/* 管网横截面:Top3 最满管道并排(选中管道置顶);推演中三列一起动 */}
-          {(dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && topPipes.length > 0 && (() => {
+          {(dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && shownPipes.length > 0 && (() => {
             const links = dynRes?.links as Record<string, any>;
             const ldOf = (id: string) => links[id];
             return (
             <div className="border-t border-gray-700 mt-2 pt-1.5">
               <div className="flex items-center justify-between mb-1">
-                <div className="font-bold text-xs text-gray-300">🔵 管网横截面 <span className="ml-1 text-[9px] font-normal text-cyan-400">最满 Top{topPipes.length} · 点击切换</span></div>
+                <div className="font-bold text-xs text-gray-300">🔵 管网横截面 <span className="ml-1 text-[9px] font-normal text-cyan-400">{customPipes.length ? `自选 ${customPipes.length} 条` : `最满 Top${shownPipes.length}`} · 点击切换</span></div>
                 <div className="flex items-center gap-1">
-                  {dynPhase === "ready" && dynStep === 0 ? <span className="text-[8px] text-yellow-400/90">初始时刻 · 点开始推演看全过程</span> : selected?.type === "pipe" ? <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span> : null}
+                  {dynPhase === "ready" && dynStep === 0 ? <span className="text-[8px] text-yellow-400/90">初始时刻</span> : selected?.type === "pipe" ? <span className="text-[9px] text-gray-500">{selected.data.id} 置顶</span> : null}
                   <button onClick={() => setBigView(v => !v)} className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${bigView ? "bg-cyan-700 text-white" : "bg-gray-800 text-cyan-400 hover:bg-gray-700"}`}>🔍 大图</button>
+                  {!customPipes.length && (
+                    <button onClick={() => setPipeCount(c => Math.max(2, c - 1))} className="text-[9px] px-1 bg-gray-800 text-gray-400 rounded hover:bg-gray-700" title="减少管道">−</button>
+                  )}
+                  <button onClick={() => setCustomOpen(true)} className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${customPipes.length ? "bg-teal-700 text-white" : "bg-gray-800 text-teal-400 hover:bg-gray-700"}`}>➕ 自选</button>
+                  {!customPipes.length && (
+                    <button onClick={() => setPipeCount(c => Math.min(6, c + 1))} className="text-[9px] px-1 bg-gray-800 text-gray-400 rounded hover:bg-gray-700" title="增加管道">+</button>
+                  )}
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-1">
-                {topPipes.map((p) => {
+              <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(6, shownPipes.length)}, minmax(0, 1fr))` }}>
+                {shownPipes.map((p) => {
                   const hl = highlightRef.current;
                   const inHl = hl && Date.now() < hl.until && hl.top.some(([id]) => id === p.id);
                   return (
