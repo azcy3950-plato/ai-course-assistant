@@ -86,6 +86,8 @@ export default function KnowledgeGraphPanel(p: Props) {
 
   // 节点拖拽后的自由摆放位置(松手停留,覆盖算法布局);换图(网络/加载)时清空,搜索/筛选不触发
   const [nodeLayoutOverrides, setNodeLayoutOverrides] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const nodeLayoutOverridesRef = useRef(nodeLayoutOverrides);
+  useEffect(() => { nodeLayoutOverridesRef.current = nodeLayoutOverrides; }, [nodeLayoutOverrides]);
   useEffect(() => { setNodeLayoutOverrides(new Map()); }, [p.graph]);
 
   // 节点拖拽时的弹簧位移:被拖节点 1.0,一阶邻居 0.45,二阶邻居 0.18;松手后惯性涟漪 0.5
@@ -167,8 +169,8 @@ export default function KnowledgeGraphPanel(p: Props) {
         // 节点拖拽(物理):capture 到节点自身,记录基准布局位置
         const nodeId = nodeEl.getAttribute("data-node-id") || "";
         const pl = placedByIdRef.current.get(nodeId);
-        // 二次拖动基准:优先用已摆放位置(override),否则算法布局——避免二次拖动时跳回
-        const placed = nodeLayoutOverrides.get(nodeId) || pl;
+        // 二次拖动基准:优先用已摆放位置(override,经 ref 读取避免闭包旧值),否则算法布局——避免二次拖动时跳回
+        const placed = nodeLayoutOverridesRef.current.get(nodeId) || pl;
         (nodeEl as Element).setPointerCapture(e.pointerId);
         dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId, baseX: placed?.x ?? 0, baseY: placed?.y ?? 0, dx: 0, dy: 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
         setNodeDrag({ id: nodeId, dx: 0, dy: 0 });
