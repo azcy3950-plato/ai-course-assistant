@@ -32,4 +32,20 @@ describe("buildKeywordSearch", () => {
     const q = buildKeywordSearch("海绵城市 排水 管网", 4);
     expect(q.sql).toContain("LIMIT 4");
   });
+
+  it("超长问题截断 200 字且词数上限 8(防全表扫描滥用)", () => {
+    const long = Array.from({ length: 60 }, (_, i) => `关键词${i}`).join(" ");
+    const q = buildKeywordSearch(long);
+    // 60 个词被截到 8 个:每词 3 列×2 处 ILIKE,共 8×6=48 处;params 恰 8
+    expect(q.sql.match(/ILIKE \$/g)?.length).toBe(48);
+    expect(q.params.length).toBe(8);
+  });
+
+  it("LIMIT 钳制:999→20、负数/NaN 兜底", () => {
+    expect(buildKeywordSearch("海绵", 999).sql).toContain("LIMIT 20");
+    expect(buildKeywordSearch("海绵", -5).sql).toContain("LIMIT 1");
+    expect(buildKeywordSearch("海绵", Number.NaN).sql).toContain("LIMIT 6");
+    // 退化分支同样钳制
+    expect(buildKeywordSearch("的 吗", 999).sql).toContain("LIMIT 20");
+  });
 });
