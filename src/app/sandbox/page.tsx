@@ -1747,14 +1747,14 @@ export default function SandboxPage() {
             );
           })()}
           {/* 管网横截面:Top3 最满管道并排(选中管道置顶);推演中三列一起动 */}
-          {(dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && topPipes.length > 0 && (() => {
+          {(dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && topPipes.length > 0 && (() => {
             const links = dynRes?.links as Record<string, any>;
             const ldOf = (id: string) => links[id];
             return (
             <div className="border-t border-gray-700 mt-2 pt-1.5">
               <div className="flex items-center justify-between mb-1">
                 <div className="font-bold text-xs text-gray-300">🔵 管网横截面 <span className="ml-1 text-[9px] font-normal text-cyan-400">最满 Top{topPipes.length} · 点击切换</span></div>
-                {selected?.type === "pipe" && <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span>}
+                {dynPhase === "ready" ? <span className="text-[8px] text-yellow-400/90">初始时刻 · 点开始推演看全过程</span> : selected?.type === "pipe" ? <span className="text-[9px] text-gray-500">{selected.data.id} 已置顶</span> : null}
               </div>
               <div className="grid grid-cols-3 gap-1">
                 {topPipes.map((p) => {
@@ -1782,7 +1782,7 @@ export default function SandboxPage() {
           })()}
 
           {/* Dynamic property for selected object */}
-          {selected && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && (
+          {selected && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && (
             <div className="border-t border-gray-700 mt-2 pt-1.5 space-y-0.5 text-[10px]">
               <div className="font-bold text-xs text-gray-300 mb-1">{{ node: "🔹 " + selected.data.id, pipe: "▬ " + selected.data.id }[selected.type as string]}</div>
               {selected.type === "node" && curNodeData && (<>
@@ -1909,7 +1909,7 @@ export default function SandboxPage() {
           <button onClick={() => setShowTip(false)} className="absolute -top-1.5 -right-1.5 bg-gray-700 hover:bg-gray-600 rounded-full w-4 h-4 text-[9px] leading-4 text-center">✕</button>
         </div>
       )}
-      {mode === "dynamic" && dynRes?.ok && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done") && timeStepCount > 0 && (
+      {mode === "dynamic" && dynRes?.ok && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && timeStepCount > 0 && (
         <div className="absolute bottom-0 left-0 right-0 bg-black/92 backdrop-blur border-t border-gray-800 px-4 py-2 z-10">
           {/* 降雨过程条:恒定雨强水平线 + 当前时刻高亮标记(拖动时间轴/推演同步滚动) */}
           <div className="flex items-center gap-2 mb-1.5">
