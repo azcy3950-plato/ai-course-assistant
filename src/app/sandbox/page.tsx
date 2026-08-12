@@ -399,6 +399,19 @@ export default function SandboxPage() {
   const [pipeCount, setPipeCount] = useState(3);
   const [customPipes, setCustomPipes] = useState<string[]>([]);
   const [customOpen, setCustomOpen] = useState(false);
+  // 3D 联动:推演中 TopN 自动轮流高亮(3s/根),大图跟随;横截面 hover 同步 3D 高亮
+  const [autoFocusIdx, setAutoFocusIdx] = useState(0);
+  const hoverPipe3DRef = useRef<THREE.Mesh | null>(null);
+  const highlightPipe3D = (id: string | null) => {
+    if (hoverPipe3DRef.current) {
+      const m = hoverPipe3DRef.current; const mat = m.material as any;
+      if (mat?.userData?.xsecHoverOrig != null) mat.emissiveIntensity = mat.userData.xsecHoverOrig;
+    }
+    hoverPipe3DRef.current = null;
+    if (!id) return;
+    const m = pipeMeshMap.current.get(id);
+    if (m) { const mat = m.material as any; if (mat?.userData && mat.userData.xsecHoverOrig === undefined) mat.userData = { ...(mat.userData || {}), xsecHoverOrig: mat.emissiveIntensity }; if (mat) mat.emissiveIntensity = Math.max(mat.emissiveIntensity, 0.8); hoverPipe3DRef.current = m; }
+  };
   const downloadSnap = () => {
     if (!snapCanvas) return;
     const a = document.createElement("a");
@@ -1483,6 +1496,14 @@ export default function SandboxPage() {
     entries.sort((a, b) => b.df - a.df);
     return entries.slice(0, 20);
   })();
+  // 推演中 TopN 自动轮流高亮(3s/根,不打断用户选中;大图/侧边高亮随之切换)
+  useEffect(() => {
+    if (dynPhase !== "running" || shownPipes.length < 1) return;
+    const iv = setInterval(() => setAutoFocusIdx(i => i + 1), 3000);
+    return () => clearInterval(iv);
+  }, [dynPhase, shownPipes.length, customPipes.length]);
+  const focusId = (dynPhase === "running" && shownPipes.length > 0) ? shownPipes[autoFocusIdx % shownPipes.length].id : null;
+  useEffect(() => { if (dynPhase === "running") highlightPipe3D(focusId); else highlightPipe3D(null); }, [focusId, dynPhase]);
 
   // ═══════════════════════════════════════════════════════════
   // RENDER
@@ -1569,8 +1590,9 @@ export default function SandboxPage() {
           </div>
         )}
         {bigView && (() => {
-          const bid = (selected?.type === "pipe" ? selected.data.id : null) || topPipes[0]?.id || null;
+          const bid = (selected?.type === "pipe" ? selected.data.id : null) || focusId || topPipes[0]?.id || null;
           if (!bid) return null;
+          if (dynPhase !== "running") highlightPipe3D(bid); // 非推演时大图管道常驻高亮
           const ld = (dynRes?.links as any)?.[bid];
           const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === bid);
           return (
@@ -1880,7 +1902,7 @@ export default function SandboxPage() {
                   const hl = highlightRef.current;
                   const inHl = hl && Date.now() < hl.until && hl.top.some(([id]) => id === p.id);
                   return (
-                  <button key={p.id} onClick={() => { const mesh = pipeMeshMap.current.get(p.id); if (mesh) { if (selRef.current !== mesh) { if (selRef.current) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id: p.id } }); } } }} className={`text-left rounded ${inHl ? "ring-2 ring-amber-400 animate-pulse" : ""}`} title={`${p.id} ${p.from}→${p.to} 充满度 ${(p.df * 100).toFixed(0)}%`}>
+                  <button key={p.id} onClick={() => { const mesh = pipeMeshMap.current.get(p.id); if (mesh) { if (selRef.current !== mesh) { if (selRef.current) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id: p.id } }); } } }} onMouseEnter={() => highlightPipe3D(p.id)} onMouseLeave={() => { if (dynPhase !== "running") highlightPipe3D(null); }} className={`text-left rounded ${inHl ? "ring-2 ring-amber-400 animate-pulse" : ""} ${focusId === p.id ? "ring-1 ring-cyan-400" : ""}`} title={`${p.id} ${p.from}→${p.to} 充满度 ${(p.df * 100).toFixed(0)}%`}>
                     <div className="text-[8px] text-gray-400 truncate">{p.id}</div>
                     <PipeCrossSection
                       diam={p.diam}
