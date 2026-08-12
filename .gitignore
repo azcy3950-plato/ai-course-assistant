@@ -35,6 +35,9 @@ npm-debug.log*
 # Cesium static assets (45MB, regenerated at build time)
 /public/Cesium/
 
+# user uploads (avatars etc., runtime-generated, may contain personal data)
+/public/avatars/
+
 # Python
 __pycache__/
 *.pyc

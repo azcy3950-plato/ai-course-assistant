@@ -24,7 +24,11 @@ export async function PUT(req: NextRequest) {
     const { rows } = await pool.query("SELECT password_hash FROM users WHERE id = $1", [decoded.id]);
     if (rows.length === 0) return NextResponse.json({ error: "账号不存在" }, { status: 404 });
     const ok = await compare(oldPassword, rows[0].password_hash);
-    if (!ok) return NextResponse.json({ error: "旧密码不正确" }, { status: 400 });
+    if (!ok) {
+      // 防在线暴力尝试:失败延迟 500ms(bcrypt 之上再加一道节流)
+      await new Promise(r => setTimeout(r, 500));
+      return NextResponse.json({ error: "旧密码不正确" }, { status: 400 });
+    }
     const passwordHash = await hash(newPassword, 10);
     await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [passwordHash, decoded.id]);
     return NextResponse.json({ ok: true });

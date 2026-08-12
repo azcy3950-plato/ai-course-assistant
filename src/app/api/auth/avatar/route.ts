@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     const magic = MAGIC[mime];
     let matched = true;
     for (let i = 0; i < magic.length; i++) if (buf[i] !== magic[i]) { matched = false; break; }
-    if (mime === "image/webp" && (buf[12] !== 0x57 || buf[13] !== 0x45 || buf[14] !== 0x42 || buf[15] !== 0x50)) matched = false;
+    if (mime === "image/webp" && (buf[8] !== 0x57 || buf[9] !== 0x45 || buf[10] !== 0x42 || buf[11] !== 0x50)) matched = false;
     if (!matched) return NextResponse.json({ error: "图片内容与格式不符" }, { status: 400 });
 
     // 文件名 = email 哈希(防路径穿越/枚举),原子写
