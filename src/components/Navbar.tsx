@@ -94,6 +94,9 @@ export default function Navbar() {
             <span>{state.role === "student" ? "🧑‍🎓" : "👨‍🏫"}</span>
             <span>{state.userName}</span>
           </div>
+          <Link href="/profile" className="px-2.5 py-1 rounded-md text-xs font-medium text-[var(--color-text-secondary)] hover:text-amber-600 hover:bg-amber-50 transition-colors">
+            👤 个人中心
+          </Link>
           <button
             onClick={() => logout()}
             className="px-2.5 py-1 rounded-md text-xs font-medium text-[var(--color-text-secondary)] hover:text-red-500 hover:bg-red-50 transition-colors"
