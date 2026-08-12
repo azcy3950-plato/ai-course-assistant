@@ -1240,7 +1240,7 @@ export default function SandboxPage() {
       try {
         if (!localStorage.getItem("sandbox-hands-v1")) {
           localStorage.setItem("sandbox-hands-v1", "1");
-          setSchemeMsg({ text: "💡 试试:点击管道调🚰调节阀 · 点「🪣 放蓄水池」削峰", color: "text-teal-300" });
+          setSchemeMsg({ text: "💡 点击管道看横截面与🚰调节阀 · 拖雨强/绿色强度观察水量变化 · 放🪣蓄水池削峰(加载后点 ▶ 开始推演)", color: "text-teal-300" });
           if (schemeMsgTimer.current) clearTimeout(schemeMsgTimer.current);
           schemeMsgTimer.current = setTimeout(() => setSchemeMsg(null), 6000);
         }
@@ -1549,6 +1549,21 @@ export default function SandboxPage() {
             <button onClick={() => { if (selRef.current) resetHL(selRef.current); selRef.current = null; setSelected(null); }} className="text-gray-500 hover:text-gray-300 text-[10px]">✕</button>
           </div>
           <div className="space-y-0.5">
+            {selected.type === "pipe" && (
+              <div className="mb-1.5">
+                <PipeCrossSection
+                  diam={selected.data.diam || 0.3}
+                  depth={0}
+                  depthFraction={0}
+                  flow={0}
+                  flowDir={`${selected.data.from ?? "?"} → ${selected.data.to ?? "?"}`}
+                  landcover="default"
+                  animate={false}
+                  compact
+                />
+                <div className="text-[8px] leading-3 text-cyan-400/80 mt-0.5">静态示意 · 切「▶ 动态推演」看实时水量变化</div>
+              </div>
+            )}
             {Object.entries(selected.data).map(([k, v]: [string, any]) => (
               <div key={k} className="flex justify-between">
                 <span className="text-gray-500">{chineseLabel(k)}</span>
@@ -1659,7 +1674,7 @@ export default function SandboxPage() {
                   <div className="text-[9px] leading-3 text-gray-500">绿色海绵降低峰值 {(() => { const g = compareRes.green?.summary?.maxFlow?.value, b = compareRes.default?.summary?.maxFlow?.value; return (g != null && b > 0) ? Math.max(0, ((b - g) / b) * 100).toFixed(0) : "—"; })()}%，灰色强开发抬高峰值 {(() => { const r = compareRes.gray?.summary?.maxFlow?.value, b = compareRes.default?.summary?.maxFlow?.value; return (r != null && b > 0) ? Math.max(0, ((r - b) / b) * 100).toFixed(0) : "—"; })()}%</div>
                 </div>
               )}
-              {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">▶ 开始推演</button>}
+              {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-2 bg-green-600 rounded font-bold text-sm text-white ring-2 ring-green-400/70 shadow-lg shadow-green-900/50 hover:bg-green-500 transition-colors animate-pulse">▶ 开始推演</button>}
               {dynPhase === "done" && <button onClick={() => { setDynStep(0); setDynPlay(true); setDynPhase("running"); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">🔄 重新推演</button>}
               {dynRes && (<div className="border-t border-gray-700 pt-1.5 mt-1 space-y-0.5 text-[10px]">
                 {simId && <div className="text-gray-600 truncate" title={simId}>ID: {simId.slice(0,8)}…</div>}
