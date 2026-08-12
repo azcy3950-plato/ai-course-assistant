@@ -60,15 +60,25 @@ export async function DELETE(req: NextRequest) {
     if (!getTeacher(req)) return NextResponse.json({ error: "仅教师可操作" }, { status: 403 });
     const email = req.nextUrl.searchParams.get("email")?.trim().toLowerCase() || "";
     if (!email) return NextResponse.json({ error: "缺少邮箱参数" }, { status: 400 });
-    const { rows } = await pool.query(
-      "DELETE FROM users WHERE email = $1 AND role = 'student' RETURNING id, email",
-      [email],
-    );
-    if (!rows.length) return NextResponse.json({ error: "未找到该学生账号" }, { status: 404 });
-    // 级联清理学习数据
-    await pool.query("DELETE FROM learning_records WHERE user_email = $1", [email]);
-    await pool.query("DELETE FROM quiz_results WHERE user_email = $1", [email]);
-    await pool.query("DELETE FROM student_node_progress WHERE user_email = $1", [email]);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      // 事务内:先清理子表再删用户(避免部分成功窗口)
+      await client.query("DELETE FROM learning_records WHERE user_email = $1", [email]);
+      await client.query("DELETE FROM quiz_results WHERE user_email = $1", [email]);
+      await client.query("DELETE FROM student_node_progress WHERE user_email = $1", [email]);
+      const { rows } = await client.query(
+        "DELETE FROM users WHERE email = $1 AND role = 'student' RETURNING id, email",
+        [email],
+      );
+      if (!rows.length) { await client.query("ROLLBACK"); return NextResponse.json({ error: "未找到该学生账号" }, { status: 404 }); }
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error('[admin/student] DELETE:', err?.message || err);

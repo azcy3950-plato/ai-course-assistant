@@ -411,8 +411,6 @@ export default function SandboxPage() {
   const [hoverInfo, setHoverInfo] = useState<{ lines: string[]; type: string } | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [dynRes, setDynRes] = useState<any>(null);
-  const [compareRes, setCompareRes] = useState<Record<string, any> | null>(null);
-  const [comparing, setComparing] = useState(false);
   const [dynStep, setDynStep] = useState(0);
   const [dynPlay, setDynPlay] = useState(false);
   const [dynSpd, setDynSpd] = useState(1);
@@ -895,7 +893,7 @@ export default function SandboxPage() {
   // ═══════════════════════════════════════════════════════════
   // DYNAMIC MODE — kept from working backend, visuals cleaned
   // ═══════════════════════════════════════════════════════════
-  const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green", overrideValves?: Record<string, number>, overrideStorages?: Array<{ nodeId: string; capacity: number }>, overrideGreenLevel?: number) => {
+  const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "gray" | "green", overrideValves?: Record<string, number>, overrideGreenLevel?: number) => {
     const reqSeq = ++simSeqRef.current;
     // 取消待执行的雨强/绿色强度防抖重跑(避免旧闭包竞态覆盖新方案状态)
     if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
@@ -980,38 +978,6 @@ export default function SandboxPage() {
     finally { if (tid) clearTimeout(tid); }
   }, [dynI, landcover, valves, greenLevel]);
 
-  // 三方案对比:串行仿真 现状/绿色/灰色(后端为同步仿真,逐个请求),展示峰值差异
-  const runCompare = useCallback(async () => {
-    if (greenTimerRef.current) { clearTimeout(greenTimerRef.current); greenTimerRef.current = null; }
-    if (comparing) return;
-    const seq = ++simSeqRef.current;
-    // 取消待执行的雨强防抖重跑(避免防抖回调抢占对比请求)
-    if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
-    setRainPreview(null);
-    abortRef.current?.abort();
-    setComparing(true); setCompareRes(null); setDynPhase("loading"); setDynStep(0);
-    const results: Record<string, any> = {};
-    const schemes: Array<["default" | "green" | "gray", string]> = [["default", "现状"], ["green", "绿色海绵"], ["gray", "灰色强开发"]];
-    let tid: ReturnType<typeof setTimeout> | null = null;
-    try {
-      for (const [lc, label] of schemes) {
-        if (seq !== simSeqRef.current) return;
-        const ctrl = new AbortController();
-        abortRef.current = ctrl;
-        tid = setTimeout(() => ctrl.abort(), 90000);
-        const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: dynI, landcover: lc }), signal: ctrl.signal });
-        if (tid) { clearTimeout(tid); tid = null; }
-        if (abortRef.current === ctrl) abortRef.current = null;
-        const d = await res.json();
-        if (!d.ok) throw new Error(`${label}方案: ${d.error || "API error"}`);
-        results[lc] = d;
-      }
-      if (seq !== simSeqRef.current) return;
-      setCompareRes(results);
-      setDynRes(results.default); setSimId(results.default.simulationId || ""); setDynPhase("ready");
-    } catch (e: any) { if (seq !== simSeqRef.current) return; setDynPhase("config"); if (e.name !== "AbortError") alert("对比仿真失败: " + e.message); }
-    finally { if (tid) clearTimeout(tid); setComparing(false); }
-  }, [dynI, comparing]);
 
   const clearWaterMeshes = useCallback(() => {
     waterMeshMap.current.forEach(m => { if (m.parent) m.parent.remove(m); if (m.geometry !== SHARED.waterCyl) m.geometry?.dispose(); (m.material as THREE.Material)?.dispose(); });
@@ -1178,7 +1144,7 @@ export default function SandboxPage() {
     const lv = Math.max(0, Math.min(1, v / 100));
     setGreenLevel(lv); // 即时更新 → 横截面预览系数联动
     if (greenTimerRef.current) { clearTimeout(greenTimerRef.current); greenTimerRef.current = null; }
-    greenTimerRef.current = setTimeout(() => loadSim(undefined, "green", undefined, undefined, greenLevelRef.current), 500);
+    greenTimerRef.current = setTimeout(() => loadSim(undefined, "green", undefined, greenLevelRef.current), 500);
   };
   // 绿色强度预览系数:强度越高水位越低(近似,松手后真实仿真覆盖)
   const greenPreviewRatio = (landcover === "green" && greenLevel < 1) ? (1 - 0.22 * (1 - greenLevel)) : 1;
@@ -1635,45 +1601,6 @@ export default function SandboxPage() {
 
           {dynPhase === "loading" && <div className="text-center py-3"><div className="animate-spin text-lg mb-1">⏳</div><div className="text-[10px] text-gray-400">运行 SWMM 仿真…</div><button onClick={() => { abortRef.current?.abort(); setDynPhase("config"); }} className="mt-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-[10px] text-gray-300">✕ 取消</button></div>}
 
-          {/* 方案分屏左右对比:compareRes 时同管道现状 vs 当前方案(各取峰值步),中央 VS */}
-          {compareRes && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && (() => {
-            const cmpPipe = (selected?.type === "pipe" ? selected.data.id : null) || (topPipes[0]?.id);
-            if (!cmpPipe || !compareRes.default?.links?.[cmpPipe]) return null;
-            const curKey = landcover === "gray" ? "gray" : landcover === "green" ? "green" : "default";
-            if (curKey === "default") return null;
-            const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === cmpPipe);
-            const peakOf = (rs: any) => { const flows = rs?.links?.[cmpPipe]?.flow || []; let pk = 0; flows.forEach((v: number, i: number) => { if (Math.abs(v) > Math.abs(flows[pk] ?? 0)) pk = i; }); return pk; };
-            const mk = (rs: any, label: string, color: string) => {
-              const pk = peakOf(rs);
-              const ld = rs.links[cmpPipe];
-              return (
-                <div className="flex-1 min-w-0">
-                  <div className={`text-[8px] text-center font-bold mb-0.5 ${color}`}>{label}</div>
-                  <PipeCrossSection
-                    diam={pp?.diam || 0.3}
-                    depth={ld.depth?.[pk] ?? 0}
-                    depthFraction={ld.depthFraction?.[pk] ?? 0}
-                    flow={ld.flow?.[pk] ?? 0}
-                    flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`}
-                    landcover={label === "现状" ? "default" : landcover}
-                    animate={false}
-                    compact
-                  />
-                </div>
-              );
-            };
-            return (
-              <div className="border-t border-gray-700 mt-2 pt-1.5">
-                <div className="text-[10px] font-bold text-gray-300 mb-1">⚖️ 方案对比 <span className="text-[8px] font-normal text-gray-500">{cmpPipe} · 峰值时刻</span></div>
-                <div className="flex items-center gap-1">
-                  {mk(compareRes.default, "现状", "text-gray-400")}
-                  <span className="text-[9px] font-black text-yellow-400 px-0.5">VS</span>
-                  {mk(compareRes[curKey], landcover === "green" ? "绿色海绵" : "灰色强开发", landcover === "green" ? "text-green-400" : "text-orange-400")}
-                </div>
-              </div>
-            );
-          })()}
-          {/* 管网横截面:Top3 最满管道并排(选中管道置顶);推演中三列一起动 */}
           {(dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && shownPipes.length > 0 && (() => {
             const links = dynRes?.links as Record<string, any>;
             const ldOf = (id: string) => links[id];
