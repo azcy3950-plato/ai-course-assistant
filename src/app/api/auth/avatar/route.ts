@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verify } from "jsonwebtoken";
-import { createHash } from "crypto";
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { Pool } from "pg";
+import { avatarFileName } from "@/lib/avatar-name";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const AVATAR_DIR = join(process.cwd(), "public", "avatars");
@@ -42,8 +42,7 @@ export async function POST(req: NextRequest) {
     if (!matched) return NextResponse.json({ error: "图片内容与格式不符" }, { status: 400 });
 
     // 文件名 = email 哈希(防路径穿越/枚举),原子写
-    const ext = mime === "image/png" ? "png" : mime === "image/jpeg" ? "jpg" : "webp";
-    const name = `avatar-${createHash("sha256").update(String(decoded.email)).digest("hex").slice(0, 20)}.${ext}`;
+    const name = avatarFileName(String(decoded.email), mime);
     mkdirSync(AVATAR_DIR, { recursive: true });
     writeFileSync(join(AVATAR_DIR, name), buf);
     const avatarPath = `/avatars/${name}`;
