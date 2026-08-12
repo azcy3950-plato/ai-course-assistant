@@ -84,9 +84,9 @@ export default function KnowledgeGraphPanel(p: Props) {
   const kickTimerRef = useRef<number | null>(null);
   useEffect(() => () => { if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); }, []);
 
-  // 节点拖拽后的自由摆放位置(松手停留,覆盖算法布局);重置/换网时清空
+  // 节点拖拽后的自由摆放位置(松手停留,覆盖算法布局);换图(网络/加载)时清空,搜索/筛选不触发
   const [nodeLayoutOverrides, setNodeLayoutOverrides] = useState<Map<string, { x: number; y: number }>>(new Map());
-  useEffect(() => { setNodeLayoutOverrides(new Map()); }, [visible.nodes]);
+  useEffect(() => { setNodeLayoutOverrides(new Map()); }, [p.graph]);
 
   // 节点拖拽时的弹簧位移:被拖节点 1.0,一阶邻居 0.45,二阶邻居 0.18;松手后惯性涟漪 0.5
   const springOffsets = useMemo(() => {
@@ -167,8 +167,10 @@ export default function KnowledgeGraphPanel(p: Props) {
         // 节点拖拽(物理):capture 到节点自身,记录基准布局位置
         const nodeId = nodeEl.getAttribute("data-node-id") || "";
         const pl = placedByIdRef.current.get(nodeId);
+        // 二次拖动基准:优先用已摆放位置(override),否则算法布局——避免二次拖动时跳回
+        const placed = nodeLayoutOverrides.get(nodeId) || pl;
         (nodeEl as Element).setPointerCapture(e.pointerId);
-        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId, baseX: pl?.x ?? 0, baseY: pl?.y ?? 0, dx: 0, dy: 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
+        dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId, baseX: placed?.x ?? 0, baseY: placed?.y ?? 0, dx: 0, dy: 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
         setNodeDrag({ id: nodeId, dx: 0, dy: 0 });
       } else {
         // 画布平移
@@ -270,7 +272,7 @@ export default function KnowledgeGraphPanel(p: Props) {
         <button onClick={() => p.onDepthChange(1)} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.depth === 1 ? "bg-[#165dff] text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`}>一阶</button>
         <button onClick={() => p.onDepthChange(2)} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.depth === 2 ? "bg-[#165dff] text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`}>二阶</button>
         <button onClick={() => fit(p.focusIds, true)} title="对准当前焦点(若被筛选过滤则重置到全图)" className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">适应视图</button>
-        <button onClick={() => fit()} className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">重置布局</button>
+        <button onClick={() => { setNodeLayoutOverrides(new Map()); fit(); }} title="清空手动摆放,回到算法布局并适应视图" className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">重置布局</button>
         <button onClick={() => setLabels((v) => !v)} className={`rounded-full border px-3 py-1 text-xs font-medium shadow-sm transition ${labels ? "border-[rgba(22,93,255,0.2)] bg-[rgba(22,93,255,0.08)] text-[#2450a5]" : "border-[rgba(105,126,165,0.16)] bg-white text-[#314362]"}`}>关系标签</button>
         <button onClick={() => setLegend((v) => !v)} className={`rounded-full border px-3 py-1 text-xs font-medium shadow-sm transition ${legend ? "border-[rgba(22,93,255,0.2)] bg-[rgba(22,93,255,0.08)] text-[#2450a5]" : "border-[rgba(105,126,165,0.16)] bg-white text-[#314362]"}`}>图例</button>
         <button onClick={p.onFullscreen} className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">全屏</button>
@@ -360,7 +362,7 @@ export default function KnowledgeGraphPanel(p: Props) {
           </div>
         )}
       </div>
-      <div className="relative z-10 flex items-center gap-2 border-t border-[rgba(105,126,165,0.12)] bg-white/70 px-3 py-1.5 text-[10px] text-[#6f7e97] backdrop-blur"><span>完整知识图谱 · 拖动节点/画布 · 滚轮缩放 · 点击选择 · 双击展开 · 拖动松手后节点停留</span>{nodeLayoutOverrides.size > 0 && <button onClick={() => setNodeLayoutOverrides(new Map())} className="ml-auto shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 font-semibold text-amber-700 transition hover:bg-amber-100" title="清空手动摆放,回到算法布局">🔄 重置布局</button>}</div>
+      <div className="relative z-10 border-t border-[rgba(105,126,165,0.12)] bg-white/70 px-3 py-1.5 text-[10px] text-[#6f7e97] backdrop-blur">完整知识图谱 · 拖动节点/画布 · 滚轮缩放 · 点击选择 · 双击展开 · 拖动松手后节点停留(工具栏可重置布局)</div>
     </div>
   );
 }
