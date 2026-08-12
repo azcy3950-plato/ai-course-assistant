@@ -82,6 +82,8 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
   const latest = useRef({ diam, depth, depthFraction, flow, flowDir, previewRatio, compact, size });
   latest.current = { diam, depth, depthFraction, flow, flowDir, previewRatio, compact, size };
   const displayFill = useRef(0); // 显示充满度(平滑过渡到目标值,方案切换/时间轴跳转时变化过程可见)
+  const displayFlow = useRef(0); // 流量数字滚动动画
+  const animRef = useRef<{ from: number; to: number; t0: number } | null>(null); // easeOutCubic 0.4s 缓动
   useEffect(() => { if (onCanvas) onCanvas(canvasRef.current); }, [onCanvas]); // 截图用
 
   useEffect(() => {
@@ -100,14 +102,21 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
     let raf = 0;
     const draw = (now: number) => {
       const L = latest.current;
-      // 雨强预览:水位按 previewRatio 缩放(拖动滑条即见变化);动态模式显示值每帧平滑过渡
+      // 雨强预览:水位按 previewRatio 缩放(拖动滑条即见变化);动态模式用 easeOutCubic 0.4s 缓动过渡
       const targetFill = Math.min(1, Math.max(0, (L.depthFraction || 0) * L.previewRatio));
       if (animate) {
-        displayFill.current += (targetFill - displayFill.current) * 0.12;
-        if (Math.abs(targetFill - displayFill.current) < 0.0015) displayFill.current = targetFill;
-      } else displayFill.current = targetFill;
+        if (!animRef.current || animRef.current.to !== targetFill) animRef.current = { from: displayFill.current, to: targetFill, t0: now };
+        const t = Math.min(1, (now - animRef.current.t0) / 400);
+        const e = 1 - Math.pow(1 - t, 3); // easeOutCubic
+        displayFill.current = animRef.current.from + (animRef.current.to - animRef.current.from) * e;
+        if (t >= 1) animRef.current = null;
+      } else { displayFill.current = targetFill; animRef.current = null; }
       const fillRatio = displayFill.current;
       const flow = L.flow;
+      // 流量数字滚动动画(非 compact 或大图显示)
+      displayFlow.current += (flow - displayFlow.current) * 0.15;
+      if (Math.abs(flow - displayFlow.current) < 0.002) displayFlow.current = flow;
+      const dispFlow = displayFlow.current;
 
       // 管壁
       ctx.clearRect(0, 0, w, h);
@@ -163,13 +172,15 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
         }
       }
 
-      // 标注(compact 降字号防裁切)
+      // 标注(compact 降字号防裁切);满管/高充满度时数字变红脉冲
+      const danger = fillRatio > 0.9;
+      const dangerColor = danger && animate ? `rgba(255,90,70,${(0.75 + 0.25 * Math.sin(now * 0.006)).toFixed(2)})` : "#f87171";
       ctx.fillStyle = "#9fb2c0";
       ctx.font = L.compact ? "8px monospace" : "9px monospace";
       ctx.textAlign = "center";
       ctx.fillText(L.compact ? `${(fillRatio * 100).toFixed(0)}%` : `d=${L.diam.toFixed(2)}m 充满度=${(fillRatio * 100).toFixed(0)}%`, cx, h - 5);
-      ctx.fillStyle = "rgba(80,170,230,0.9)";
-      ctx.fillText(L.compact ? `${flow >= 0 ? "→" : "←"}${Math.abs(flow).toFixed(2)}` : `水深 ${Math.min(L.depth * L.previewRatio, L.diam).toFixed(2)}m · ${flow >= 0 ? "→" : "←"} ${Math.abs(flow).toFixed(2)}m³/s`, cx, 9);
+      ctx.fillStyle = danger ? dangerColor : "rgba(80,170,230,0.9)";
+      ctx.fillText(L.compact ? `${flow >= 0 ? "→" : "←"}${Math.abs(dispFlow).toFixed(2)}` : `水深 ${Math.min(L.depth * L.previewRatio, L.diam).toFixed(2)}m · ${flow >= 0 ? "→" : "←"} ${Math.abs(dispFlow).toFixed(2)}m³/s`, cx, 9);
       if (animate) raf = requestAnimationFrame(draw); // 动态模式持续绘制;静态模式画完即停
     };
     if (animate) {
