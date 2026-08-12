@@ -49,14 +49,24 @@ export default function GuidedPage() {
   const dragging = useRef(false);
   const [resizing, setResizing] = useState(false);
 
-  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); let restoredFocus = false; fetch("/api/knowledge-graph?network=overview", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setNetworks(d.networks || []); if (!restoredFocus) setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); try { const raw = localStorage.getItem(CHAT_STORAGE_KEY); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed.messages)) { const msgs = (parsed.messages as ChatMessage[]).filter((m) => m && typeof m.content === "string" && !m.pending); if (msgs.length) { setMessages(msgs); const lastNodes = [...msgs].reverse().find((m) => m.nodeIds?.length)?.nodeIds; if (lastNodes?.length) { restoredFocus = true; setFocusIds(lastNodes.slice(0, 1)); } } } if (parsed.socratic && typeof parsed.socratic.active === "boolean") { setSocraticActive(parsed.socratic.active); if (typeof parsed.socratic.question === "string") setSocraticQuestion(parsed.socratic.question); if (typeof parsed.socratic.turn === "number") setTurn(parsed.socratic.turn); if (typeof parsed.socratic.hintLevel === "number") setHintLevel(parsed.socratic.hintLevel); } } } catch { /* 旧数据/隐私模式忽略 */ } }, []);
-  // 切换知识网络:加载对应网络图谱,重置焦点/对话
-  const switchNetwork = (id: string) => {
-    if (id === activeNetwork) return;
+  useEffect(() => { let saved = 0; try { saved = Number(localStorage.getItem(STORAGE_KEY)); } catch { /* 隐私模式忽略 */ } if (saved >= 30 && saved <= 62) setRatio(saved); let restoredFocus = false; const initialNodesRef: KnowledgeNode[] = []; fetch("/api/knowledge-graph?network=overview", { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setNetworks(d.networks || []); initialNodesRef.push(...d.graph.nodes); if (!restoredFocus) setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined); try { const raw = localStorage.getItem(CHAT_STORAGE_KEY); if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed.messages)) { const msgs = (parsed.messages as ChatMessage[]).filter((m) => m && typeof m.content === "string" && !m.pending); if (msgs.length) { setMessages(msgs); const lastNodes = [...msgs].reverse().find((m) => m.nodeIds?.length)?.nodeIds; if (lastNodes?.length) { const validNode = lastNodes.find((id: string) => initialNodesRef.some((n) => n.id === id)); if (validNode) { restoredFocus = true; setFocusIds([validNode]); } } } } if (parsed.socratic && typeof parsed.socratic.active === "boolean") { setSocraticActive(parsed.socratic.active); if (typeof parsed.socratic.question === "string") setSocraticQuestion(parsed.socratic.question); if (typeof parsed.socratic.turn === "number") setTurn(parsed.socratic.turn); if (typeof parsed.socratic.hintLevel === "number") setHintLevel(parsed.socratic.hintLevel); } } } catch { /* 旧数据/隐私模式忽略 */ } }, []);
+  // 切换知识网络:加载对应网络图谱,保留对话(不打断学习上下文),重置选中与聚焦
+  const switchNetwork = (id: string, focusId?: string) => {
+    if (id === activeNetwork && !focusId) return;
     setActiveNetwork(id);
-    setSelected(null); setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0);
-    setMessages([]); try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* 忽略 */ }
-    fetch(`/api/knowledge-graph?network=${id}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setCumulative({ nodes: [], edges: [] }); setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined);
+    setSelected(null);
+    if (focusId) {
+      // 跨网络提问聚焦:切网后聚焦目标节点
+      fetch(`/api/knowledge-graph?network=${id}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => {
+        if (!d.graph) return;
+        setFullGraph(d.graph); setCurrentGraph(d.graph); setCumulative({ nodes: [], edges: [] });
+        mergeAllNodes(d.graph.nodes);
+        const target = d.graph.nodes.find((n: KnowledgeNode) => n.id === focusId);
+        setFocusIds(target ? [focusId] : d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id));
+      }).catch(() => undefined);
+      return;
+    }
+    fetch(`/api/knowledge-graph?network=${id}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } }).then((r) => r.json()).then((d) => { if (!d.graph) return; setFullGraph(d.graph); setCurrentGraph(d.graph); setCumulative({ nodes: [], edges: [] }); mergeAllNodes(d.graph.nodes); setFocusIds(d.graph.nodes.slice(0, 1).map((n: KnowledgeNode) => n.id)); }).catch(() => undefined);
   };
   const ratioRef = useRef(ratio);
   useEffect(() => { ratioRef.current = ratio; }, [ratio]);
@@ -81,13 +91,26 @@ export default function GuidedPage() {
   useEffect(() => { const move = (e: PointerEvent) => { if (!dragging.current || !workspace.current) return; const rect = workspace.current.getBoundingClientRect(); const next = Math.min(62, Math.max(30, ((e.clientX - rect.left) / rect.width) * 100)); setRatio(next); }; const up = () => { if (dragging.current) { try { localStorage.setItem(STORAGE_KEY, String(ratioRef.current)); } catch { /* 隐私模式忽略 */ } } dragging.current = false; setResizing(false); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up); return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); }; }, []);
 
   const graph = fullGraph; // 完整图谱模式：始终显示全部节点，焦点只影响高亮与中心
-  const nodeForId = useCallback((id: string) => fullGraph.nodes.find((n) => n.id === id) || cumulative.nodes.find((n) => n.id === id), [cumulative.nodes, fullGraph.nodes]);
+  // 跨网络节点缓存:切换网络时累积,提问命中其他网络节点也能解析(id 前缀 = networkId)
+  const allNodesRef = useRef<Map<string, KnowledgeNode>>(new Map());
+  const mergeAllNodes = (nodes: KnowledgeNode[]) => { nodes.forEach((n) => allNodesRef.current.set(n.id, n)); };
+  useEffect(() => { mergeAllNodes(fullGraph.nodes); }, [fullGraph]);
+  const nodeForId = useCallback((id: string) => fullGraph.nodes.find((n) => n.id === id) || cumulative.nodes.find((n) => n.id === id) || allNodesRef.current.get(id), [cumulative.nodes, fullGraph.nodes]);
   const setCurrentFromContext = (ctx: any) => {
-    const ids = [ctx?.focusNode?.id, ...(ctx?.highlightNodeIds || []), ...(ctx?.prerequisites || []).map((n: KnowledgeNode) => n.id), ...(ctx?.relatedNodes || []).map((n: KnowledgeNode) => n.id), ...(ctx?.nextNodes || []).map((n: KnowledgeNode) => n.id)].filter(Boolean) as string[];
+    const focusId = ctx?.focusNode?.id;
+    // 跨网络衔接:命中节点不在当前网络图内 → 自动切换到其所属网络并聚焦(提问不丢失)
+    if (focusId && !fullGraph.nodes.find((n) => n.id === focusId) && !cumulative.nodes.find((n) => n.id === focusId)) {
+      const netId = String(focusId).split(":")[0];
+      if (networks.some((n) => n.id === netId)) {
+        switchNetwork(netId, focusId);
+        return [];
+      }
+    }
+    const ids = [focusId, ...(ctx?.highlightNodeIds || []), ...(ctx?.prerequisites || []).map((n: KnowledgeNode) => n.id), ...(ctx?.relatedNodes || []).map((n: KnowledgeNode) => n.id), ...(ctx?.nextNodes || []).map((n: KnowledgeNode) => n.id)].filter(Boolean) as string[];
     const unique = [...new Set(ids)];
     // 完整图谱模式：不裁剪当前图，仅移动焦点中心；提问相关节点加入累计图
     const relatedNodes = unique.map(nodeForId).filter(Boolean) as KnowledgeNode[];
-    setFocusIds(ctx?.focusNode?.id ? [ctx.focusNode.id] : unique.slice(0, 1));
+    setFocusIds(focusId ? [focusId] : unique.slice(0, 1));
     setCumulative((old) => mergeGraph(old, relatedNodes, fullGraph.edges.filter((e) => unique.includes(e.source) && unique.includes(e.target))));
     return unique;
   };
