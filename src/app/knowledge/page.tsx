@@ -66,8 +66,9 @@ export default function KnowledgePage() {
         }
       });
 
-      // 流结束后确保引用已挂到消息(最后一段文本更新已携带 lastRefs)
-      if (activeConv && lastRefs?.length) updateLastMessage(activeConv.id, fullAnswer, lastRefs);
+      // 流结束后确保引用已挂到消息:lastRefs 优先,否则用 allReferences 兑底(引用解析失败也不丢)
+      const finalRefs = (lastRefs?.length ? lastRefs : allReferencesRef.current) as Reference[] | undefined;
+      if (activeConv && finalRefs?.length) updateLastMessage(activeConv.id, fullAnswer, finalRefs);
 
       // Auto-title
       if (activeConv.title === '新对话') {
@@ -114,6 +115,9 @@ export default function KnowledgePage() {
     // Re-send
     handleSend(lastUserMsg);
   }, [activeConv, loading, handleSend, chatState.conversations]);
+
+  const allReferencesRef = useRef<Reference[]>([]);
+  useEffect(() => { allReferencesRef.current = allReferences; }, [allReferences]);
 
   // 右侧引用面板:优先取当前会话最后一条 assistant 消息的引用(会话切换/刷新后不回退),流式中回退到 allReferences
   const panelReferences = useMemo(() => {
@@ -247,6 +251,18 @@ export default function KnowledgePage() {
           )}
         </div>
 
+        {/* 小屏引用来源(窄屏右侧面板隐藏后,在消息区底部展示) */}
+        {panelReferences.length > 0 && (
+          <div className="mx-4 mb-2 rounded-xl border border-[var(--color-border)] bg-white p-3 md:hidden">
+            <div className="mb-1.5 text-xs font-medium text-[var(--color-text-muted)]">📖 引用来源</div>
+            <div className="space-y-1">
+              {panelReferences.map(ref => (
+                <div key={ref.id} className="text-[11px] text-[var(--color-text-secondary)] truncate">[{ref.id}] {ref.docName}{ref.chapter ? ` · ${ref.chapter}` : ''}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2 mb-3">
             {["海绵城市的核心技术有哪些？","暴雨重现期怎么确定？","SWMM模型的主要功能是什么？","LID设施的径流削减效果如何？"].map(q => (
               <button key={q} onClick={() => handleSend(q)} disabled={loading} className="text-xs px-3 py-1.5 bg-blue-50 text-[var(--color-primary)] rounded-full hover:bg-blue-100 transition-colors disabled:opacity-50">{q}</button>
@@ -258,7 +274,7 @@ export default function KnowledgePage() {
       {/* Right: Source Panel */}
       <aside
         ref={sourcePanelRef}
-        className="w-80 bg-white border-l border-[var(--color-border)] flex flex-col shrink-0 overflow-y-auto"
+        className="hidden w-80 bg-white border-l border-[var(--color-border)] flex-col shrink-0 overflow-y-auto md:flex"
       >
         <div className="p-4 border-b border-[var(--color-border)] sticky top-0 bg-white z-10">
           <h3 className="text-sm font-bold text-[var(--color-text)]">
