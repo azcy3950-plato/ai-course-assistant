@@ -52,11 +52,16 @@ export default function KnowledgePage() {
     addMessage(activeConv.id, { role: 'assistant', content: '' });
     try {
       let fullAnswer = '';
+      const topicIds: string[] = []; // 本次提问命中的图谱节点 id(写入 records.topics)
       const response = await queryKnowledgeAgentStream(content, (text) => {
         fullAnswer = text;
         if (activeConv) updateLastMessage(activeConv.id, text);
       }, (refs) => {
         setAllReferences(refs);
+      }, (ctx) => {
+        if (ctx?.focusNode?.id && !topicIds.includes(ctx.focusNode.id)) {
+          topicIds.push(ctx.focusNode.id, ...(ctx.highlightNodeIds || []).slice(0, 4).filter((id: string) => !topicIds.includes(id)));
+        }
       });
 
       // Auto-title
@@ -65,12 +70,12 @@ export default function KnowledgePage() {
         updateTitle(activeConv.id, shortQ);
       }
 
-      // Save record
+      // Save record(带图谱上下文节点 id 与引用标志,供小测按近期主题出题)
       try {
         const { data: s } = await supabase.auth.getSession();
         const em = s.session?.user?.email || '';
         if (em) {
-          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: false }) });
+          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: topicIds, has_references: allReferences.length > 0 }) });
           const qr = await fetch('/api/quiz?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
           const qd = await qr.json();
           if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }

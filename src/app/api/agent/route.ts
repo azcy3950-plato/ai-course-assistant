@@ -3,12 +3,11 @@ import { Pool } from "pg";
 import { verify } from "jsonwebtoken";
 import { sanitizeHistory } from "@/lib/chat-history";
 import {
-  getNodesWithoutEmbeddings,
   loadKnowledgeGraph,
   matchGraphContext,
   recordNodeInteraction,
-  storeNodeEmbeddings,
 } from "@/lib/knowledge-graph";
+import { NETWORK_DEFS } from "@/lib/knowledge-map-data";
 import type { GraphContext, KnowledgeNode } from "@/types";
 
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
@@ -127,15 +126,6 @@ async function getEmbeddings(texts: string[]): Promise<number[][]> {
   return (data.data || []).sort((a: { index: number }, b: { index: number }) => a.index - b.index).map((item: { embedding: number[] }) => item.embedding);
 }
 
-async function hydrateNodeEmbeddings() {
-  const missing = await getNodesWithoutEmbeddings();
-  if (!missing.length || !DASHSCOPE_KEY) return;
-  const embeddings = await getEmbeddings(missing.map((item) => item.text));
-  await storeNodeEmbeddings(
-    missing.flatMap((item, index) => embeddings[index] ? [{ id: item.id, embedding: embeddings[index] }] : []),
-  );
-}
-
 async function searchChunks(embedding: number[]): Promise<RetrievedChunk[]> {
   const pool = getPool();
   if (!pool || !embedding.length) return [];
@@ -249,10 +239,10 @@ function buildSocraticFacts(graphContext: GraphContext, chunks: RetrievedChunk[]
 }
 
 async function prepareKnowledgeTurn(question: string, userEmail: string) {
-  const embeddings = await getEmbeddings([question]).catch(() => []);
+  const embeddings = DASHSCOPE_KEY ? await getEmbeddings([question]).catch(() => []) : [];
   const questionEmbedding = embeddings[0];
-  if (questionEmbedding) await hydrateNodeEmbeddings().catch(() => undefined);
-  const chunks = questionEmbedding ? await searchChunks(questionEmbedding).catch(() => []) : [];
+  // 图谱匹配已纯关键词化,不再每问全量 hydrate 节点 embedding(避免浪费与拖慢首 token)
+  const chunks = questionEmbedding ? await searchChunks(questionEmbedding).catch(() => []) : searchLocalChunks(question);
   const graphContext = await matchGraphContext(question, questionEmbedding, chunks, userEmail);
   if (userEmail) {
     const progress = await recordNodeInteraction(userEmail, graphContext.focusNode.id, "question");
@@ -264,6 +254,24 @@ async function prepareKnowledgeTurn(question: string, userEmail: string) {
     graphContext,
     prompt: buildTurnPrompt(question, graphContext, chunks),
   };
+}
+
+// 无向量库/DASHSCOPE 时:本地关键词检索 NETWORK_DEFS(章节级),返回可引用伪片段(LLM 有料可答)
+function searchLocalChunks(question: string): RetrievedChunk[] {
+  const q = question.toLowerCase();
+  const out: RetrievedChunk[] = [];
+  for (const def of NETWORK_DEFS) {
+    for (const section of def.sections) {
+      const text = [def.title, section.full, section.summary, ...(section.items || [])].join(" ").toLowerCase();
+      const hit = [def.title, section.full, section.label].filter((t) => t.length >= 2).some((t) => q.includes(t.toLowerCase())) ||
+        (section.items || []).some((item) => item.length >= 2 && q.includes(item.toLowerCase()));
+      if (hit) {
+        const content = `${section.summary || ""}${section.items?.length ? "\n要点:" + section.items.join("、") : ""}`;
+        out.push({ doc_name: def.title, chapter: section.full, content, file_url: undefined, similarity: 1 });
+      }
+    }
+  }
+  return out.slice(0, 6);
 }
 
 function extractJsonArray(text: string): unknown[] {

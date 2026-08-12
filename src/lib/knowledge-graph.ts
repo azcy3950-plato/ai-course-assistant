@@ -163,7 +163,8 @@ export async function matchGraphContext(
 
   const lowerQuestion = question.toLowerCase();
   const scored = graph.nodes.map((node) => {
-    const terms = [node.name, ...node.keywords].map((term) => term.toLowerCase());
+    // 匹配词表:名称 + 关键词(含章节/网络上下文) + 章节名;item 节点继承章节上下文
+    const terms = [node.name, ...node.keywords, node.chapter].map((term) => term.toLowerCase()).filter((term) => term.length >= 2);
     const matches = terms.filter((term) => term && lowerQuestion.includes(term)).length;
     const keywordScore = Math.min(
       1,
@@ -190,6 +191,14 @@ export async function matchGraphContext(
     : (scored.find((candidate) => candidate.node.category === "core") || scored[0]);
   const focusNode = best.node;
   const { prerequisites, related, next, edgeIds } = neighborsFor(focusNode.id, graph);
+  // 命中章节(category)节点时,联动其 items(叶子知识点)一起高亮,让图谱上下文更聚焦
+  const highlightIds = [focusNode.id, ...prerequisites.map((node) => node.id), ...related.map((node) => node.id), ...next.map((node) => node.id)];
+  if (focusNode.category === "category") {
+    graph.edges.filter((e) => e.source === focusNode.id).forEach((e) => {
+      highlightIds.push(e.target);
+      edgeIds.push(e.id);
+    });
+  }
   const suggestedPool = [...next, ...related, focusNode];
   const suggestedNextNode = suggestedPool.sort(
     (a, b) => (a.progress?.mastery || 0) - (b.progress?.mastery || 0),
@@ -199,12 +208,7 @@ export async function matchGraphContext(
     prerequisites,
     relatedNodes: related,
     nextNodes: next,
-    highlightNodeIds: [
-      focusNode.id,
-      ...prerequisites.map((node) => node.id),
-      ...related.map((node) => node.id),
-      ...next.map((node) => node.id),
-    ],
+    highlightNodeIds: highlightIds,
     highlightEdges: edgeIds,
     suggestedNextNode,
     matchSignals: {

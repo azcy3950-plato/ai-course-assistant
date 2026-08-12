@@ -82,7 +82,8 @@ export function buildNetwork(def: NetworkDef): BuiltNetwork {
         name: itemLabel,
         description: "",
         chapter: def.title,
-        keywords: [],
+        // 关键词继承章节/网络上下文(供 matchGraphContext 关键词检索命中)
+        keywords: [def.title, section.full, section.label].filter(Boolean) as string[],
         category: kind,
         resources: [],
       };
