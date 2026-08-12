@@ -7,9 +7,9 @@ import type {
   KnowledgeRelationType,
   KnowledgeResource,
   StudentNodeProgress,
-} from "@/types/knowledge-graph";
-import { buildAllNetworks, networkToGraph, type BuiltNetwork } from "@/lib/knowledge-map-builder";
-import { NETWORK_DEFS } from "@/lib/knowledge-map-data";
+} from "../types/knowledge-graph";
+import { buildAllNetworks, networkToGraph, type BuiltNetwork } from "./knowledge-map-builder";
+import { NETWORK_DEFS } from "./knowledge-map-data";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
