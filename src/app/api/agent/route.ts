@@ -331,8 +331,6 @@ export async function POST(req: NextRequest) {
       }
 
       const metadata = JSON.stringify({ references: turn.references, graphContext: turn.graphContext });
-      const reader = deepseekResponse.body.getReader();
-      const decoder = new TextDecoder();
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(controller) {
