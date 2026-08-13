@@ -10,6 +10,7 @@ import {
   storeNodeEmbeddings,
 } from "@/lib/knowledge-graph";
 import type { GraphContext, KnowledgeNode } from "@/types";
+import { buildKeywordSearch } from "@/lib/keyword-search";
 
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
 const DASHSCOPE_KEY = process.env.DASHSCOPE_API_KEY;
@@ -152,6 +153,39 @@ async function searchChunks(embedding: number[]): Promise<RetrievedChunk[]> {
     return result.rows;
   } catch (err) {
     console.error("[agent] searchChunks:", (err as Error)?.message || err);
+    return [];
+  }
+}
+
+// 引导学习专用:无 embedding 时关键词检索 document_chunks(参数化 ILIKE),零命中取最近 8 块——引导问答永远有课程资料
+async function searchLocalDocChunks(question: string): Promise<RetrievedChunk[]> {
+  const pool = getPool();
+  if (!pool) return [];
+  try {
+    const { sql, params } = buildKeywordSearch(question);
+    const result = await pool.query(sql, params);
+    const rows = result.rows.map((r) => ({
+      doc_name: r.doc_name,
+      chapter: r.chapter || "",
+      content: r.content || "",
+      file_url: r.file_url,
+      similarity: Number(r.hit_score || 0),
+    }));
+    if (rows.length === 0) {
+      const fallback = await pool.query(
+        `SELECT doc_name, chapter, content, file_url, 0 AS hit_score FROM document_chunks ORDER BY id DESC LIMIT 8`,
+      );
+      return fallback.rows.map((r) => ({
+        doc_name: r.doc_name,
+        chapter: r.chapter || "",
+        content: r.content || "",
+        file_url: r.file_url,
+        similarity: Number(r.hit_score || 0),
+      }));
+    }
+    return rows;
+  } catch (err) {
+    console.error("[agent] searchLocalDocChunks:", (err as Error)?.message || err);
     return [];
   }
 }
@@ -401,7 +435,7 @@ export async function POST(req: NextRequest) {
     if (action === "guided_free") {
       const question = String(params.question || "");
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
-      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
+      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : await searchLocalDocChunks(question).catch(() => []);
       const graphContext = await matchGraphContext(question, embedding, chunks, userEmail);
       const text = await callDeepSeek([
         { role: "system", content: `${GUIDED_PROMPT}\n${buildTurnPrompt(question, graphContext, chunks)}` },
@@ -434,7 +468,7 @@ export async function POST(req: NextRequest) {
       const question = String(params.question || "").trim();
       if (!question) return NextResponse.json({ error: "问题不能为空" }, { status: 400 });
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
-      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
+      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : await searchLocalDocChunks(question).catch(() => []);
       const graphContext = await matchGraphContext(question, embedding, chunks, userEmail).catch(() => null);
       if (userEmail && graphContext) {
         const progress = await recordNodeInteraction(userEmail, graphContext.focusNode.id, "question").catch(() => undefined);
@@ -458,7 +492,7 @@ export async function POST(req: NextRequest) {
       const totalTurns = 3;
       const history = sanitizeHistory(params.history || []);
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
-      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
+      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : await searchLocalDocChunks(question).catch(() => []);
       const graphContext = await matchGraphContext(question, embedding, chunks, userEmail).catch(() => null);
       const graphFacts = graphContext ? buildSocraticFacts(graphContext, chunks) : "（图谱上下文暂不可用，请基于课程常识引导，不得编造具体节点）";
       const prompt = SOCRATIC_PROMPT
@@ -489,6 +523,10 @@ export async function POST(req: NextRequest) {
         : parsedOk
           ? fallbackResponse
           : (text || "").trim() || fallbackResponse;
+      // 掌握度联动:mastered(学生答到位)/complete(讲解收束)均记一次 study,节点掌握度上升(色阶联动)
+      if (userEmail && graphContext && (status === "mastered" || status === "complete")) {
+        await recordNodeInteraction(userEmail, graphContext.focusNode.id, "study").catch(() => undefined);
+      }
       return NextResponse.json({ status, response, turn, totalTurns, graphContext });
     }
 
@@ -510,7 +548,7 @@ export async function POST(req: NextRequest) {
         4: "接近答案：海绵城市通过就地入渗、蓄滞调蓄削减径流总量与峰值，从而减少内涝——按这个思路组织你的答案。",
       };
       const embedding = (await getEmbeddings([question]).catch(() => []))[0];
-      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : [];
+      const chunks = embedding ? await searchChunks(embedding).catch(() => []) : await searchLocalDocChunks(question).catch(() => []);
       const graphContext = await matchGraphContext(question, embedding, chunks, userEmail).catch(() => null);
       const prompt = SOCRATIC_PROMPT
         .replace("{{GRAPH_CONTEXT}}", graphContext ? buildSocraticFacts(graphContext, chunks) : "（图谱上下文暂不可用，请基于课程常识引导，不得编造具体节点）")
