@@ -7,7 +7,7 @@ function getUser(req: NextRequest): { email: string; role: string } | null {
   const jwtSecret = process.env.JWT_SECRET;
   if (!token || !jwtSecret) return null;
   try {
-    const payload = jwtVerify(token, jwtSecret) as unknown as { email?: string; role?: string };
+    const payload = jwtVerify(token, jwtSecret, { algorithms: ["HS256"] }) as unknown as { email?: string; role?: string };
     return { email: payload.email || "", role: payload.role || "student" };
   } catch {
     return null;
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   }
+  if (typeof body !== "object" || body === null) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   const title = String(body.title || "").trim();
   if (!title) return NextResponse.json({ error: "公告标题不能为空" }, { status: 400 });
   const announcement = await createAnnouncement(title, body.content || "", user.email);
@@ -51,6 +52,7 @@ export async function DELETE(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   }
+  if (typeof body !== "object" || body === null) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   const ok = await deleteAnnouncement(Number(body.id) || 0);
   if (!ok) return NextResponse.json({ error: "公告不存在" }, { status: 404 });
   return NextResponse.json({ ok: true });

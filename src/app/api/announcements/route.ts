@@ -7,7 +7,7 @@ function getUser(req: NextRequest): { email: string; role: string } | null {
   const jwtSecret = process.env.JWT_SECRET;
   if (!token || !jwtSecret) return null;
   try {
-    const payload = jwtVerify(token, jwtSecret) as unknown as { email?: string; role?: string };
+    const payload = jwtVerify(token, jwtSecret, { algorithms: ["HS256"] }) as unknown as { email?: string; role?: string };
     return { email: payload.email || "", role: payload.role || "student" };
   } catch {
     return null;
