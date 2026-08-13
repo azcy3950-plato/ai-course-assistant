@@ -53,6 +53,7 @@ export function buildKeywordSearch(question: string, limit = 6): KeywordSearchQu
   const seen = new Set<string>();
   const words: string[] = [];
   const pushWord = (w: string) => {
+    if (words.length >= 8) return; // 早退防滥用:每 token 多段时也封顶 8 词
     if (w.length < 2 || STOP_WORDS.has(w) || seen.has(w)) return;
     seen.add(w);
     words.push(w);
