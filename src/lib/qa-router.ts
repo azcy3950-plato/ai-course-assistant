@@ -22,7 +22,9 @@ const KEYWORDS: Record<Exclude<QaDomain, "teaching">, string[]> = {
 
 export function routeQuestion(question: string): RouteResult {
   const q = String(question || "");
-  for (const domain of ["emergency", "research"] as const) {
+  // 调研语境优先(规划/案例/数据等弱于应急强词时,歧义交由上层 LLM 兜底更准);
+  // 含调研词(规划/案例/标准)时判调研,否则查应急强词,再默认教学
+  for (const domain of ["research", "emergency"] as const) {
     if (KEYWORDS[domain].some((kw) => q.includes(kw))) {
       return { domain, matchedBy: "keyword" };
     }

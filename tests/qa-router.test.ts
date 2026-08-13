@@ -19,6 +19,11 @@ describe("qa-router", () => {
     expect(routeQuestion("透水铺装的工作原理").domain).toBe("teaching");
   });
 
+  it("调研词优先:规划/案例与应急词共存时判调研", () => {
+    expect(routeQuestion("城市排水防涝的规划案例有哪些?").domain).toBe("research");
+    expect(routeQuestion("海绵城市建设相关政策与内涝治理").domain).toBe("research");
+  });
+
   it("sanitizeDomain 白名单校验,非法回退教学", () => {
     expect(sanitizeDomain("emergency")).toBe("emergency");
     expect(sanitizeDomain("应急")).toBe("emergency");
