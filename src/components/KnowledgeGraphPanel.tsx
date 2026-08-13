@@ -114,10 +114,18 @@ export default function KnowledgeGraphPanel(p: Props) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     placed.forEach((pt) => { minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y); maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y); });
     const pad = 110;
-    const scale = Math.min((W - pad * 2) / Math.max(60, maxX - minX), (H - pad * 2) / Math.max(60, maxY - minY), 1.15);
+    const fullScale = Math.min((W - pad * 2) / Math.max(60, maxX - minX), (H - pad * 2) / Math.max(60, maxY - minY), 1.15);
     const targets = ids && ids.length ? ids.map((id) => placedById.get(id)).filter(Boolean) as Placed[] : [];
     // 指定了焦点但全部被搜索/筛选过滤(不可见)时保持当前视图,不做无效重置(用户显式点击时 force=true 跳过)
     if (!force && ids && ids.length && targets.length === 0 && !placedById.has(ids[0])) return;
+    // 有焦点时:以焦点包围盒计算缩放(比全图放大,焦点更突出),上限全图缩放的 1.8 倍
+    let scale = fullScale;
+    if (targets.length) {
+      let tminX = Infinity, tminY = Infinity, tmaxX = -Infinity, tmaxY = -Infinity;
+      targets.forEach((pt) => { tminX = Math.min(tminX, pt.x); tminY = Math.min(tminY, pt.y); tmaxX = Math.max(tmaxX, pt.x); tmaxY = Math.max(tmaxY, pt.y); });
+      const targetScale = Math.min((W - pad * 2) / Math.max(120, tmaxX - tminX + 320), (H - pad * 2) / Math.max(120, tmaxY - tminY + 320));
+      scale = Math.min(Math.max(fullScale, targetScale), Math.min(1.15, fullScale * 1.8));
+    }
     const cx = targets.length ? targets.reduce((s, pt) => s + pt.x, 0) / targets.length : (minX + maxX) / 2;
     const cy = targets.length ? targets.reduce((s, pt) => s + pt.y, 0) / targets.length : (minY + maxY) / 2;
     const tx = W / 2 - cx * scale;
@@ -309,10 +317,15 @@ export default function KnowledgeGraphPanel(p: Props) {
               {visible.edges.map((e) => {
                 const s = placedById.get(e.source), t = placedById.get(e.target);
                 if (!s || !t) return null;
+                // 边端点与节点同源:override(自由摆放)+ 弹簧位移(拖动中实时跟随,关系线不脱离节点)
+                const so = nodeLayoutOverrides.get(e.source), to = nodeLayoutOverrides.get(e.target);
+                const sp = springOffsets.get(e.source), tp = springOffsets.get(e.target);
+                const sx = (so || s).x + (sp?.x || 0), sy = (so || s).y + (sp?.y || 0);
+                const tx = (to || t).x + (tp?.x || 0), ty = (to || t).y + (tp?.y || 0);
                 const focused = edgeFocus(e);
                 return <g key={e.id}>
-                  <path d={buildPath(s.x, s.y, t.x, t.y)} fill="none" strokeLinecap="round" stroke={focused ? "rgba(22,93,255,0.40)" : "rgba(123,142,172,0.26)"} strokeWidth={focused ? 2.4 : 1.8} style={{ transition: "stroke .25s ease, stroke-width .25s ease" }} />
-                  {labels && <text x={(s.x + t.x) / 2} y={(s.y + t.y) / 2 - 6} textAnchor="middle" fontSize="10" fill={focused ? "#2450a5" : "#6f7e97"} style={{ paintOrder: "stroke", stroke: "rgba(255,255,255,0.85)", strokeWidth: 3, strokeLinejoin: "round", fontWeight: 600, transition: "fill .25s ease" }}>{e.label || rels[e.relation] || e.relation}</text>}
+                  <path d={buildPath(sx, sy, tx, ty)} fill="none" strokeLinecap="round" stroke={focused ? "rgba(22,93,255,0.40)" : "rgba(123,142,172,0.26)"} strokeWidth={focused ? 2.4 : 1.8} style={{ transition: "stroke .25s ease, stroke-width .25s ease" }} />
+                  {labels && <text x={(sx + tx) / 2} y={(sy + ty) / 2 - 6} textAnchor="middle" fontSize="10" fill={focused ? "#2450a5" : "#6f7e97"} style={{ paintOrder: "stroke", stroke: "rgba(255,255,255,0.85)", strokeWidth: 3, strokeLinejoin: "round", fontWeight: 600, transition: "fill .25s ease" }}>{e.label || rels[e.relation] || e.relation}</text>}
                 </g>;
               })}
             </g>
