@@ -30,6 +30,7 @@ export async function queryKnowledgeAgentStream(
   let fullText = "";
   let refs: Reference[] = [];
   let graphContext: GraphContext | undefined;
+  let domain: string | undefined;
   let buffer = "";
   let metadataRead = false;
   while (true) {
@@ -47,6 +48,7 @@ export async function queryKnowledgeAgentStream(
           const metadata = JSON.parse(line.slice(8));
           refs = mapReferences(metadata.references || []);
           graphContext = metadata.graphContext;
+          domain = metadata.domain;
           onRefs?.(refs);
           if (graphContext) onGraphContext?.(graphContext);
         } else if (line.startsWith("__REFS__")) {
@@ -64,7 +66,7 @@ export async function queryKnowledgeAgentStream(
     onChunk(fullText);
   }
   fullText += decoder.decode();
-  return { answer: fullText, references: refs, graphContext };
+  return { answer: fullText, references: refs, graphContext, domain };
 }
 
 function mapReferences(rawReferences: any[]): Reference[] {

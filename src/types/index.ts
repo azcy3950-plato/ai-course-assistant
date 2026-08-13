@@ -154,4 +154,5 @@ export interface AgentResponse {
   references?: Reference[];
   graphContext?: GraphContext;
   metadata?: Record<string, unknown>;
+  domain?: string;
 }

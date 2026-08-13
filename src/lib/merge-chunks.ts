@@ -1,6 +1,7 @@
 /**
- * 双路检索结果合并(纯函数,可单测):向量检索结果优先,关键词结果按 doc_name+内容指纹去重补充。
- * 保证提示词中的课程资料覆盖面最大化,且引用编号稳定(去重后顺序即编号)。
+ * 双路检索结果融合(纯函数,可单测):RRF(Reciprocal Rank Fusion)重排——
+ * 每路结果按各自排名计分 score = Σ 1/(60 + rank),跨路同文档累加,按总分降序取前 N。
+ * 向量路(按相似度排)与关键词路(按命中分排)融合,兼顾语义与关键词精确命中。
  */
 export interface ChunkLike {
   doc_name: string;
@@ -17,16 +18,29 @@ function fingerprint(chunk: ChunkLike): string {
   return `${doc}::${head}`;
 }
 
+const RRF_K = 60;
+
 export function mergeChunks<T extends ChunkLike>(vector: T[], keyword: T[], limit = 8): T[] {
-  const seen = new Set<string>();
-  const out: T[] = [];
-  for (const chunk of [...vector, ...keyword]) {
-    if (!chunk || !chunk.doc_name) continue;
-    const fp = fingerprint(chunk);
-    if (seen.has(fp)) continue;
-    seen.add(fp);
-    out.push(chunk);
-    if (out.length >= limit) break;
-  }
-  return out;
+  const scores = new Map<string, { chunk: T; score: number }>();
+  const addList = (list: T[]) => {
+    list.forEach((chunk, idx) => {
+      if (!chunk || !chunk.doc_name) return;
+      const fp = fingerprint(chunk);
+      const score = 1 / (RRF_K + idx + 1);
+      const cur = scores.get(fp);
+      if (cur) {
+        cur.score += score;
+        // 保留更完整的一条(有 similarity 优先)
+        if (cur.chunk.similarity === undefined && chunk.similarity !== undefined) cur.chunk = chunk;
+      } else {
+        scores.set(fp, { chunk, score });
+      }
+    });
+  };
+  addList(vector);
+  addList(keyword);
+  return [...scores.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(1, Math.min(20, Math.floor(Number(limit) || 8))))
+    .map((entry) => entry.chunk);
 }

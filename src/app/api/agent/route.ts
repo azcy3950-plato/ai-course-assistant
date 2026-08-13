@@ -12,6 +12,7 @@ import {
 import type { GraphContext, KnowledgeNode } from "@/types";
 import { buildKeywordSearch } from "@/lib/keyword-search";
 import { mergeChunks } from "@/lib/merge-chunks";
+import { routeQuestion, sanitizeDomain, type QaDomain } from "@/lib/qa-router";
 
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
 const DASHSCOPE_KEY = process.env.DASHSCOPE_API_KEY;
@@ -49,6 +50,13 @@ const KNOWLEDGE_QA_SIMPLE_PROMPT = `
 直接、简洁地回答学生的问题，必要时用简短步骤或公式。不要分段介绍知识节点，不要提及学习路径、掌握度或引导性问题——这是纯粹的知识问答。
 
 语气清晰、耐心、具体。`;
+
+/** 三领域人设:同一事实边界,不同回答风格(教学/调研/应急) */
+const QA_DOMAIN_PROMPTS: Record<QaDomain, string> = {
+  teaching: `${KNOWLEDGE_QA_SIMPLE_PROMPT}\n你以课程教师的口吻回答：概念讲清楚、原理讲透，必要时给出步骤或公式，适合学生理解。`,
+  research: `${KNOWLEDGE_QA_SIMPLE_PROMPT}\n你以调研员的专业口吻回答：结合资料中的政策背景、规划案例、标准规范与数据，客观陈述，必要时给出数据或对比。`,
+  emergency: `${KNOWLEDGE_QA_SIMPLE_PROMPT}\n你以应急专家的口吻回答：结合资料给出处置流程、应对要点与风险提示，条理清晰、语气果断；涉及生命安全的内容务必谨慎、以资料为准。`,
+};
 
 const KNOWLEDGE_GRAPH_TEACHING_PROMPT = `
 你是《海绵城市与城市雨洪管理》课程的智能体B，是一名基于课程知识图谱和课程资料进行教学的AI助教。
@@ -161,7 +169,7 @@ async function searchChunks(embedding: number[]): Promise<RetrievedChunk[]> {
               GREATEST(0, 1 - (embedding <=> $1::vector)) AS similarity
        FROM document_chunks
        ORDER BY embedding <=> $1::vector
-       LIMIT 6`,
+       LIMIT 12`,
       [vector],
     );
     return result.rows;
@@ -176,7 +184,7 @@ async function searchLocalDocChunks(question: string): Promise<RetrievedChunk[]>
   const pool = getPool();
   if (!pool) return [];
   try {
-    const { sql, params } = buildKeywordSearch(question);
+    const { sql, params } = buildKeywordSearch(question, 12);
     const result = await pool.query(sql, params);
     const rows = result.rows.map((r) => ({
       doc_name: r.doc_name,
@@ -299,10 +307,27 @@ function buildSocraticFacts(graphContext: GraphContext, chunks: RetrievedChunk[]
   return `${graphFacts}\n\n【课程资料】\n${courseFacts}`;
 }
 
+// 领域路由:关键词命中直接定域;未命中且问题较长时 LLM 轻量兜底分类(输出白名单校验,失败回退教学)
+async function resolveDomain(question: string): Promise<QaDomain> {
+  const rule = routeQuestion(question);
+  if (rule.matchedBy === "keyword") return rule.domain;
+  if (question.length < 6) return "teaching"; // 短问题不值得一次 LLM 调用
+  try {
+    const text = await callDeepSeek([
+      { role: "system", content: "你是问题分类器。判断问题属于哪个领域,只输出一个词:teaching(教学/概念/原理)或 research(调研/政策/案例/数据)或 emergency(应急/预案/洪水/内涝处置)。不要输出其他内容。" },
+      { role: "user", content: question.slice(0, 100) },
+    ], 20);
+    return sanitizeDomain((text || "").trim().toLowerCase());
+  } catch {
+    return "teaching";
+  }
+}
+
 async function prepareKnowledgeTurn(question: string, userEmail: string) {
+  const domain = await resolveDomain(question);
   const embeddings = await getEmbeddings([question]).catch(() => []);
   const questionEmbedding = embeddings[0];
-  // 知识问答:简洁直接版——不注入图谱上下文,不记学习交互;检索永远基于知识库
+  // 知识问答:简洁直接版——不注入图谱上下文,不记学习交互;检索永远基于知识库(全库,领域只影响人设)
   const [vectorChunks, keywordChunks] = await Promise.all([
     questionEmbedding ? searchChunks(questionEmbedding).catch(() => []) : Promise.resolve([]),
     searchLocalDocChunks(question).catch(() => []),
@@ -318,7 +343,8 @@ async function prepareKnowledgeTurn(question: string, userEmail: string) {
     chunks,
     references: formatReferences(chunks),
     graphContext: null,
-    prompt: `${KNOWLEDGE_QA_SIMPLE_PROMPT}\n\n【课程资料】\n${courseFacts}`,
+    domain,
+    prompt: `${QA_DOMAIN_PROMPTS[domain]}\n\n【课程资料】\n${courseFacts}`,
   };
 }
 
@@ -351,7 +377,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "流式请求失败" }, { status: 502 });
       }
 
-      const metadata = JSON.stringify({ references: turn.references, graphContext: turn.graphContext });
+      const metadata = JSON.stringify({ references: turn.references, graphContext: turn.graphContext, domain: turn.domain });
       const reader = deepseekResponse.body.getReader();
       const decoder = new TextDecoder();
       const encoder = new TextEncoder();

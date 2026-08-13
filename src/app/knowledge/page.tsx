@@ -20,6 +20,7 @@ export default function KnowledgePage() {
   const [loading, setLoading] = useState(false);
   const [highlightedRef, setHighlightedRef] = useState<number | null>(null);
   const [allReferences, setAllReferences] = useState<Reference[]>([]);
+  const [lastDomain, setLastDomain] = useState<string | undefined>(undefined);
   const [quizOpen, setQuizOpen] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -62,6 +63,7 @@ export default function KnowledgePage() {
       });
       // 流结束确保引用已挂到消息 → 消息底部引用列表显示(右侧面板同步)
       if (activeConv && lastRefs?.length) updateLastMessage(activeConv.id, fullAnswer, lastRefs);
+      setLastDomain((response as { domain?: string })?.domain || undefined);
 
       // Auto-title
       if (activeConv.title === '新对话') {
@@ -205,6 +207,13 @@ export default function KnowledgePage() {
             </div>
           ) : (
             <div className="max-w-3xl mx-auto">
+              {lastDomain && (
+                <div className="mb-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold">
+                  <span className={`rounded-full px-2.5 py-0.5 ${lastDomain === "emergency" ? "bg-red-50 text-red-600" : lastDomain === "research" ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}`}>
+                    {lastDomain === "emergency" ? "🧯 应急专家" : lastDomain === "research" ? "🔍 调研员" : "👨‍🏫 教师"}
+                  </span>
+                </div>
+              )}
               {activeConv.messages.map(msg => (
                 <ChatMessage
                   key={msg.id}
