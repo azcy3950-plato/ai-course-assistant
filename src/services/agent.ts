@@ -55,9 +55,8 @@ export async function queryKnowledgeAgentStream(
         } else {
           buffer = `${line}\n${buffer}`;
         }
-      } catch (err) {
-        // A malformed metadata header should not discard the answer stream, but log it for diagnosis
-        console.warn("[agent-stream] metadata parse failed:", line.slice(0, 80), err);
+      } catch {
+        // A malformed metadata header should not discard the answer stream.
       }
     }
     fullText += buffer;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useChat } from '@/contexts/ChatContext';
 import { useApp, getAuthToken } from '@/contexts/AppContext';
 import { useLearning } from '@/contexts/LearningContext';
@@ -52,23 +52,12 @@ export default function KnowledgePage() {
     addMessage(activeConv.id, { role: 'assistant', content: '' });
     try {
       let fullAnswer = '';
-      const topicIds: string[] = []; // 本次提问命中的图谱节点 id(写入 records.topics)
-      let lastRefs: Reference[] | undefined;
       const response = await queryKnowledgeAgentStream(content, (text) => {
         fullAnswer = text;
-        if (activeConv) updateLastMessage(activeConv.id, text, lastRefs);
+        if (activeConv) updateLastMessage(activeConv.id, text);
       }, (refs) => {
-        lastRefs = refs; // 流式完成时写回当前消息 → 消息底部引用列表显示
         setAllReferences(refs);
-      }, (ctx) => {
-        if (ctx?.focusNode?.id && !topicIds.includes(ctx.focusNode.id)) {
-          topicIds.push(ctx.focusNode.id, ...(ctx.highlightNodeIds || []).slice(0, 4).filter((id: string) => !topicIds.includes(id)));
-        }
       });
-
-      // 流结束后确保引用已挂到消息:lastRefs 优先,否则用 allReferences 兑底(引用解析失败也不丢)
-      const finalRefs = (lastRefs?.length ? lastRefs : allReferencesRef.current) as Reference[] | undefined;
-      if (activeConv && finalRefs?.length) updateLastMessage(activeConv.id, fullAnswer, finalRefs);
 
       // Auto-title
       if (activeConv.title === '新对话') {
@@ -76,12 +65,12 @@ export default function KnowledgePage() {
         updateTitle(activeConv.id, shortQ);
       }
 
-      // Save record(带图谱上下文节点 id 与引用标志,供小测按近期主题出题)
+      // Save record
       try {
         const { data: s } = await supabase.auth.getSession();
         const em = s.session?.user?.email || '';
         if (em) {
-          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: topicIds, has_references: allReferences.length > 0 }) });
+          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: false }) });
           const qr = await fetch('/api/quiz?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
           const qd = await qr.json();
           if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }
@@ -115,19 +104,6 @@ export default function KnowledgePage() {
     // Re-send
     handleSend(lastUserMsg);
   }, [activeConv, loading, handleSend, chatState.conversations]);
-
-  const allReferencesRef = useRef<Reference[]>([]);
-  useEffect(() => { allReferencesRef.current = allReferences; }, [allReferences]);
-
-  // 右侧引用面板:优先取当前会话最后一条 assistant 消息的引用(会话切换/刷新后不回退),流式中回退到 allReferences
-  const panelReferences = useMemo(() => {
-    const msgs = activeConv?.messages || [];
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      const m = msgs[i];
-      if (m.role === "assistant" && m.references?.length) return m.references as Reference[];
-    }
-    return allReferences;
-  }, [activeConv?.messages, allReferences]);
 
   const handleReferenceClick = useCallback((refId: number) => {
     setHighlightedRef(prev => prev === refId ? null : refId);
@@ -251,18 +227,6 @@ export default function KnowledgePage() {
           )}
         </div>
 
-        {/* 小屏引用来源(窄屏右侧面板隐藏后,在消息区底部展示) */}
-        {panelReferences.length > 0 && (
-          <div className="mx-4 mb-2 rounded-xl border border-[var(--color-border)] bg-white p-3 md:hidden">
-            <div className="mb-1.5 text-xs font-medium text-[var(--color-text-muted)]">📖 引用来源</div>
-            <div className="space-y-1">
-              {panelReferences.map(ref => (
-                <div key={ref.id} className="text-[11px] text-[var(--color-text-secondary)] truncate">[{ref.id}] {ref.docName}{ref.chapter ? ` · ${ref.chapter}` : ''}</div>
-              ))}
-            </div>
-          </div>
-        )}
-
         <div className="flex flex-wrap gap-2 mb-3">
             {["海绵城市的核心技术有哪些？","暴雨重现期怎么确定？","SWMM模型的主要功能是什么？","LID设施的径流削减效果如何？"].map(q => (
               <button key={q} onClick={() => handleSend(q)} disabled={loading} className="text-xs px-3 py-1.5 bg-blue-50 text-[var(--color-primary)] rounded-full hover:bg-blue-100 transition-colors disabled:opacity-50">{q}</button>
@@ -274,7 +238,7 @@ export default function KnowledgePage() {
       {/* Right: Source Panel */}
       <aside
         ref={sourcePanelRef}
-        className="hidden w-80 bg-white border-l border-[var(--color-border)] flex-col shrink-0 overflow-y-auto md:flex"
+        className="w-80 bg-white border-l border-[var(--color-border)] flex flex-col shrink-0 overflow-y-auto"
       >
         <div className="p-4 border-b border-[var(--color-border)] sticky top-0 bg-white z-10">
           <h3 className="text-sm font-bold text-[var(--color-text)]">
@@ -286,7 +250,7 @@ export default function KnowledgePage() {
         </div>
 
         <div className="flex-1 p-3 space-y-2">
-          {panelReferences.length === 0 ? (
+          {allReferences.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-3xl mb-2">📭</div>
               <p className="text-xs text-[var(--color-text-muted)]">
@@ -297,7 +261,7 @@ export default function KnowledgePage() {
               </p>
             </div>
           ) : (
-            panelReferences.map((ref: Reference) => (
+            allReferences.map(ref => (
               <div key={ref.id} id={`source-${ref.id}`}>
                 <SourceCard
                   reference={ref}
