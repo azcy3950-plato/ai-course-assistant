@@ -246,12 +246,14 @@ function formatReferences(chunks: RetrievedChunk[]) {
       parts[parts.length - 1] = encodeURIComponent(parts[parts.length - 1]);
       url = parts.join("/");
     }
+    const sim = Number(chunk.similarity || 0);
     return {
       id: index + 1,
       docName: chunk.doc_name,
       chapter: chunk.chapter || "",
       content: (chunk.content || "").slice(0, 180),
-      similarity: `${Math.round(Number(chunk.similarity || 0) * 100)}%`,
+      // 向量相似度(0-1)显示百分比;关键词命中分(计数)显示命中词数,不再出现"300%"类怪值
+      similarity: sim > 1 ? `命中${Math.round(sim)}词` : `${Math.round(sim * 100)}%`,
       fileUrl: url,
     };
   });

@@ -11,11 +11,12 @@ export interface ChunkLike {
   similarity?: number | string;
 }
 
-/** 内容指纹:doc_name + content 前 40 字(忽略空白差异) */
+/** 内容指纹:doc_name + content 前 40 字 + 内容总长(避免相同前缀的不同 chunk 被误并) */
 function fingerprint(chunk: ChunkLike): string {
   const doc = String(chunk.doc_name || "").trim();
-  const head = String(chunk.content || "").replace(/\s+/g, "").slice(0, 40);
-  return `${doc}::${head}`;
+  const content = String(chunk.content || "");
+  const head = content.replace(/\s+/g, "").slice(0, 40);
+  return `${doc}::${head}::${content.length}`;
 }
 
 const RRF_K = 60;

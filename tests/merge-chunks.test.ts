@@ -15,14 +15,14 @@ describe("mergeChunks", () => {
     expect(merged.map((c) => c.doc_name)).toEqual(["海绵城市.pptx", "给水规划.pptx", "排水规划.pptx"]);
   });
 
-  it("limit 生效且去重按 doc+内容前 40 字", () => {
+  it("limit 生效且去重按 doc+内容前 40 字+长度(同前缀不同长度不误并)", () => {
     const prefix = "相同的开头内容重复出现相同的开头内容重复出现相同的开头内容重复出现相同的开头内容重复出现"; // 40 字,达到指纹窗口
     const vector = [
       { doc_name: "a.pdf", content: prefix + "后续AAA" },
-      { doc_name: "a.pdf", content: prefix + "后续BBB" },
+      { doc_name: "a.pdf", content: prefix + "后续BBBBBBBB" }, // 长度不同 → 不误并
     ];
     const merged = mergeChunks(vector, [], 2);
-    expect(merged.length).toBe(1); // 前 40 字相同 → 视为重复
+    expect(merged.length).toBe(2);
   });
 
   it("空输入安全", () => {
