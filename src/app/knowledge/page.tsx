@@ -52,12 +52,16 @@ export default function KnowledgePage() {
     addMessage(activeConv.id, { role: 'assistant', content: '' });
     try {
       let fullAnswer = '';
+      let lastRefs: Reference[] | undefined;
       const response = await queryKnowledgeAgentStream(content, (text) => {
         fullAnswer = text;
-        if (activeConv) updateLastMessage(activeConv.id, text);
+        if (activeConv) updateLastMessage(activeConv.id, text, lastRefs);
       }, (refs) => {
+        lastRefs = refs;
         setAllReferences(refs);
       });
+      // 流结束确保引用已挂到消息 → 消息底部引用列表显示(右侧面板同步)
+      if (activeConv && lastRefs?.length) updateLastMessage(activeConv.id, fullAnswer, lastRefs);
 
       // Auto-title
       if (activeConv.title === '新对话') {
@@ -70,7 +74,7 @@ export default function KnowledgePage() {
         const { data: s } = await supabase.auth.getSession();
         const em = s.session?.user?.email || '';
         if (em) {
-          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: false }) });
+          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: (lastRefs?.length || 0) > 0 }) });
           const qr = await fetch('/api/quiz?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
           const qd = await qr.json();
           if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }
