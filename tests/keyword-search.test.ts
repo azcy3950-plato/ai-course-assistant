@@ -48,4 +48,15 @@ describe("buildKeywordSearch", () => {
     // 退化分支同样钳制
     expect(buildKeywordSearch("的 吗", 999).sql).toContain("LIMIT 20");
   });
+
+  it("中英混合术语再切词(LID设施→LID+设施)", () => {
+    const q = buildKeywordSearch("LID设施的作用");
+    expect(q.params.some((p) => p.includes("LID"))).toBe(true);
+    expect(q.params.some((p) => p.includes("设施"))).toBe(true);
+  });
+
+  it("无词兜底改为按最近入库取(ORDER BY id DESC)", () => {
+    const q = buildKeywordSearch("的 吗 呢");
+    expect(q.sql).toContain("ORDER BY id DESC");
+  });
 });

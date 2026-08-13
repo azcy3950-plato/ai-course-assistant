@@ -52,18 +52,28 @@ export function buildKeywordSearch(question: string, limit = 6): KeywordSearchQu
   const safeLimit = Math.max(1, Math.min(20, Math.floor(Number(limit) || 6)));
   const seen = new Set<string>();
   const words: string[] = [];
+  const pushWord = (w: string) => {
+    if (w.length < 2 || STOP_WORDS.has(w) || seen.has(w)) return;
+    seen.add(w);
+    words.push(w);
+  };
   for (const token of safeQuestion.split(SPLIT_RE)) {
     const t = trimStop(token.trim());
-    if (t.length < 2 || STOP_WORDS.has(t) || seen.has(t)) continue;
-    seen.add(t);
-    words.push(t);
+    if (!t) continue;
+    // 中英边界再切词:文档中「LID 设施」带空格,而提问「LID设施」不带 → 拆成 LID + 设施,提高混合术语命中
+    const parts = t.split(/(?<=[\u4e00-\u9fff])(?=[a-zA-Z0-9])|(?<=[a-zA-Z0-9])(?=[\u4e00-\u9fff])/);
+    if (parts.length > 1) {
+      for (const p of parts) pushWord(p.trim());
+    } else {
+      pushWord(t);
+    }
     if (words.length >= 8) break;
   }
 
-  // 无有效词:退化为按 doc_name 顺序取前 N 条(仍来自知识库,而非图谱数据)
+  // 无有效词:退化为按最近入库取前 N 条(仍来自知识库,而非图谱数据)
   if (words.length === 0) {
     return {
-      sql: "SELECT doc_name, chapter, content, file_url, 0 AS hit_score FROM document_chunks ORDER BY doc_name LIMIT " + safeLimit,
+      sql: "SELECT doc_name, chapter, content, file_url, 0 AS hit_score FROM document_chunks ORDER BY id DESC LIMIT " + safeLimit,
       params: [],
     };
   }
