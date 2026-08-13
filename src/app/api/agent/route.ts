@@ -362,8 +362,8 @@ export async function POST(req: NextRequest) {
           };
           try {
             await pump(deepseekResponse);
-            // 偶发空回答(模型返回空流):自动重试一次,提高"回答成功"率
-            if (totalLen < 20) {
+            // 偶发完全空回答(模型返回空流):自动重试一次;已有部分内容则不重试(避免拼接重复)
+            if (totalLen === 0) {
               const retry = await callDeepSeekStream([
                 { role: "system", content: turn.prompt },
                 { role: "user", content: question },
