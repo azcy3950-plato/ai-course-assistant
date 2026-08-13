@@ -148,12 +148,15 @@ async function searchChunks(embedding: number[]): Promise<RetrievedChunk[]> {
   }
 }
 
+// 模型可配置:DEEPSEEK_MODEL 环境变量控制(默认 flash;可设 deepseek-v4-pro 切换到 0813 版)
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+
 async function callDeepSeek(messages: Array<{ role: string; content: string }>, maxTokens = 2048) {
   if (!DEEPSEEK_KEY) throw new Error("缺少DEEPSEEK_API_KEY配置");
   const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_KEY}` },
-    body: JSON.stringify({ model: "deepseek-v4-flash", messages, max_tokens: maxTokens, temperature: 0.35 }),
+    body: JSON.stringify({ model: DEEPSEEK_MODEL, messages, max_tokens: maxTokens, temperature: 0.35 }),
     signal: AbortSignal.timeout(45000),
   });
   if (!response.ok) throw new Error(`大模型服务请求失败：${response.status}`);
@@ -166,7 +169,7 @@ async function callDeepSeekStream(messages: Array<{ role: string; content: strin
   return fetch("https://api.deepseek.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${DEEPSEEK_KEY}` },
-    body: JSON.stringify({ model: "deepseek-v4-flash", messages, max_tokens: 2048, temperature: 0.35, stream: true }),
+    body: JSON.stringify({ model: DEEPSEEK_MODEL, messages, max_tokens: 2048, temperature: 0.35, stream: true }),
     signal: AbortSignal.timeout(90000),
   });
 }
