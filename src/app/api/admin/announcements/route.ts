@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   }
-  if (typeof body !== "object" || body === null) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   const title = String(body.title || "").trim();
   if (!title) return NextResponse.json({ error: "公告标题不能为空" }, { status: 400 });
   const announcement = await createAnnouncement(title, body.content || "", user.email);
@@ -52,7 +52,7 @@ export async function DELETE(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   }
-  if (typeof body !== "object" || body === null) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   const ok = await deleteAnnouncement(Number(body.id) || 0);
   if (!ok) return NextResponse.json({ error: "公告不存在" }, { status: 404 });
   return NextResponse.json({ ok: true });
