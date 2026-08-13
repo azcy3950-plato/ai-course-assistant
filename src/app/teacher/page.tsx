@@ -16,7 +16,7 @@ interface OssFile {
   lastModified: string;
 }
 
-type TabKey = "upload" | "knowledge" | "students" | "accounts";
+type TabKey = "upload" | "knowledge" | "students" | "accounts" | "announcements";
 
 function mapType(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() || "";
@@ -211,7 +211,7 @@ export default function TeacherPage() {
       </div>
 
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
-        {[{ k: "upload" as TabKey, l: "资料上传", i: "📤" }, { k: "knowledge" as TabKey, l: "知识库管理", i: "📚" }, { k: "students" as TabKey, l: "学生统计", i: "📊" }, { k: "accounts" as TabKey, l: "教师账号", i: "🔑" }].map(t => (
+        {[{ k: "upload" as TabKey, l: "资料上传", i: "📤" }, { k: "knowledge" as TabKey, l: "知识库管理", i: "📚" }, { k: "students" as TabKey, l: "学生统计", i: "📊" }, { k: "accounts" as TabKey, l: "教师账号", i: "🔑" }, { k: "announcements" as TabKey, l: "课程公告", i: "📣" }].map(t => (
           <button key={t.k} onClick={() => setActiveTab(t.k)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === t.k ? "bg-white text-[var(--color-text)] shadow-sm" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}>
             {t.i} {t.l}
@@ -322,7 +322,7 @@ export default function TeacherPage() {
           </div>
           <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
             <div className="px-5 py-3 border-b flex items-center justify-between">
-              <h3 className="text-sm font-bold">学生详情(真实注册账号)</h3>
+              <h3 className="text-sm font-bold">学生详情</h3>
               <button onClick={loadStudents} disabled={loadingStudents} className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-40">🔄 刷新</button>
             </div>
             {loadingStudents ? <div className="text-center text-sm text-[var(--color-text-muted)] py-10">加载中…</div>
@@ -374,6 +374,58 @@ export default function TeacherPage() {
       )}
 
       {activeTab === "accounts" && <AccountManager />}
+      {activeTab === "announcements" && <AnnouncementManager />}
+    </div>
+  );
+}
+
+function AnnouncementManager() {
+  const [items, setItems] = useState<Array<{ id: number; title: string; content: string; author_email: string; created_at: string }>>([]);
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/announcements", { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+      const d = await res.json();
+      setItems(d.announcements || []);
+    } catch { /* 忽略 */ }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const publish = async () => {
+    if (!title.trim() || busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch("/api/admin/announcements", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ title, content }) });
+      const d = await res.json();
+      if (res.ok) { setMsg({ ok: true, text: "公告已发布,学生端立即可见" }); setTitle(""); setContent(""); await load(); }
+      else setMsg({ ok: false, text: d.error || "发布失败" });
+    } finally { setBusy(false); }
+  };
+  const remove = async (id: number) => {
+    if (!confirm("确定删除这条公告?")) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/announcements", { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ id }) });
+      if (res.ok) await load();
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-[var(--color-border)] p-5">
+        <h3 className="text-sm font-bold mb-3">📣 发布课程公告</h3>
+        <div className="space-y-3">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder="公告标题(必填)" className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-sm" />
+          <textarea value={content} onChange={(e) => setContent(e.target.value)} maxLength={2000} rows={4} placeholder="公告内容(选填)" className="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg text-sm" />
+          <button onClick={publish} disabled={busy || !title.trim()} className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm font-medium disabled:opacity-40">{busy ? "发布中…" : "发布公告"}</button>
+          {msg && <div className={`text-xs ${msg.ok ? "text-green-700" : "text-red-600"}`}>{msg.text}</div>}
+        </div>
+      </div>
+      <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
+        <div className="px-5 py-3 border-b"><h3 className="text-sm font-bold">已发布公告</h3></div>
+        {items.length === 0 ? <div className="text-center text-sm text-[var(--color-text-muted)] py-8">暂无公告</div> : <div className="divide-y divide-[var(--color-border)]">{items.map((a) => <div key={a.id} className="px-5 py-3 flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-sm font-medium">{a.title}</div>{a.content && <div className="text-xs text-[var(--color-text-secondary)] mt-1 whitespace-pre-wrap">{a.content}</div>}<div className="text-[11px] text-[var(--color-text-muted)] mt-1">{a.author_email} · {new Date(a.created_at).toLocaleString("zh-CN")}</div></div><button onClick={() => remove(a.id)} disabled={busy} className="shrink-0 text-xs text-red-500 hover:text-red-700 disabled:opacity-40">删除</button></div>)}</div>}
+      </div>
     </div>
   );
 }

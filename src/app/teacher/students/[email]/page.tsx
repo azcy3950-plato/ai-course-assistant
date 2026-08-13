@@ -49,7 +49,12 @@ export default function StudentDetailPage() {
               data.records?.slice(0, 20).map((r: any) => (
                 <div key={r.id} className="px-5 py-3">
                   <div className="text-sm font-medium truncate">{r.question}</div>
-                  <div className="text-[10px] text-[var(--color-text-muted)] mt-1">{new Date(r.created_at).toLocaleString("zh-CN")}</div>
+                  {r.answer_summary && <div className="text-xs text-[var(--color-text-secondary)] mt-1 line-clamp-2">{r.answer_summary}</div>}
+                  <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-muted)] mt-1">
+                    <span>{new Date(r.created_at).toLocaleString("zh-CN")}</span>
+                    {r.has_references ? <span className="text-green-600">📎 有引用</span> : <span className="text-gray-400">无引用</span>}
+                    {(r.topics || []).length > 0 && <span className="text-blue-500 truncate">🏷️ {(r.topics as string[]).map((t) => String(t).split(":")[1] || t).join("、")}</span>}
+                  </div>
                 </div>
               ))}
           </div>

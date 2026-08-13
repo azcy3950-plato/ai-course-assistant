@@ -1,9 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useApp } from "@/contexts/AppContext";
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 
 const navLinks = {
   student: [
@@ -25,6 +25,33 @@ const navLinks = {
 export default function Navbar() {
   const pathname = usePathname();
   const { state, logout } = useApp();
+  const [banner, setBanner] = useState<{ id: number; title: string; content: string } | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState<number | null>(null);
+
+  // 课程公告横幅:登录后拉取最新公告(关闭按钮按 id 记录,不重复弹)
+  useEffect(() => {
+    if (!state.role) return;
+    let cancelled = false;
+    fetch("/api/announcements", { headers: { Authorization: `Bearer ${getAuthToken()}` } })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        const list = d.announcements || [];
+        if (!list.length) return;
+        let dismissed = 0;
+        try { dismissed = Number(localStorage.getItem("announcement-dismissed")) || 0; } catch { /* 忽略 */ }
+        const latest = list.find((a: { id: number }) => a.id > dismissed) || null;
+        if (latest) setBanner({ id: latest.id, title: latest.title, content: latest.content });
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [state.role]);
+  const dismissBanner = () => {
+    if (!banner) return;
+    try { localStorage.setItem("announcement-dismissed", String(banner.id)); } catch { /* 忽略 */ }
+    setBanner(null);
+    setBannerDismissed(banner.id);
+  };
 
   // ══════════════ UNAUTHENTICATED ══════════════
   if (!state.role) {
@@ -60,7 +87,19 @@ export default function Navbar() {
   const links = navLinks[state.role];
 
   return (
-    <nav className="bg-white border-b border-[var(--color-border)] shadow-sm sticky top-0 z-50">
+    <div className="sticky top-0 z-50">
+    {banner && banner.id !== bannerDismissed && (
+      <div className="bg-amber-50 border-b border-amber-200">
+        <div className="max-w-[1600px] mx-auto px-4 py-2 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className="text-xs font-bold text-amber-700">📣 公告: {banner.title}</span>
+            {banner.content && <p className="text-xs text-amber-800 mt-0.5 whitespace-pre-wrap">{banner.content}</p>}
+          </div>
+          <button onClick={dismissBanner} aria-label="关闭公告" className="shrink-0 text-xs text-amber-500 hover:text-amber-700">✕</button>
+        </div>
+      </div>
+    )}
+    <nav className="bg-white border-b border-[var(--color-border)] shadow-sm">
       <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 shrink-0">
@@ -106,5 +145,6 @@ export default function Navbar() {
         </div>
       </div>
     </nav>
+    </div>
   );
 }
