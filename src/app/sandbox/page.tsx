@@ -1347,8 +1347,9 @@ export default function SandboxPage() {
           <button key={id} onClick={() => toggleLayer(id)} className={"px-1.5 py-0.5 rounded text-[10px] " + (layers[id] ? "bg-gray-600 text-white" : "bg-gray-800 text-gray-500")}>{l}</button>
         ))}
         <div className="h-4 w-px bg-gray-600" />
-        <span className="text-gray-500 text-[10px]" title="竖向拉伸:按倍数放大/缩小竖轴,便于观察地下管网埋深与落差">垂直拉伸</span>
-        {[1,3,5,8].map(v => (<button key={v} onClick={() => { setVertEx(v); rebuild(v); }} title={`竖向拉伸 ${v} 倍`} className={"px-1 py-0.5 rounded text-[10px] " + (vertEx===v ? "bg-blue-700" : "bg-gray-800 text-gray-400")}>{v}×</button>))}
+        <span className="text-gray-500 text-[10px]">↕ 竖向缩放</span>
+        {[1,3,5,8].map(v => (<button key={v} onClick={() => { setVertEx(v); rebuild(v); }} title={`把地下管网竖向放大 ${v} 倍,便于看清管道埋深与高差(仅视觉,不影响仿真)`} className={"px-1 py-0.5 rounded text-[10px] " + (vertEx===v ? "bg-blue-700" : "bg-gray-800 text-gray-400")}>{v}×</button>))}
+        <span className="text-gray-600 text-[9px] hidden lg:inline" title="竖向缩放:放大/缩小竖轴,观察地下管网埋深与落差">看埋深</span>
         <span className="ml-auto text-[9px] text-gray-500">{stats.nodes}节点 · {stats.pipes}管 · {stats.scs}汇水区</span>
       </div>
 
@@ -1759,17 +1760,39 @@ export default function SandboxPage() {
             </svg>
             <span className="text-[9px] text-gray-400 min-w-[3.5rem] text-right">{RAIN_SCENARIOS.find(s => s.pct === dynI)?.label || `${dynI}%`}</span>
           </div>
+          {/* 底部结果区:选中管道横截面(随时间轴变化) + 关键指标 */}
+          <div className="flex items-center gap-3 mb-1.5 rounded bg-gray-900/60 border border-gray-800 px-2 py-1.5">
+            <span className="text-[9px] text-gray-400 shrink-0">🛢 管道横截面</span>
+            {(() => {
+              const pid = (selected?.type === "pipe" ? selected.data.id : null) || topPipes[0]?.id;
+              const ld = (dynRes.links as any)?.[pid];
+              const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === pid);
+              if (!ld || !pp) return <div className="text-[10px] text-gray-500">推演后点击任意管道查看横截面</div>;
+              const frac = (ld.depthFraction?.[dynStep] ?? 0) * 100;
+              return (
+                <>
+                  <div className="w-24 h-14 shrink-0"><PipeCrossSection compact diam={pp.diameter} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={ld.flowDir?.[dynStep] ?? 0} landcover={landcover} animate={false} size="md" /></div>
+                  <div className="text-[9px] text-gray-400 truncate max-w-[140px]">{pid} · {frac.toFixed(0)}% 满管 {frac >= 100 ? "⚠️" : ""}</div>
+                </>
+              );
+            })()}
+            <div className="ml-auto grid grid-cols-3 gap-2 shrink-0 text-center">
+              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1"><div className="text-[8px] text-gray-500">最大水深</div><div className="text-[11px] font-bold text-cyan-300">{(dynRes.summary?.maxDepth?.value ?? 0).toFixed(2)} m</div></div>
+              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1"><div className="text-[8px] text-gray-500">最大流量</div><div className="text-[11px] font-bold text-sky-300">{(dynRes.summary?.maxFlow?.value ?? 0).toFixed(2)} m³/s</div></div>
+              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1"><div className="text-[8px] text-gray-500">降雨时长</div><div className="text-[11px] font-bold text-blue-300">120 min</div></div>
+            </div>
+          </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => { setDynStep(s=>Math.max(0,s-1)); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} className="text-[10px] bg-gray-800 hover:bg-gray-700 px-1.5 py-1 rounded text-gray-400">◀</button>
+            <button title="上一步(回看前一帧)" onClick={() => { setDynStep(s=>Math.max(0,s-1)); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} className="text-[10px] bg-gray-800 hover:bg-gray-700 px-1.5 py-1 rounded text-gray-400">⏮ 上一步</button>
             <span className="text-[10px] text-gray-400 font-mono w-12 text-right">{currentTimeLabel}</span>
             <input type="range" min={0} max={timeStepCount-1} value={dynStep} onChange={e => { setDynStep(+e.target.value); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} className="flex-1 h-2 appearance-none bg-gray-800 rounded-full cursor-pointer [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-cyan-600 [&::-webkit-slider-thumb]:rounded-full" />
             <span className="text-gray-400 font-mono text-[10px] min-w-[4rem] text-right">{dynStep+1}/{timeStepCount}</span>
-            <button onClick={() => { setDynStep(s=>Math.min(timeStepCount-1,s+1)); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} className="text-[10px] bg-gray-800 hover:bg-gray-700 px-1.5 py-1 rounded text-gray-400">▶</button>
+            <button title="下一步(前进一帧)" onClick={() => { setDynStep(s=>Math.min(timeStepCount-1,s+1)); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} className="text-[10px] bg-gray-800 hover:bg-gray-700 px-1.5 py-1 rounded text-gray-400">⏭ 下一步</button>
             <select value={dynSpd} onChange={e=>setDynSpd(+e.target.value)} className="bg-gray-800 rounded px-1.5 py-1 text-[10px] border border-gray-700 text-gray-400"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={5}>5×</option></select>
             {dynPhase==="running"
-              ? <button onClick={()=>{setDynPlay(false);setDynPhase("paused");}} className="bg-yellow-800 hover:bg-yellow-700 px-2 py-1 rounded text-xs font-bold">⏸</button>
-              : <button onClick={()=>{if(dynStep>=timeStepCount-1)setDynStep(0);setDynPlay(true);setDynPhase("running");}} className="bg-green-800 hover:bg-green-700 px-2 py-1 rounded text-xs font-bold">▶</button>}
-            <span className="hidden text-[9px] text-gray-600 sm:inline">空格 播放/暂停 · ←→ 前后帧 · 拖动时间轴回看</span>
+              ? <button title="暂停" onClick={()=>{setDynPlay(false);setDynPhase("paused");}} className="bg-yellow-800 hover:bg-yellow-700 px-2 py-1 rounded text-xs font-bold">⏸ 暂停</button>
+              : <button title="从当前帧继续播放" onClick={()=>{if(dynStep>=timeStepCount-1)setDynStep(0);setDynPlay(true);setDynPhase("running");}} className="bg-green-800 hover:bg-green-700 px-2 py-1 rounded text-xs font-bold">▶ 播放</button>}
+            <span className="hidden text-[9px] text-gray-600 sm:inline">⏮⏭ 单步 · 空格 播放/暂停 · 拖动时间轴回看</span>
           </div>
         </div>
       )}
