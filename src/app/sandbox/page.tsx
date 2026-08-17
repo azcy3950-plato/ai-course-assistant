@@ -1354,7 +1354,7 @@ export default function SandboxPage() {
       </div>
 
       {/* ── Three.js canvas + 3D 悬浮迷你横截面 + 放大模态 ── */}
-      <div className="relative flex-1">
+      <div className="relative flex-1 ml-[17.5rem]">
         <div ref={cr} className="absolute inset-0" />
         {floatPipeId && (() => {
           const ld = (dynRes?.links as any)?.[floatPipeId];
@@ -1508,9 +1508,9 @@ export default function SandboxPage() {
         </div>
       )}
 
-      {/* ── DYNAMIC panel ── */}
+      {/* ── DYNAMIC 场景配置 — 左侧独立区块(清单 5 区 IA) ── */}
       {mode === "dynamic" && (
-        <div className="absolute right-2 top-14 bg-black/90 backdrop-blur rounded-lg border border-gray-700 p-2.5 text-white text-[11px] z-10 w-52 max-h-[80vh] overflow-y-auto">
+        <div className="absolute left-0 top-[38px] bottom-[148px] w-[17.5rem] bg-black/90 backdrop-blur rounded-r-lg border-y border-r border-gray-700 p-2.5 text-white text-[11px] z-10 overflow-y-auto">
           <div className="font-bold text-gray-300 mb-2 text-xs">
             {{ config: "⚙️ 场景配置", loading: "⏳ 加载中…", ready: "📊 就绪", running: "🔵 运行中", paused: "⏸ 暂停", done: "✅ 完成" }[dynPhase]}
             {selected && (<button onClick={() => { if (selRef.current) resetHL(selRef.current); selRef.current = null; setSelected(null); }} className="float-right text-gray-500 text-[10px]">✕</button>)}
@@ -1554,25 +1554,6 @@ export default function SandboxPage() {
               {dynPhase === "config" && <button onClick={() => loadSim()} className="w-full py-2 bg-green-600 rounded font-bold text-sm text-white ring-2 ring-green-400/70 shadow-lg shadow-green-900/50 hover:bg-green-500 transition-colors animate-pulse">▶ 开始推演</button>}
               {dynPhase === "done" && <button onClick={() => { setDynStep(0); setDynPlay(true); setDynPhase("running"); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">🔄 重新推演</button>}
               {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-2 bg-green-600 rounded font-bold text-sm text-white ring-2 ring-green-400/70 shadow-lg shadow-green-900/50 hover:bg-green-500 transition-colors animate-pulse">▶ 开始推演</button>}
-              {dynRes && (<div className="border-t border-gray-700 pt-1.5 mt-1 space-y-0.5 text-[10px]">
-                {simId && <div className="text-gray-600 truncate" title={simId}>ID: {simId.slice(0,8)}…</div>}
-                <div className="flex justify-between"><span className="text-gray-500">时间步</span><span className="text-gray-300">{dynRes.timeStepCount}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">最大水深</span><span className="text-gray-300">{dynRes.summary?.maxDepth?.value?.toFixed(2)} m</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">最大流量</span><span className="text-gray-300">{dynRes.summary?.maxFlow?.value?.toFixed(2)} m³/s</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">降雨时长</span><span className="text-gray-300">120 min({RAIN_SCENARIOS.find(s => s.pct === dynI)?.label || `${dynI}%`})</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">活跃</span><span className="text-gray-300">{dynRes.summary?.activeNodes}n / {dynRes.summary?.activeLinks}l</span></div>
-                {riskStats && (riskStats.fullPipes.length > 0 || riskStats.overflowNodes.length > 0) && (
-                  <div className="mt-1 rounded bg-red-950/50 border border-red-900/60 p-1.5 space-y-0.5">
-                    <div className="text-[10px] font-bold text-red-400">⚠️ 当前风险</div>
-                    {riskStats.fullPipes.length > 0 && <div className="flex justify-between"><span className="text-red-300/80">满管管道</span><span className="text-red-300 font-bold">{riskStats.fullPipes.length} 条</span></div>}
-                    {riskStats.overflowNodes.length > 0 && <div className="flex justify-between"><span className="text-red-300/80">溢流节点</span><span className="text-red-300 font-bold">{riskStats.overflowNodes.length} 个</span></div>}
-                    <div className="text-[9px] leading-3 text-red-400/70">满管: {riskStats.fullPipes.slice(0, 5).join(", ")}{riskStats.fullPipes.length > 5 ? ` 等${riskStats.fullPipes.length}条` : ""} · 溢流: {riskStats.overflowNodes.slice(0, 5).join(", ")}{riskStats.overflowNodes.length > 5 ? ` 等${riskStats.overflowNodes.length}个` : ""}</div>
-                  </div>
-                )}
-                {Object.keys(valves).length > 0 && (
-                  <div className="flex justify-between"><span className="text-gray-500">动手改造</span><span className="text-gray-300">🚰 阀门 {Object.keys(valves).length}</span></div>
-                )}
-              </div>)}
             </div>
           )}
 
@@ -1661,7 +1642,7 @@ export default function SandboxPage() {
                 <div className="flex justify-between"><span className="text-gray-500">当前流速</span><span className="text-gray-200">{(curLinkData.velocity?.[dynStep]??0).toFixed(3)} m/s</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">水深</span><span className="text-gray-200">{(curLinkData.depth?.[dynStep]??0).toFixed(3)} m</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">充满度</span><span className="text-gray-200">{((curLinkData.depthFraction?.[dynStep]??0)*100).toFixed(0)}%</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">capacity</span><span className="text-gray-200">{(curLinkData.capacity?.[dynStep]??0).toFixed(3)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">容量利用率</span><span className="text-gray-200">{(curLinkData.capacity?.[dynStep]??0).toFixed(3)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">流向</span><span className="text-gray-200">{(curLinkData.flow?.[dynStep]??0)>=0 ? "→ "+selected.data.to : "← "+selected.data.from}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">状态</span><span className="text-gray-200">{(curLinkData.capacity?.[dynStep]??0)>0.98?"满管":(curLinkData.depthFraction?.[dynStep]??0)>0.5?"高负荷":"正常"}</span></div>
                 {/* 管网横截面水量展示(方案1) */}
@@ -1760,6 +1741,14 @@ export default function SandboxPage() {
             </svg>
             <span className="text-[9px] text-gray-400 min-w-[3.5rem] text-right">{RAIN_SCENARIOS.find(s => s.pct === dynI)?.label || `${dynI}%`}</span>
           </div>
+          {/* 风险统计(满管/溢流)——来自真实结果 */}
+          {riskStats && (riskStats.fullPipes.length > 0 || riskStats.overflowNodes.length > 0) && (
+            <div className="flex items-center gap-2 mb-1.5 rounded bg-red-950/40 border border-red-900/50 px-2 py-1 text-[9px]">
+              <span className="text-red-400 font-bold">⚠️ 风险</span>
+              {riskStats.fullPipes.length > 0 && <span className="text-red-300">满管管道 {riskStats.fullPipes.length} 条·{riskStats.fullPipes.slice(0, 4).join(", ")}{riskStats.fullPipes.length > 4 ? "…" : ""}</span>}
+              {riskStats.overflowNodes.length > 0 && <span className="text-red-300">溢流节点 {riskStats.overflowNodes.length} 个·{riskStats.overflowNodes.slice(0, 4).join(", ")}{riskStats.overflowNodes.length > 4 ? "…" : ""}</span>}
+            </div>
+          )}
           {/* 底部结果区:选中管道横截面(随时间轴变化) + 关键指标 */}
           <div className="flex items-center gap-3 mb-1.5 rounded bg-gray-900/60 border border-gray-800 px-2 py-1.5">
             <span className="text-[9px] text-gray-400 shrink-0">🛢 管道横截面</span>
@@ -1776,10 +1765,27 @@ export default function SandboxPage() {
                 </>
               );
             })()}
-            <div className="ml-auto grid grid-cols-3 gap-2 shrink-0 text-center">
-              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1"><div className="text-[8px] text-gray-500">最大水深</div><div className="text-[11px] font-bold text-cyan-300">{(dynRes.summary?.maxDepth?.value ?? 0).toFixed(2)} m</div></div>
-              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1"><div className="text-[8px] text-gray-500">最大流量</div><div className="text-[11px] font-bold text-sky-300">{(dynRes.summary?.maxFlow?.value ?? 0).toFixed(2)} m³/s</div></div>
-              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1"><div className="text-[8px] text-gray-500">降雨时长</div><div className="text-[11px] font-bold text-blue-300">120 min</div></div>
+            <div className="ml-auto grid grid-cols-4 gap-2 shrink-0 text-center">
+              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1" title={`最大水深出现在 ${dynRes.summary?.maxDepth?.nodeId ?? "-"} · ${dynRes.summary?.maxDepth?.timestamp ?? "-"}h`}>
+                <div className="text-[8px] text-gray-500">最大水深</div>
+                <div className="text-[11px] font-bold text-cyan-300">{(dynRes.summary?.maxDepth?.value ?? 0).toFixed(2)} m</div>
+                {dynRes.summary?.maxDepth?.nodeId && <div className="text-[7px] text-cyan-500/80 leading-3">{dynRes.summary.maxDepth.nodeId} · {fmtTime(dynRes.summary.maxDepth.timestamp ?? 0)}</div>}
+              </div>
+              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1" title={`最大流量出现在 ${dynRes.summary?.maxFlow?.linkId ?? "-"} · ${dynRes.summary?.maxFlow?.direction ?? ""} · ${dynRes.summary?.maxFlow?.timestamp ?? "-"}h`}>
+                <div className="text-[8px] text-gray-500">最大流量</div>
+                <div className="text-[11px] font-bold text-sky-300">{(dynRes.summary?.maxFlow?.value ?? 0).toFixed(2)} m³/s</div>
+                {dynRes.summary?.maxFlow?.linkId && <div className="text-[7px] text-sky-500/80 leading-3">{dynRes.summary.maxFlow.linkId}{dynRes.summary.maxFlow.direction ? ` · ${dynRes.summary.maxFlow.direction}` : ""}</div>}
+              </div>
+              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1">
+                <div className="text-[8px] text-gray-500">降雨时长</div>
+                <div className="text-[11px] font-bold text-blue-300">{fmtTime(((dynRes.timestamps?.[dynRes.timestamps.length - 1]) as number) ?? 2)}</div>
+                <div className="text-[7px] text-blue-500/80 leading-3">总时长</div>
+              </div>
+              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1">
+                <div className="text-[8px] text-gray-500">峰值降雨</div>
+                <div className="text-[11px] font-bold text-cyan-300">{rainCurvePeak(dynI).toFixed(1)} mm/h</div>
+                <div className="text-[7px] text-cyan-500/80 leading-3">{RAIN_SCENARIOS.find(s => s.pct === dynI)?.label || ""}</div>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
