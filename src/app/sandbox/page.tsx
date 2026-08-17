@@ -16,13 +16,13 @@ echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, Canvas
 // VISUAL CONSTANTS — professional muted palette, no neon
 // ═══════════════════════════════════════════════════════════
 function scColor(imperv: number): string {
-  if (imperv > 80) return "#b08070";
-  if (imperv > 40) return "#a09580";
-  return "#809870";
+  if (imperv > 80) return "#c09088";
+  if (imperv > 40) return "#b0a898";
+  return "#8fa890";
 }
-const PIPE_COLOR      = "#5f7a8a";
+const PIPE_COLOR      = "#6f8aa0";
 const PIPE_EMISSIVE   = "#0a1118";
-const NODE_COLOR      = "#5a7282";
+const NODE_COLOR      = "#6a829c";
 const OUTFALL_COLOR   = "#b87050";
 const OUTFALL_EMI     = "#180800";
 const GROUND_COLOR    = "#4a4a4a";
@@ -405,15 +405,17 @@ export default function SandboxPage() {
   const [renderMode, setRenderMode] = useState<"default" | "depth" | "flow" | "risk">("default");
   const [openBar, setOpenBar] = useState<"render" | "view" | "layer" | null>(null);
   const [curView, setCurView] = useState<"panorama" | "topdown" | "underground">("panorama");
+  // 底部结果 详情展开(横断面/时序),默认收起保持底栏紧凑
+  const [resultOpen, setResultOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">(() => { try { return localStorage.getItem("sandbox-theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
   // 场景主题联动:深色 ↔ 浅色(背景/雾/网格)
   const applyTheme = useCallback(() => {
     const sc = sceneRef.current; if (!sc) return;
-    const isLight = themeRef.current === "light";
-    (sc.background as THREE.Color)?.set(isLight ? "#e8eef6" : "#1c1c24");
-    (sc.fog as THREE.Fog)?.color?.set(isLight ? "#e8eef6" : "#1c1c24");
+    // 3D 背景恒为深冷灰蓝(与控制台深色统一,不再因浅色主题出现"白画布"割裂)
+    (sc.background as THREE.Color)?.set("#1a222c");
+    (sc.fog as THREE.Fog)?.color?.set("#1a222c");
     const gm = gridRef.current?.material as THREE.LineBasicMaterial | undefined;
-    if (gm) gm.color.set(isLight ? "#9db4cc" : "#5a5a5a");
+    if (gm) gm.color.set("#5f6b78");
   }, []);
   const themeRef = useRef(theme);
   themeRef.current = theme;
@@ -438,8 +440,8 @@ export default function SandboxPage() {
       const w = cr.current.clientWidth, h = cr.current.clientHeight;
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color("#1c1c24");
-      scene.fog = new THREE.Fog("#1c1c24", 300, 1200);
+      scene.background = new THREE.Color("#1a222c");
+      scene.fog = new THREE.Fog("#1a222c", 300, 1200);
       sceneRef.current = scene;
 
       const camera = new THREE.PerspectiveCamera(48, w / h, 0.3, 2500);
@@ -471,7 +473,7 @@ export default function SandboxPage() {
       const cx = (mnX + mxX) / 2, cz = (mnZ + mxZ) / 2;
       const span = Math.max(mxX - mnX, mxZ - mnZ, 50);
       spanRef.current = span;
-      camState.current = { theta: 0.45, phi: 0.85, dist: span * 1.35, tx: cx, tz: cz };
+      camState.current = { theta: 0.45, phi: 0.85, dist: span * 0.95, tx: cx, tz: cz };
 
       const updateCam = () => {
         const cs = camState.current;
@@ -804,13 +806,13 @@ export default function SandboxPage() {
     const NODE_R    = Math.max(0.2, span * 0.001);
     const OUTFALL_R = NODE_R * 1.5;
     const PIPE_MIN_R = Math.max(0.08, span * 0.0006);
-    const PIPE_MAX_R = span * 0.0032;
+    const PIPE_MAX_R = span * 0.0042;
 
     // ── Ground (dark gray, just slightly larger than model) ──
     const gndSpan = span * 1.12;
     const groundGeom = new THREE.PlaneGeometry(gndSpan, gndSpan);
     groundGeom.rotateX(-Math.PI / 2);
-    const groundMesh = new THREE.Mesh(groundGeom, new THREE.MeshStandardMaterial({ color: GROUND_COLOR, roughness: 0.9, transparent: true, opacity: 0.35, depthWrite: true }));
+    const groundMesh = new THREE.Mesh(groundGeom, new THREE.MeshStandardMaterial({ color: "#5d6875", roughness: 0.9, transparent: true, opacity: 0.55, depthWrite: true }));
     groundMesh.position.y = gndY; groundMesh.receiveShadow = true; groundMesh.renderOrder = 0;
     groundMesh.userData = { type: "ground" };
     grp.ground.add(groundMesh);
@@ -832,7 +834,7 @@ export default function SandboxPage() {
 
       // Thin fill
       const geom = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: 0.015, bevelEnabled: false });
-      const fill = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color, roughness: 0.75, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
+      const fill = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color, roughness: 0.75, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }));
       fill.rotation.x = -Math.PI / 2; fill.position.y = gndY + 0.04; fill.renderOrder = 1;
       fill.userData = { type: "subcatchment", data: { id: sc.id, area: sc.area, imperv: sc.imperv, outlet: sc.outlet, width: sc.width, slope: sc.slope, vertices: sc.pts.length } };
       grp.sc.add(fill);
@@ -842,7 +844,7 @@ export default function SandboxPage() {
         const edgePts = sc.pts.map(([x, z]) => new THREE.Vector3(x, gndY + 0.05, z));
         edgePts.push(edgePts[0].clone());
         const edgeGeom = new THREE.BufferGeometry().setFromPoints(edgePts);
-        const edgeLine = new THREE.Line(edgeGeom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.28, depthTest: true }));
+        const edgeLine = new THREE.Line(edgeGeom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.42, depthTest: true }));
         edgeLine.renderOrder = 2; grp.sc.add(edgeLine);
       }
     });
@@ -879,7 +881,7 @@ export default function SandboxPage() {
       if (!fn || !tn) return;
 
       const fromY = elevY(fn.invert + 0.05), toY = elevY(tn.invert + 0.05);
-      const visualR = Math.max(PIPE_MIN_R, Math.min(PIPE_MAX_R, p.diam * 0.4));
+      const visualR = Math.max(PIPE_MIN_R, Math.min(PIPE_MAX_R, p.diam * 0.55));
       const path: THREE.Vector3[] = [new THREE.Vector3(fn.x, fromY, fn.z)];
       p.verts.forEach(([vx, vz]) => path.push(new THREE.Vector3(vx, fromY, vz)));
       path.push(new THREE.Vector3(tn.x, toY, tn.z));
@@ -916,8 +918,8 @@ export default function SandboxPage() {
     data.nodes.forEach((n: Node3D) => { if(n.x<mnX)mnX=n.x; if(n.x>mxX)mxX=n.x; if(n.z<mnZ)mnZ=n.z; if(n.z>mxZ)mxZ=n.z; });
     const cx = (mnX+mxX)/2, cz = (mnZ+mxZ)/2, span = Math.max(mxX-mnX, mxZ-mnZ, 50);
     const presets: Record<string, any> = {
-      panorama:    { theta: 0.45, phi: 0.85, dist: span * 1.35, tx: cx, tz: cz },
-      topdown:     { theta: 0,    phi: 0.08, dist: span * 1.05, tx: cx, tz: cz },
+      panorama:    { theta: 0.45, phi: 0.85, dist: span * 0.95, tx: cx, tz: cz },
+      topdown:     { theta: 0,    phi: 0.08, dist: span * 0.85, tx: cx, tz: cz },
       underground: { theta: 0.35, phi: 1.1,  dist: span * 0.55, tx: cx, tz: cz },
     };
     const p = presets[view] || presets.panorama;
@@ -1200,6 +1202,30 @@ export default function SandboxPage() {
     setValveDraft({});
   };
 
+  // 下垫面 3D 实时预览:切换方案(不跑 SWMM)时按真实 %Imperv 换算调整各汇水区覆盖色
+  // 与后端 modifyRainfall 相同变换:green=imperv×系数、gray=向100%收敛(绿灰↔灰暖灰),仅视觉,不伪造设施
+  const applyLandcoverPreview = useCallback(() => {
+    const grp = groupsRef.current["sc"];
+    if (!grp) return;
+    const lc = landcover, gl = greenLevel;
+    const toColor = (orig: number) => {
+      let eff = orig;
+      if (lc === "green") eff = orig * (1 - 0.5 * gl);        // 海绵:不透水按绿色强度线性降
+      else if (lc === "gray") eff = orig + (100 - orig) * 0.6; // 高开发:向 100% 收敛
+      if (eff > 80) return "#c09088"; // 高不透水:暖灰
+      if (eff > 40) return "#b0a898"; // 中
+      return "#8fa890";               // 低不透水:绿灰
+    };
+    grp.children.forEach(c => {
+      const ud = c.userData as any;
+      const mat = (c as THREE.Mesh).material as THREE.Material | undefined;
+      if (!ud || !mat) return;
+      const imperv = ud.data?.imperv;
+      if (typeof imperv === "number") (mat as THREE.MeshStandardMaterial | THREE.LineBasicMaterial).color.set(toColor(imperv));
+    });
+  }, [landcover, greenLevel]);
+  useEffect(() => { applyLandcoverPreview(); }, [applyLandcoverPreview]);
+
   // 卸载清理防抖/提示定时器(防卸载后 setState/fetch)
   useEffect(() => () => {
     if (rainTimer.current) clearTimeout(rainTimer.current);
@@ -1358,13 +1384,13 @@ export default function SandboxPage() {
       <div className="absolute top-0 left-0 right-0 z-20 bg-black/90 backdrop-blur border-b border-gray-800 px-2 py-1 flex items-center gap-2 text-[11px]">
         <span className="font-bold text-gray-200 text-xs shrink-0">🌊 紫荆雅园</span>
         <div className="flex bg-gray-800 rounded-lg p-0.5 shrink-0">
-          <button onClick={() => { setMode("static"); clearWaterMeshes(); }} className={"px-3 py-1 rounded-md font-bold text-xs " + (mode === "static" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white")}>📐 静态沙盘</button>
-          <button onClick={() => setMode("dynamic")} className={"px-3 py-1 rounded-md font-bold text-xs " + (mode === "dynamic" ? "bg-cyan-600 text-white" : "text-gray-400 hover:text-white")}>▶ 动态推演</button>
+          <button onClick={() => { setMode("static"); clearWaterMeshes(); }} className={"px-3 py-1.5 rounded-md font-semibold text-xs " + (mode === "static" ? "bg-cyan-700 text-white" : "text-gray-400 hover:text-white")}>静态沙盘</button>
+          <button onClick={() => setMode("dynamic")} className={"px-3 py-1.5 rounded-md font-semibold text-xs " + (mode === "dynamic" ? "bg-cyan-700 text-white" : "text-gray-400 hover:text-white")}>动态推演</button>
         </div>
         <div className="h-4 w-px bg-gray-600" />
         {/* 渲染 Popover */}
         <div className="relative">
-          <button onClick={() => setOpenBar(openBar === "render" ? null : "render")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "render" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>渲染 · {{ default: "默认", depth: "水深", flow: "流量", risk: "风险" }[renderMode]} ▾</button>
+          <button onClick={() => setOpenBar(openBar === "render" ? null : "render")} className={"px-2.5 py-1.5 min-h-[30px] rounded-md font-semibold text-xs " + (openBar === "render" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>渲染 · {{ default: "默认", depth: "水深", flow: "流量", risk: "风险" }[renderMode]} ▾</button>
           {openBar === "render" && (
             <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-32 z-30">
               {([["default","◉ 默认"],["depth","◉ 水深"],["flow","◉ 流量"],["risk","◉ 风险"]] as const).map(([v, l]) => (
@@ -1375,7 +1401,7 @@ export default function SandboxPage() {
         </div>
         {/* 视角 Popover */}
         <div className="relative">
-          <button onClick={() => setOpenBar(openBar === "view" ? null : "view")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "view" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>视角 · {{ panorama: "鸟瞰", topdown: "俯视", underground: "地下" }[curView]} ▾</button>
+          <button onClick={() => setOpenBar(openBar === "view" ? null : "view")} className={"px-2.5 py-1.5 min-h-[30px] rounded-md font-semibold text-xs " + (openBar === "view" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>视角 · {{ panorama: "鸟瞰", topdown: "俯视", underground: "地下" }[curView]} ▾</button>
           {openBar === "view" && (
             <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-28 z-30">
               {([["panorama","鸟瞰"],["topdown","俯视"],["orbit","环绕"],["reset","复位"]] as const).map(([v, l]) => (
@@ -1386,10 +1412,10 @@ export default function SandboxPage() {
         </div>
         {/* 组成 Popover */}
         <div className="relative">
-          <button onClick={() => setOpenBar(openBar === "layer" ? null : "layer")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "layer" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>组成 ▾</button>
+          <button onClick={() => setOpenBar(openBar === "layer" ? null : "layer")} className={"px-2.5 py-1.5 min-h-[30px] rounded-md font-semibold text-xs " + (openBar === "layer" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>组成 ▾</button>
           {openBar === "layer" && (
             <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-32 z-30">
-              {[{ id: "ground", l: "地表" },{ id: "sc", l: "汇水区" },{ id: "pipes", l: "管道" },{ id: "nodes", l: "节点" }].map(({ id, l }) => (
+              {[{ id: "sc", l: "汇水区" },{ id: "pipes", l: "管道" },{ id: "nodes", l: "节点" }].map(({ id, l }) => (
                 <button key={id} onClick={() => toggleLayer(id)} className={"block w-full text-left px-2 py-1.5 rounded text-[11px] " + (layers[id] ? "text-gray-100 font-bold" : "text-gray-500")}>{layers[id] ? "☑ " : "☐ "}{l}</button>
               ))}
             </div>
@@ -1601,13 +1627,15 @@ export default function SandboxPage() {
               <div className={guide === 2 ? "rounded-lg ring-2 ring-yellow-400/80 p-1" : ""}>
                 <div className="mb-1 text-[10px] text-gray-500">🏞 下垫面方案</div>
                 <div className="grid grid-cols-1 gap-1">
-                  {([["default", "⚪ 现状方案", "不透水率按模型原始值"], ["green", "🟢 海绵提升方案", "降低不透水率 · 透水性增强"], ["gray", "🟠 高开发方案", "提高不透水率 · 地表更硬化"]] as const).map(([val, label, hint]) => (
-                    <button key={val} onClick={() => { if (val === landcover) return; clearTimeout(greenTimerRef.current ?? undefined); greenTimerRef.current = null; setLandcover(val); setRainPreview(null); }} className={`flex items-center justify-between px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-green-700/80 text-white ring-1 ring-green-400" : val === "gray" ? "bg-orange-700/80 text-white ring-1 ring-orange-400" : "bg-gray-600 text-white ring-1 ring-gray-400") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>
-                      <span>{label}</span>
-                      <span className="text-[8px] font-normal opacity-80">{hint}</span>
+                  {([["default", "现状方案", "不透水率按模型原始值"], ["green", "海绵提升方案", "降低不透水率,提升汇水区整体透水能力"], ["gray", "高开发方案", "提高不透水率,地表更硬化"]] as const).map(([val, label, reveal]) => (
+                    <button key={val} onClick={() => { if (val === landcover) return; clearTimeout(greenTimerRef.current ?? undefined); greenTimerRef.current = null; setLandcover(val); setRainPreview(null); }} className={`flex items-center justify-between px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-emerald-700/70 text-white ring-1 ring-emerald-400/60" : val === "gray" ? "bg-stone-700/70 text-white ring-1 ring-stone-400/60" : "bg-gray-600/70 text-white ring-1 ring-gray-400/60") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>
+                      <span>{landcover === val ? "● " : "○ "}{label}</span>
                     </button>
                   ))}
                 </div>
+                {(() => { const v = landcover; return (
+                  <div className="mt-1 text-[9px] leading-3 text-gray-400">{v === "default" ? "不透水率按模型原始值,为对比基准。" : v === "green" ? "降低不透水率,提升汇水区整体透水能力,减缓径流、增强下渗与调蓄。" : "提高不透水率,地表更硬化,径流更快汇集。"}</div>
+                ); })()}
                 <div className="mt-0.5 text-[8px] leading-3 text-gray-600">方案通过调整各汇水区不透水率(%Imperv)与不透水糙率(N-Imperv)真实改变地表径流 · 空间细节为示意图,非精确设施位置</div>
                 {landcover === "green" && (
                   <div className="mt-1 rounded bg-green-950/40 border border-green-900/60 p-1.5">
@@ -1617,9 +1645,9 @@ export default function SandboxPage() {
                   </div>
                 )}
               </div>
-              {dynPhase === "config" && <button onClick={() => loadSim()} className="w-full py-2 bg-green-600 rounded font-bold text-sm text-white ring-2 ring-green-400/70 shadow-lg shadow-green-900/50 hover:bg-green-500 transition-colors animate-pulse">▶ 开始推演</button>}
+              {dynPhase === "config" && <button onClick={() => loadSim()} className="w-full py-2 bg-cyan-700 rounded font-bold text-sm text-white hover:bg-cyan-600 transition-colors shadow-md shadow-cyan-950/40">▶ 开始推演</button>}
               {dynPhase === "done" && <button onClick={() => { setDynStep(0); setDynPlay(true); setDynPhase("running"); }} className="w-full py-1.5 bg-green-800 rounded font-bold text-xs hover:bg-green-700">🔄 重新推演</button>}
-              {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-2 bg-green-600 rounded font-bold text-sm text-white ring-2 ring-green-400/70 shadow-lg shadow-green-900/50 hover:bg-green-500 transition-colors animate-pulse">▶ 开始推演</button>}
+              {dynPhase === "ready" && <button onClick={() => { setDynPhase("running"); setDynPlay(true); setDynStep(0); }} className="w-full py-2 bg-cyan-700 rounded font-bold text-sm text-white hover:bg-cyan-600 transition-colors shadow-md shadow-cyan-950/40">▶ 开始推演</button>}
             </div>
           )}
 
@@ -1846,22 +1874,12 @@ export default function SandboxPage() {
               {riskStats.overflowNodes.length > 0 && <span className="text-red-300">溢流节点 {riskStats.overflowNodes.length} 个·{riskStats.overflowNodes.slice(0, 4).join(", ")}{riskStats.overflowNodes.length > 4 ? "…" : ""}</span>}
             </div>
           )}
-          {/* 底部结果区:选中管道横截面(随时间轴变化) + 关键指标 */}
+          {/* 底部结果 — 第一层:紧凑结果摘要(KPI) + 展开分析 */}
           <div className="flex items-center gap-3 mb-1.5 rounded bg-gray-900/60 border border-gray-800 px-2 py-1.5">
-            <span className="text-[9px] text-gray-400 shrink-0">🛢 管道横截面</span>
-            {(() => {
-              const pid = (selected?.type === "pipe" ? selected.data.id : null) || topPipes[0]?.id;
-              const ld = (dynRes.links as any)?.[pid];
-              const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === pid);
-              if (!ld || !pp) return <div className="text-[10px] text-gray-500">推演后点击任意管道查看横截面</div>;
-              const frac = (ld.depthFraction?.[dynStep] ?? 0) * 100;
-              return (
-                <>
-                  <div className="w-24 h-14 shrink-0"><PipeCrossSection compact diam={pp?.diam || 0.3} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={ld.flowDir?.[dynStep] ?? 0} landcover={landcover} animate={false} size="md" /></div>
-                  <div className="text-[9px] text-gray-400 truncate max-w-[140px]">{pid} · {frac.toFixed(0)}% 满管 {frac >= 100 ? "⚠️" : ""}</div>
-                </>
-              );
-            })()}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[9px] text-gray-400">结果摘要</span>
+              <button onClick={() => setResultOpen(v => !v)} className={"px-1.5 py-1 rounded text-[9px] font-bold " + (resultOpen ? "bg-cyan-700 text-white" : "bg-gray-700 text-cyan-300 hover:bg-gray-600")}>{resultOpen ? "收起 ▲" : "展开分析 ▼"}</button>
+            </div>
             <div className="ml-auto grid grid-cols-4 gap-2 shrink-0 text-center">
               <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1 cursor-pointer hover:bg-gray-900" title={`点击定位 ${dynRes.summary?.maxDepth?.nodeId ?? ""} · 跳到 ${fmtTime(dynRes.summary?.maxDepth?.timestamp ?? 0)}`} onClick={() => { const h = dynRes.summary?.maxDepth?.timestamp; const ta = dynRes.timestamps; if (ta && h != null) { let best = 0, bd = 1e9; ta.forEach((t: number, i: number) => { const d = Math.abs(t - h); if (d < bd) { bd = d; best = i; } }); setDynStep(best); if (dynPlay) setDynPlay(false); } jumpToObject(dynRes.summary?.maxDepth?.nodeId, "node"); }}>
                 <div className="text-[8px] text-gray-500">最大水深</div>
@@ -1885,9 +1903,29 @@ export default function SandboxPage() {
               </div>
             </div>
           </div>
+          {/* 底部结果 — 第二层:展开详情(管道横断面,随时间轴变化) */}
+          {resultOpen && (
+            <div className="flex items-center gap-3 mb-1.5 rounded bg-gray-900/50 border border-gray-800 px-2 py-1.5">
+              <span className="text-[9px] text-gray-400 shrink-0">🛢 管道横断面</span>
+              {(() => {
+                const pid = (selected?.type === "pipe" ? selected.data.id : null) || topPipes[0]?.id;
+                const ld = (dynRes.links as any)?.[pid];
+                const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === pid);
+                if (!ld || !pp) return <div className="text-[10px] text-gray-500">推演后点击任意管道查看横断面</div>;
+                const frac = (ld.depthFraction?.[dynStep] ?? 0) * 100;
+                return (
+                  <>
+                    <div className="w-28 h-16 shrink-0"><PipeCrossSection compact diam={pp?.diam || 0.3} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={ld.flowDir?.[dynStep] ?? 0} landcover={landcover} animate={false} size="md" /></div>
+                    <div className="text-[9px] text-gray-300 leading-4">{pid}<div className="text-cyan-300 font-bold">{frac.toFixed(0)}% 满管 {frac >= 100 ? " ⚠️" : ""}</div></div>
+                  </>
+                );
+              })()}
+              <span className="ml-auto text-[9px] text-gray-500">拖动下方时间轴查看横断面水位变化</span>
+            </div>
+          )}
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-gray-400 font-mono w-12 text-right">{currentTimeLabel}</span>
-            <input type="range" min={0} max={timeStepCount-1} value={dynStep} onChange={e => { setDynStep(+e.target.value); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} title="拖动查看任意时刻" className="flex-1 h-2 appearance-none bg-gray-800 rounded-full cursor-pointer [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-cyan-600 [&::-webkit-slider-thumb]:rounded-full" />
+            <span className="text-[11px] text-gray-300 font-mono w-14 text-right font-medium">{currentTimeLabel}</span>
+            <input type="range" min={0} max={timeStepCount-1} value={dynStep} onChange={e => { setDynStep(+e.target.value); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} title="拖动查看任意时刻" className="flex-1 h-2.5 appearance-none bg-gray-800 rounded-full cursor-pointer [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:bg-cyan-600 [&::-webkit-slider-thumb]:rounded-full" />
             <select value={dynSpd} onChange={e=>setDynSpd(+e.target.value)} className="bg-gray-800 rounded px-1.5 py-1 text-[10px] border border-gray-700 text-gray-400"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={5}>5×</option></select>
             {dynPhase==="running"
               ? <button title="暂停" onClick={()=>{setDynPlay(false);setDynPhase("paused");}} className="bg-yellow-800 hover:bg-yellow-700 px-2 py-1 rounded text-xs font-bold">⏸</button>
