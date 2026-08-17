@@ -8,9 +8,9 @@ import * as THREE from "three";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
-import { GridComponent, TooltipComponent, LegendComponent } from "echarts/components";
+import { GridComponent, TooltipComponent, LegendComponent, MarkPointComponent, MarkLineComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
-echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
+echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer, MarkPointComponent, MarkLineComponent]);
 
 // ═══════════════════════════════════════════════════════════
 // VISUAL CONSTANTS — professional muted palette, no neon
@@ -404,6 +404,7 @@ export default function SandboxPage() {
   // 渲染模式:默认/水深/流量/风险(覆盖原独立热力图按钮);渲染 Popover 选择
   const [renderMode, setRenderMode] = useState<"default" | "depth" | "flow" | "risk">("default");
   const [openBar, setOpenBar] = useState<"render" | "view" | "layer" | null>(null);
+  const [curView, setCurView] = useState<"panorama" | "topdown" | "underground">("panorama");
   const [theme, setTheme] = useState<"dark" | "light">(() => { try { return localStorage.getItem("sandbox-theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
   // 场景主题联动:深色 ↔ 浅色(背景/雾/网格)
   const applyTheme = useCallback(() => {
@@ -721,6 +722,62 @@ export default function SandboxPage() {
     obj.traverse(c => { if (c instanceof THREE.Mesh && c.material && !(c.material as any)._isWater) { (c.material as any).emissive = new THREE.Color("#000000"); (c.material as any).emissiveIntensity = 0; } });
   }
 
+  // KPI 点击定位:选中对象 + 跳转到对应时刻 + 相机聚焦 + (管道)打开横断面
+  // 通过直改 camState/cameraRef 复用 effect 中同款相机公式,不重复造相机矩阵
+  const jumpToObject = useCallback((id: string | undefined, type: "node" | "pipe") => {
+    let cx = 0, cz = 0, hit = false;
+    if (type === "pipe") {
+      const ends = pipeEndsMap.current.get(id ?? "");
+      if (ends) { cx = (ends.fx + ends.tx) / 2; cz = (ends.fz + ends.tz) / 2; hit = true; }
+      const mesh = pipeMeshMap.current.get(id ?? "");
+      if (mesh) { if (selRef.current && selRef.current !== mesh) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id } }); }
+    } else {
+      const ng = nodeGeomMap.current.get(id ?? "");
+      if (ng) { cx = ng.group.position.x; cz = ng.group.position.z; hit = true; }
+      const nodes = dataRef.current?.nodes as any[] | undefined;
+      const nd = nodes?.find((n: any) => n.id === id);
+      if (nd) setSelected({ type: "node", data: nd });
+    }
+    if (hit) {
+      const cs = camState.current;
+      const dist = Math.max((spanRef.current || 300) * 0.35, cs.dist * 0.6);
+      camState.current = { ...cs, tx: cx, tz: cz, dist };
+      const cam = cameraRef.current; if (cam) {
+        cam.position.x = cx + dist * Math.sin(cs.phi) * Math.cos(cs.theta);
+        cam.position.y = dist * Math.cos(cs.phi) * 0.65;
+        cam.position.z = cz + dist * Math.sin(cs.phi) * Math.sin(cs.theta);
+        cam.lookAt(cx, dist * 0.04, cz);
+      }
+    }
+  }, []);
+
+  // 降雨过程曲线 option(真实时序):带 mm·h⁻¹ 纵轴 / 时间横轴 / 峰值点 / hover / 当前时刻线
+  const rainChartOption = useCallback((s: RainfallScenario, dynMode: boolean) => {
+    const ts = s.ts;
+    const xData = ts.map((_, i) => {
+      const hh = Math.floor((i * 5) / 60) % 24, mm = (i * 5) % 60;
+      return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+    });
+    const series: any[] = [{
+      name: "降雨强度", type: "line", data: ts, smooth: false, symbol: "none", lineStyle: { color: "#38bdf8", width: 1.6 },
+      areaStyle: { color: "#1e4d7a", opacity: 0.25 },
+      markPoint: { symbol: "pin", symbolSize: 26, data: [{ name: "峰值", coord: [xData.indexOf(s.peakTime), s.peakIntensity], value: s.peakIntensity + " mm/h", label: { color: "#fff", fontSize: 9 } }], itemStyle: { color: "#fb7185" } },
+    }];
+    if (dynMode) {
+      const idx = Math.min(Math.max(0, dynStep), Math.max(0, timeStepCount - 1));
+      series.push({ type: "line", markLine: { silent: true, symbol: "none", lineStyle: { color: "#fde047", width: 1, type: "dashed" }, data: [{ xAxis: xData[Math.min(idx, xData.length - 1)] }], label: { show: true, formatter: () => currentTimeLabel, position: "insideEndTop", color: "#fde047", fontSize: 8 } }, data: [] });
+    }
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      grid: { left: 38, right: 8, top: 22, bottom: 22 },
+      tooltip: { trigger: "axis", valueFormatter: (v: any) => `${v} mm/h`, axisPointer: { type: "line" } },
+      xAxis: { type: "category", data: xData, boundaryGap: false, axisLabel: { color: "#94a3b8", fontSize: 8, interval: 47 }, axisLine: { lineStyle: { color: "#334155" } } },
+      yAxis: { type: "value", name: "mm/h", nameTextStyle: { color: "#94a3b8", fontSize: 8 }, axisLabel: { color: "#94a3b8", fontSize: 8 }, splitLine: { lineStyle: { color: "#1f2937" } } },
+      series,
+    };
+  }, [dynStep, timeStepCount, currentTimeLabel]);
+
   // ═══════════════════════════════════════════════════════════
   // BUILD GEOMETRY — professional engineering visual style
   // ═══════════════════════════════════════════════════════════
@@ -865,6 +922,7 @@ export default function SandboxPage() {
     };
     const p = presets[view] || presets.panorama;
     Object.assign(camState.current, p);
+    if (view === "panorama" || view === "topdown" || view === "underground") setCurView(view);
     if (view === "underground") {
       ["ground","sc"].forEach(k => { if (groupsRef.current[k]) groupsRef.current[k].visible = false; });
     } else {
@@ -892,7 +950,10 @@ export default function SandboxPage() {
     abortRef.current = ctrl;
     const simIntensity = overrideIntensity ?? (scnOf(scn)?.key === scn ? 100 : 80);
     const simLandcover = overrideLandcover ?? landcover;
-    const simValves = overrideValves ?? valves;
+    // 开始推演时把调节阀拖动的 draft 合并为正式阀门(预览→生效仅在点开始推演)
+    const mergedValves: Record<string, number> = { ...valves };
+    for (const [pid, k] of Object.entries(valveDraft)) if (k != null) mergedValves[pid] = k;
+    const simValves = overrideValves ?? mergedValves;
     const simGreenLevel = overrideGreenLevel ?? (simLandcover === "green" ? greenLevel : undefined);
     const simSeries = scnOf(scn) ? scn : undefined;
     let tid: ReturnType<typeof setTimeout> | null = null;
@@ -1042,7 +1103,8 @@ export default function SandboxPage() {
       const ld = linkData[pid]; const flows = ld?.flow; const flow = (flows && dynStep < flows.length) ? flows[dynStep] : 0;
       const cap = ld?.capacity; const capacity = (cap && dynStep < cap.length) ? cap[dynStep] : 0;
       const absFlow = Math.abs(flow); const mat = mesh.material as THREE.MeshStandardMaterial;
-      if (absFlow < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
+      // 默认/水深/风险模式:管道统一低饱和蓝灰(不随流量染色,保持界面清爽);仅「流量」模式才按流量着色
+      if (renderMode !== "flow" || absFlow < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
       else {
         const maxF = ts.summary?.maxFlow?.value || 0.1; const ratio = Math.min(1, absFlow / maxF);
         const isFull = capacity > 0.98;
@@ -1086,14 +1148,11 @@ export default function SandboxPage() {
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
-  // 首次进入动态模式:分步引导(guide)优先,旧版一次性气泡兜底
+  // 首次进入动态模式:仅显示一次性静态用法提示,不再强制分步引导
   useEffect(() => {
     if (mode !== "dynamic") return;
     try {
-      if (!localStorage.getItem("sandbox-guide-v1")) {
-        localStorage.setItem("sandbox-guide-v1", "1");
-        setGuide(1);
-      } else if (!localStorage.getItem("sandbox-tip-v1")) {
+      if (!localStorage.getItem("sandbox-tip-v1")) {
         localStorage.setItem("sandbox-tip-v1", "1");
         setShowTip(true);
         setTimeout(() => setShowTip(false), 9000);
@@ -1101,13 +1160,7 @@ export default function SandboxPage() {
     } catch { /* 隐私模式忽略 */ }
   }, [mode]);
 
-  // 分步引导步进:完成当前步骤动作后自动进入下一步
-  useEffect(() => {
-    if (!guide) return;
-    if (guide === 1 && selected?.type === "pipe") setGuide(2);
-    else if (guide === 2 && landcover !== "default") setGuide(3);
-    else if (guide === 3 && draggedRainRef.current) { setGuide(0); }
-  }, [guide, selected, landcover, scn]);
+  // 分步引导已精简:改为仅首次静态提示(见上方),不再自动强制多步
   const finishGuide = () => { setGuide(0); };
   // 引导完成后一次性提示动手玩法(仅首次)
   useEffect(() => {
@@ -1128,35 +1181,23 @@ export default function SandboxPage() {
     const k = valveDraft[pid] ?? valves[pid];
     return k == null ? 1 : 0.3 + 0.7 * k;
   };
-  // 下垫面渐变:绿色强度(0-1),仅 landcover=green 时生效;拖动预览+防抖重跑(与雨强同模式)
+  // 下垫面渐变:绿色强度(0-1),仅 landcover=green 时生效;拖动即时预览(横截面/3D 水位系数),不触发 SWMM
   const onGreenLevelChange = (v: number) => {
     const lv = Math.max(0, Math.min(1, v / 100));
     setGreenLevel(lv); // 即时更新 → 横截面预览系数联动
-    if (greenTimerRef.current) { clearTimeout(greenTimerRef.current); greenTimerRef.current = null; }
-    greenTimerRef.current = setTimeout(() => loadSim(undefined, "green", undefined, greenLevelRef.current), 500);
   };
   // 绿色强度预览系数:强度越高水位越低(近似,松手后真实仿真覆盖)
   const greenPreviewRatio = (landcover === "green" && greenLevel < 1) ? (1 - 0.22 * (1 - greenLevel)) : 1;
   const onValveChange = (pid: string, v: number) => {
     const k = Math.max(0, Math.min(1, v / 100));
-    setValveDraft(d => ({ ...d, [pid]: k }));
-    if (valveTimerRef.current) { clearTimeout(valveTimerRef.current); valveTimerRef.current = null; }
-    valveTimerRef.current = setTimeout(() => {
-      const nv = { ...valvesRef.current, [pid]: k };
-      valvesRef.current = nv;
-      setValves(nv);
-      setValveDraft(d => { const n = { ...d }; delete n[pid]; return n; });
-      loadSim(undefined, undefined, nv);
-    }, 500);
+    setValveDraft(d => ({ ...d, [pid]: k })); // 即时预览(横截面);生效需点「开始推演」
   };
   const resetValves = (pid?: string) => {
-    if (valveTimerRef.current) { clearTimeout(valveTimerRef.current); valveTimerRef.current = null; }
     const nv = { ...valvesRef.current };
     if (pid) delete nv[pid]; else for (const k of Object.keys(nv)) delete nv[k];
     valvesRef.current = nv;
     setValves(nv);
     setValveDraft({});
-    loadSim(undefined, undefined, nv);
   };
 
   // 卸载清理防抖/提示定时器(防卸载后 setState/fetch)
@@ -1323,7 +1364,7 @@ export default function SandboxPage() {
         <div className="h-4 w-px bg-gray-600" />
         {/* 渲染 Popover */}
         <div className="relative">
-          <button onClick={() => setOpenBar(openBar === "render" ? null : "render")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "render" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>渲染 ▾</button>
+          <button onClick={() => setOpenBar(openBar === "render" ? null : "render")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "render" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>渲染 · {{ default: "默认", depth: "水深", flow: "流量", risk: "风险" }[renderMode]} ▾</button>
           {openBar === "render" && (
             <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-32 z-30">
               {([["default","◉ 默认"],["depth","◉ 水深"],["flow","◉ 流量"],["risk","◉ 风险"]] as const).map(([v, l]) => (
@@ -1334,7 +1375,7 @@ export default function SandboxPage() {
         </div>
         {/* 视角 Popover */}
         <div className="relative">
-          <button onClick={() => setOpenBar(openBar === "view" ? null : "view")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "view" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>视角 ▾</button>
+          <button onClick={() => setOpenBar(openBar === "view" ? null : "view")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "view" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>视角 · {{ panorama: "鸟瞰", topdown: "俯视", underground: "地下" }[curView]} ▾</button>
           {openBar === "view" && (
             <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-28 z-30">
               {([["panorama","鸟瞰"],["topdown","俯视"],["orbit","环绕"],["reset","复位"]] as const).map(([v, l]) => (
@@ -1524,10 +1565,15 @@ export default function SandboxPage() {
             <div className="space-y-2">
               {/* 降雨情景:真实设计暴雨重现期 3/5/10/20/50 年,展示真实累计/峰值/时长/曲线 */}
               <div className={guide === 3 ? "rounded-lg ring-2 ring-yellow-400/80 p-1" : ""}>
-                <div className="mb-1 text-[10px] text-gray-500">🌧 降雨情景(重现期)</div>
+                <div className="mb-1 text-[10px] text-gray-500 flex items-center gap-1">🌧 降雨情景(重现期)
+                  <span className="relative group cursor-help">
+                    <span className="text-cyan-500 text-[10px]">ⓘ</span>
+                    <span className="absolute left-0 top-full mt-1 z-30 hidden group-hover:block bg-gray-900/97 border border-gray-700 rounded-md px-2.5 py-2 text-[9px] leading-4 text-gray-300 w-56 shadow-xl">重现期表示该强度降雨在统计意义上的发生频率。例如 5 年一遇并不是“每 5 年一定发生一次”，而是表示该强度降雨每年的超越概率约为 20%。</span>
+                  </span>
+                </div>
                 <div className="grid grid-cols-5 gap-1">
                   {RAIN_SCENARIOS.map(s => (
-                    <button key={s.key} onClick={() => { if (s.key === scn) return; draggedRainRef.current = true; setScn(s.key); setRainPreview(null); loadSim(undefined, undefined, undefined, undefined); }} title={s.desc} className={`py-1 rounded text-[10px] font-bold transition-colors ${scn === s.key ? "bg-blue-700 text-white ring-1 ring-blue-400" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{s.label.replace("一遇","").replace("年","")}</button>
+                    <button key={s.key} onClick={() => { if (s.key === scn) return; setScn(s.key); setRainPreview(null); }} title={s.desc} className={`py-1 rounded text-[10px] font-bold transition-colors ${scn === s.key ? "bg-blue-700 text-white ring-1 ring-blue-400" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{s.label.replace("一遇","").replace("年","")}</button>
                   ))}
                 </div>
                 {scnOf(scn) && (() => {
@@ -1537,18 +1583,16 @@ export default function SandboxPage() {
                       <div className="mt-1.5 rounded bg-blue-950/30 border border-blue-900/50 px-2 py-1.5 text-[10px] space-y-0.5">
                         <div className="font-bold text-cyan-300">{s.label}</div>
                         <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-                          <div className="flex justify-between"><span className="text-gray-500">累计雨量</span><span className="text-gray-100">{s.totalRainfall.toFixed(1)} mm</span></div>
-                          <div className="flex justify-between"><span className="text-gray-500">峰值雨强</span><span className="text-gray-100">{s.peakIntensity.toFixed(1)} mm/h</span></div>
-                          <div className="flex justify-between"><span className="text-gray-500">持续时长</span><span className="text-gray-100">{s.durationH.toFixed(1)} h</span></div>
+                          <div className="flex justify-between" title="全过程累计降雨量"><span className="text-gray-500">总降雨量</span><span className="text-gray-100">{s.totalRainfall.toFixed(1)} mm</span></div>
+                          <div className="flex justify-between" title="峰值降雨强度"><span className="text-gray-500">峰值雨强</span><span className="text-gray-100">{s.peakIntensity.toFixed(1)} mm/h</span></div>
+                          <div className="flex justify-between" title="第一个非零降雨点到最后一个非零降雨点之间的时长"><span className="text-gray-500">降雨历时</span><span className="text-gray-100">{s.durationH.toFixed(1)} h</span></div>
                           <div className="flex justify-between"><span className="text-gray-500">峰值时刻</span><span className="text-gray-100">{s.peakTime}</span></div>
                         </div>
                       </div>
-                      {/* 降雨过程曲线(真实时序,mm/h) */}
-                      <svg viewBox="0 0 200 44" className="mt-1 w-full rounded bg-blue-950/40 border border-blue-900/50" preserveAspectRatio="none">
-                        <polyline points={tsToPoints(s.ts, 200, 44)} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
-                        <line x1="0" y1="40" x2="200" y2="40" stroke="#334155" strokeWidth="0.5" />
-                      </svg>
-                      <div className="flex justify-between text-[8px] text-gray-600"><span>0:00</span><span>峰值 {s.peakIntensity.toFixed(1)} mm/h</span><span>23:55</span></div>
+                      {/* 降雨过程曲线(真实时序,ECharts:坐标轴/mm·h⁻¹/hover/峰值/当前时刻线) */}
+                      <div className="mt-1 rounded bg-blue-950/30 border border-blue-900/40 overflow-hidden" style={{ height: 132 }}>
+                        <ReactEChartsCore echarts={echarts} option={rainChartOption(s, dynRes?.ok && dynStep > 0)} style={{ height: 132, width: "100%" }} notMerge />
+                      </div>
                     </>
                   );
                 })()}
@@ -1556,12 +1600,15 @@ export default function SandboxPage() {
               {/* 下垫面方案切换(方案2):点击改变下垫面→重新仿真→横截面水量变化 */}
               <div className={guide === 2 ? "rounded-lg ring-2 ring-yellow-400/80 p-1" : ""}>
                 <div className="mb-1 text-[10px] text-gray-500">🏞 下垫面方案</div>
-                <div className="grid grid-cols-3 gap-1">
-                  {([["default", "⚪ 现状"], ["green", "🟢 绿色海绵"], ["gray", "🟠 灰色强开发"]] as const).map(([val, label]) => (
-                    <button key={val} onClick={() => { if (val === landcover) return; if (greenTimerRef.current) { clearTimeout(greenTimerRef.current); greenTimerRef.current = null; } setLandcover(val); setRainPreview(null); loadSim(undefined, val); }} className={`py-1 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-green-700 text-white" : val === "gray" ? "bg-orange-700 text-white" : "bg-gray-600 text-white") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{label}</button>
+                <div className="grid grid-cols-1 gap-1">
+                  {([["default", "⚪ 现状方案", "不透水率按模型原始值"], ["green", "🟢 海绵提升方案", "降低不透水率 · 透水性增强"], ["gray", "🟠 高开发方案", "提高不透水率 · 地表更硬化"]] as const).map(([val, label, hint]) => (
+                    <button key={val} onClick={() => { if (val === landcover) return; clearTimeout(greenTimerRef.current ?? undefined); greenTimerRef.current = null; setLandcover(val); setRainPreview(null); }} className={`flex items-center justify-between px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-green-700/80 text-white ring-1 ring-green-400" : val === "gray" ? "bg-orange-700/80 text-white ring-1 ring-orange-400" : "bg-gray-600 text-white ring-1 ring-gray-400") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>
+                      <span>{label}</span>
+                      <span className="text-[8px] font-normal opacity-80">{hint}</span>
+                    </button>
                   ))}
                 </div>
-                <div className="mt-0.5 text-[9px] leading-3 text-gray-500">{landcover === "default" ? "现状:透水铺装 20% · 绿地 25% · 不透水表面 45% · 蓄水池 10%" : landcover === "green" ? "绿色海绵:透水铺装 50% · 绿色花园 20% · 不透水表面 10% · 蓄水池 20%" : "灰色强开发:透水铺装 10% · 绿地 10% · 不透水表面 75% · 蓄水池 5%"}</div>
+                <div className="mt-0.5 text-[8px] leading-3 text-gray-600">方案通过调整各汇水区不透水率(%Imperv)与不透水糙率(N-Imperv)真实改变地表径流 · 空间细节为示意图,非精确设施位置</div>
                 {landcover === "green" && (
                   <div className="mt-1 rounded bg-green-950/40 border border-green-900/60 p-1.5">
                     <div className="flex justify-between text-[9px] mb-0.5"><span className="text-green-400/80">🌿 绿色强度(渐变)</span><span className="text-green-300 font-bold">{Math.round(greenLevel * 100)}%</span></div>
@@ -1744,11 +1791,14 @@ export default function SandboxPage() {
           <div className="font-bold text-gray-300 mb-1.5">{renderMode === "risk" ? "风险" : "水深"}</div>
           {renderMode === "risk"
             ? (
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ffe14d" }} /><span className="text-gray-400">低</span></div>
-                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#fb923c" }} /><span className="text-gray-400">中</span></div>
-                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ef4444" }} /><span className="text-gray-400">高·严重</span></div>
-              </div>
+              <>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ffe14d" }} /><span className="text-gray-400">低</span></div>
+                  <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#fb923c" }} /><span className="text-gray-400">中</span></div>
+                  <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ef4444" }} /><span className="text-gray-400">高·严重</span></div>
+                </div>
+                <div className="mt-1.5 w-44 border-t border-gray-700 pt-1 text-[8px] leading-3 text-gray-500">风险按节点水深相对最大值与管道满管率呈现：越大越接近红色(黄=较轻,红=严重)。</div>
+              </>
             )
             : (
               <div className="space-y-0.5">
@@ -1772,12 +1822,19 @@ export default function SandboxPage() {
       )}
       {mode === "dynamic" && dynRes?.ok && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && timeStepCount > 0 && (
         <div className="absolute bottom-0 left-0 right-0 bg-black/92 backdrop-blur border-t border-gray-800 px-4 py-2 z-10">
-          {/* 降雨过程条:恒定雨强水平线 + 当前时刻高亮标记(拖动时间轴/推演同步滚动) */}
+          {/* 降雨过程条:真实降雨曲线概览 + 当前时刻 + 峰值降雨标记(拖动时间轴/推演同步) */}
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[9px] text-cyan-500 font-bold w-14">🌧 降雨</span>
             <svg className="flex-1 h-5" viewBox="0 0 100 20" preserveAspectRatio="none">
-              <line x1="0" y1="10" x2="100" y2="10" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.7" />
-              <circle cx={timeStepCount > 1 ? (dynStep / (timeStepCount - 1)) * 100 : 50} cy="10" r="3" fill="#ffd54f" stroke="#1e293b" strokeWidth="0.8" />
+              {/* 峰值降雨标记(真实 peakTime 位置) */}
+              {scnOf(scn) && (() => { const s = scnOf(scn)!; const toX = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return (((h * 60 + m) / (24 * 60)) * 100); }; const px = toX(s.peakTime); return (
+                <>
+                  <line x1={px} y1="4" x2={px} y2="7" stroke="#fb7185" strokeWidth="1.2" />
+                  <text x={px} y="3" fill="#fb7185" fontSize="3.2" textAnchor="middle">▲ 峰值 {s.peakTime}</text>
+                </>
+              ); })()}
+              <line x1="0" y1="12" x2="100" y2="12" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.7" />
+              <circle cx={timeStepCount > 1 ? (dynStep / (timeStepCount - 1)) * 100 : 50} cy="12" r="3" fill="#ffd54f" stroke="#1e293b" strokeWidth="0.8" />
             </svg>
             <span className="text-[9px] text-gray-400 min-w-[3.5rem] text-right">{scnOf(scn)?.label || ""}</span>
           </div>
@@ -1806,12 +1863,12 @@ export default function SandboxPage() {
               );
             })()}
             <div className="ml-auto grid grid-cols-4 gap-2 shrink-0 text-center">
-              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1" title={`最大水深出现在 ${dynRes.summary?.maxDepth?.nodeId ?? "-"} · ${dynRes.summary?.maxDepth?.timestamp ?? "-"}h`}>
+              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1 cursor-pointer hover:bg-gray-900" title={`点击定位 ${dynRes.summary?.maxDepth?.nodeId ?? ""} · 跳到 ${fmtTime(dynRes.summary?.maxDepth?.timestamp ?? 0)}`} onClick={() => { const h = dynRes.summary?.maxDepth?.timestamp; const ta = dynRes.timestamps; if (ta && h != null) { let best = 0, bd = 1e9; ta.forEach((t: number, i: number) => { const d = Math.abs(t - h); if (d < bd) { bd = d; best = i; } }); setDynStep(best); if (dynPlay) setDynPlay(false); } jumpToObject(dynRes.summary?.maxDepth?.nodeId, "node"); }}>
                 <div className="text-[8px] text-gray-500">最大水深</div>
                 <div className="text-[11px] font-bold text-cyan-300">{(dynRes.summary?.maxDepth?.value ?? 0).toFixed(2)} m</div>
                 {dynRes.summary?.maxDepth?.nodeId && <div className="text-[7px] text-cyan-500/80 leading-3">{dynRes.summary.maxDepth.nodeId} · {fmtTime(dynRes.summary.maxDepth.timestamp ?? 0)}</div>}
               </div>
-              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1" title={`最大流量出现在 ${dynRes.summary?.maxFlow?.linkId ?? "-"} · ${dynRes.summary?.maxFlow?.direction ?? ""} · ${dynRes.summary?.maxFlow?.timestamp ?? "-"}h`}>
+              <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1 cursor-pointer hover:bg-gray-900" title={`点击定位 ${dynRes.summary?.maxFlow?.linkId ?? ""} · 跳到 ${fmtTime(dynRes.summary?.maxFlow?.timestamp ?? 0)}`} onClick={() => { const h = dynRes.summary?.maxFlow?.timestamp; const ta = dynRes.timestamps; if (ta && h != null) { let best = 0, bd = 1e9; ta.forEach((t: number, i: number) => { const d = Math.abs(t - h); if (d < bd) { bd = d; best = i; } }); setDynStep(best); if (dynPlay) setDynPlay(false); } jumpToObject(dynRes.summary?.maxFlow?.linkId, "pipe"); const pid = dynRes.summary?.maxFlow?.linkId; if (pid) setZoomPipeId(pid); }}>
                 <div className="text-[8px] text-gray-500">最大流量</div>
                 <div className="text-[11px] font-bold text-sky-300">{(dynRes.summary?.maxFlow?.value ?? 0).toFixed(2)} m³/s</div>
                 {dynRes.summary?.maxFlow?.linkId && <div className="text-[7px] text-sky-500/80 leading-3">{dynRes.summary.maxFlow.linkId}{dynRes.summary.maxFlow.direction ? ` · ${dynRes.summary.maxFlow.direction}` : ""}</div>}
