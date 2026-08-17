@@ -38,12 +38,65 @@ function cleanupStaleTasks() {
 }
 
 // ─── Modify INP ───
-function modifyRainfall(originalInpPath: string, intensity: number, simDir: string, landcover?: string, greenLevel?: number): string {
+
+// 真实设计暴雨时序:解析 [TIMESERIES] 中按重现期命名的序列(3A/5A/10A/20A/50A)
+// 每个序列:5min 步长,288 步(0:00–23:55),INTENSITY(mm/h)
+// 返回元数据:累计雨量(mm)、峰值雨强(mm/h)、峰值时刻、有雨时长(h)
+interface RainfallSeries {
+  name: string;
+  ts: Array<{ t: string; v: number }>;   // 原始 288 点(按时间升序)
+  totalRainfall: number;                  // 累计 mm = Σ v × 5min?(5/60h)
+  peakIntensity: number;                  // 峰值 mm/h
+  peakTime: string;                       // HH:MM
+  durationH: number;                      // 有雨持续 h
+}
+function parseRainfallSeries(inpText: string): Record<string, RainfallSeries> {
+  const start = inpText.toUpperCase().indexOf('[TIMESERIES]');
+  if (start < 0) return {};
+  const rest = inpText.slice(start + '[TIMESERIES]'.length);
+  const end = rest.search(/\n\s*\[/); // 下一个段
+  const block = end >= 0 ? rest.slice(0, end) : rest;
+  const by: Record<string, Array<{ t: string; v: number }>> = {};
+  for (const line of block.split('\n')) {
+    const lt = line.trim();
+    if (!lt || lt.startsWith(';') || lt.startsWith('[')) continue;
+    const p = lt.split(/\s+/);
+    if (p.length >= 4) {
+      const name = p[0]; const t = p[2]; const v = parseFloat(p[3]);
+      if (!isNaN(v)) (by[name] = by[name] || []).push({ t, v });
+    }
+  }
+  const result: Record<string, RainfallSeries> = {};
+  for (const name of Object.keys(by)) {
+    const rows = by[name];
+    let total = 0, peak = 0, peakTime = '', first: string | null = null, last: string | null = null;
+    const toMin = (s: string) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
+    for (const r of rows) {
+      const v = r.v;
+      if (v > 0) { if (first == null) first = r.t; last = r.t; }
+      total += v * (5 / 60); // 5min 步长 → mm
+      if (v > peak) { peak = v; peakTime = r.t; }
+    }
+    let dur = 0;
+    if (first && last) {
+      const dtMin = toMin(last) - toMin(first) + 5;
+      dur = Math.max(0, dtMin / 60);
+    }
+    result[name] = { name, ts: rows, totalRainfall: Math.round(total * 10) / 10, peakIntensity: Math.round(peak * 10) / 10, peakTime, durationH: Math.round(dur * 100) / 100 };
+  }
+  return result;
+}
+
+function modifyRainfall(originalInpPath: string, intensity: number, simDir: string, landcover?: string, greenLevel?: number, seriesName?: string, seriesMap?: Record<string, RainfallSeries>): string {
   const tempInp = join(simDir, 'model.inp');
   let text = readFileSync(originalInpPath, 'utf-8');
   const lines = text.split('\n');
   const result: string[] = [];
   let inTS = false;
+  // 真实序列:时间(如 "1:25")→ 原始雨强值 map;命中则按真实值写回,不再乘倍率
+  const series = seriesName && seriesMap ? seriesMap[seriesName] : undefined;
+  const seriesVal = new Map<string, number>();
+  if (series) for (const r of series.ts) seriesVal.set(r.t, r.v);
   for (const line of lines) {
     const upper = line.trim().toUpperCase();
     if (upper.startsWith('[TIMESERIES]')) { inTS = true; result.push(line); continue; }
@@ -54,6 +107,11 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
         const lastIdx = parts.length - 1;
         const val = parseFloat(parts[lastIdx]);
         if (Number.isFinite(val) && val > 0.0001) {
+          if (series) {
+            // 用真实设计暴雨原始值(不放大,数据源自 INP [TIMESERIES])
+            const real = seriesVal.get(parts[2]);
+            if (real != null) { parts[lastIdx] = real.toFixed(6); result.push(parts.join('\t')); continue; }
+          }
           parts[lastIdx] = (val * (intensity / 100)).toFixed(6);
           result.push(parts.join('\t'));
           continue;
@@ -302,6 +360,11 @@ export async function POST(req: NextRequest) {
     const rawIntensity = body.intensity == null ? NaN : Number(body.intensity);
     const intensity = Number.isFinite(rawIntensity) ? Math.max(10, Math.min(500, rawIntensity)) : 80;
     const landcover = ["gray", "green"].includes(body.landcover) ? body.landcover : undefined;
+    // 真实设计暴雨重现期序列:3A/5A/10A/20A/50A(取自 INP [TIMESERIES]);可选,命中则按真实雨型跑
+    const originalInpForSeries = join(process.cwd(), 'public', 'zijing_inp.inp');
+    const rainfallScenarios = parseRainfallSeries(readFileSync(originalInpForSeries, 'utf-8'));
+    const allowedSeries = ["3A", "5A", "10A", "20A", "50A"];
+    const series = typeof body.series === "string" && allowedSeries.includes(body.series) && rainfallScenarios[body.series] ? body.series : undefined;
     // 绿色海绵强度(0-1):仅 landcover=green 时生效,%Imperv 线性插值
     const rawGL = body.greenLevel == null ? NaN : Number(body.greenLevel);
     const greenLevel = Number.isFinite(rawGL) ? Math.max(0, Math.min(1, rawGL)) : undefined;
@@ -347,7 +410,7 @@ export async function POST(req: NextRequest) {
     tasks.set(simulationId, task);
 
     const originalInp = join(process.cwd(), 'public', 'zijing_inp.inp');
-    const tempInp = modifyRainfall(originalInp, intensity, simDir, landcover, greenLevel);
+    const tempInp = modifyRainfall(originalInp, intensity, simDir, landcover, greenLevel, series, rainfallScenarios);
     // 阀门/蓄水注入:在雨强与下垫面修改后的文本上再改直径/洼地面积(失败即标记 task failed,不滞留 running 至超时)
     let affected = { valves: [] as string[], storages: [] as string[] };
     try {
@@ -372,10 +435,17 @@ export async function POST(req: NextRequest) {
         '| maxDepth:', result.summary.maxDepth.value, '@', result.summary.maxDepth.nodeId,
         '| maxFlow:', result.summary.maxFlow.value, '@', result.summary.maxFlow.linkId);
 
+      const scenariosMeta = Object.fromEntries(
+        Object.entries(rainfallScenarios).map(([k, s]) => [k, { name: s.name, totalRainfall: s.totalRainfall, peakIntensity: s.peakIntensity, peakTime: s.peakTime, durationH: s.durationH }])
+      );
       return NextResponse.json({
         ok: true, simulationId, status: 'completed',
-        parameters: { intensity, landcover: landcover || 'default' },
+        parameters: { intensity, landcover: landcover || 'default', series },
         affected,
+        rainfallScenarios: scenariosMeta,
+        rainfall: series && rainfallScenarios[series] ? {
+          ...scenariosMeta[series], ts: rainfallScenarios[series].ts,
+        } : undefined,
         ...result,
       });
     } catch (err: any) {

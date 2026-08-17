@@ -63,27 +63,11 @@ function fmtTime(hoursDecimal: number): string {
 // ═══════════════════════════════════════════════════════════
 // PIPE CROSS-SECTION PANEL — 管网横截面水量展示(方案1)
 // ═══════════════════════════════════════════════════════════
-// 降雨情景:重现期 5/10/50/100 年(替代原倍率滑条,docx 意见)——pct 为相对基准雨强的倍率
-const RAIN_SCENARIOS = [
-  { label: "5 年一遇", pct: 100, desc: "重现期 5 年 · 常见大雨,城市管网基本可应对" },
-  { label: "10 年一遇", pct: 160, desc: "重现期 10 年 · 较强降雨,局部可能出现积水" },
-  { label: "50 年一遇", pct: 240, desc: "重现期 50 年 · 强降雨,低洼处内涝风险升高" },
-  { label: "100 年一遇", pct: 300, desc: "重现期 100 年 · 极端强降雨,考验系统极限" },
-] as const;
-// 降雨过程曲线:24 步钟形(0-120min,峰值 ~72min),返回 mm/h
-function rainCurve(pct: number): number[] {
-  return Array.from({ length: 24 }, (_, i) => {
-    const t = i / 23;
-    const g = Math.exp(-((t - 0.62) ** 2) / 0.028);
-    return Math.round(((pct / 100) * 42 * g) * 10) / 10;
-  });
-}
-function rainCurvePeak(pct: number): number { return (pct / 100) * 42; }
-// SVG 折线点(200x44 视口,下方留 4px 基线)
-function rainCurvePoints(pct: number): string {
-  const c = rainCurve(pct);
-  const max = 46;
-  return c.map((v, i) => `${((i / (c.length - 1)) * 200).toFixed(1)},${(40 - (v / max) * 36).toFixed(1)}`).join(" ");
+// 降雨情景:真实设计暴雨重现期(3/5/10/20/50 年),数据取自 INP [TIMESERIES]
+import { RAIN_SCENARIOS, tsToPoints, type RainfallScenario, type RainfallScenarioKey } from "./rainfall-scenarios";
+// 选中情景 → 对象(按 key)
+function scnOf(key?: string): RainfallScenario | undefined {
+  return RAIN_SCENARIOS.find(s => s.key === key);
 }
 
 // 共享几何:推演/热力图每步不再 new Geometry(长推演不掉帧)
@@ -375,7 +359,7 @@ export default function SandboxPage() {
   const [vertEx, setVertEx] = useState(5);
 
   // Dynamic state
-  const [dynI, setDynI] = useState(80);
+  const [scn, setScn] = useState<RainfallScenarioKey>("5A");
   const draggedRainRef = useRef(false); // 用户是否曾拖动过雨强滑条(引导第 3 步完成条件)
   // 管道调节阀:已生效开度(pipeId→0-1)与拖动中预览;防抖重跑(与雨强滑条同模式)
   const [valves, setValves] = useState<Record<string, number>>({});
@@ -417,6 +401,9 @@ export default function SandboxPage() {
   const [dynPhase, setDynPhase] = useState<"config"|"loading"|"ready"|"running"|"paused"|"done">("config");
   const [simId, setSimId] = useState("");
   const [heatmap, setHeatmap] = useState(false);
+  // 渲染模式:默认/水深/流量/风险(覆盖原独立热力图按钮);渲染 Popover 选择
+  const [renderMode, setRenderMode] = useState<"default" | "depth" | "flow" | "risk">("default");
+  const [openBar, setOpenBar] = useState<"render" | "view" | "layer" | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">(() => { try { return localStorage.getItem("sandbox-theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
   // 场景主题联动:深色 ↔ 浅色(背景/雾/网格)
   const applyTheme = useCallback(() => {
@@ -903,14 +890,15 @@ export default function SandboxPage() {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    const simIntensity = overrideIntensity ?? dynI;
+    const simIntensity = overrideIntensity ?? (scnOf(scn)?.key === scn ? 100 : 80);
     const simLandcover = overrideLandcover ?? landcover;
     const simValves = overrideValves ?? valves;
     const simGreenLevel = overrideGreenLevel ?? (simLandcover === "green" ? greenLevel : undefined);
+    const simSeries = scnOf(scn) ? scn : undefined;
     let tid: ReturnType<typeof setTimeout> | null = null;
     try {
       tid = setTimeout(() => ctrl.abort(), 90000);
-      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, landcover: simLandcover, greenLevel: simGreenLevel, valves: Object.keys(simValves).length ? simValves : undefined }), signal: ctrl.signal });
+      const res = await fetch("/api/swmm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ intensity: simIntensity, series: simSeries, landcover: simLandcover, greenLevel: simGreenLevel, valves: Object.keys(simValves).length ? simValves : undefined }), signal: ctrl.signal });
       if (tid) { clearTimeout(tid); tid = null; }
       if (abortRef.current === ctrl) abortRef.current = null;
       const d = await res.json();
@@ -976,7 +964,7 @@ export default function SandboxPage() {
       }
     } catch (e: any) { if (reqSeq !== simSeqRef.current) return; if (abortRef.current === ctrl) abortRef.current = null; setDynPhase("config"); if (e.name !== "AbortError") alert("仿真加载失败: " + e.message); }
     finally { if (tid) clearTimeout(tid); }
-  }, [dynI, landcover, valves, greenLevel]);
+  }, [scn, landcover, valves, greenLevel]);
 
 
   const clearWaterMeshes = useCallback(() => {
@@ -1023,13 +1011,14 @@ export default function SandboxPage() {
       if (ponding > 0.01 || isOverflow) { m.color.set("#e04040"); m.emissive.set("#300000"); m.emissiveIntensity = 0.4; }
       else { const ratio = Math.min(1, depth / (ts.summary?.maxDepth?.value || 1)); m.color.set(new THREE.Color().setHSL(0.57 - ratio * 0.12, 0.7, 0.35 + ratio * 0.2)); m.emissive.set("#001122"); m.emissiveIntensity = 0.15 + ratio * 0.2; }
 
-      // 淹没热力图:按深度比例着色的半透明圆盘(蓝绿→黄→红紫)(清理已统一在 early-return 前)
-      if (heatmap && depth > 0.02) {
+      // 淹没/风险着色圆盘:水深模式=蓝→红热力;风险模式=黄→红风险色阶;流量模式不画
+      if ((renderMode === "depth" || renderMode === "risk") && depth > 0.02) {
         const maxD = ts.summary?.maxDepth?.value || 1;
         const ratio = Math.min(1, depth / Math.max(0.05, maxD));
         const ringGeom = SHARED.heatDisc; // 共享几何
-        const hue = 0.62 - ratio * 0.62; // 蓝(0.62)→红(0)
-        const ring = new THREE.Mesh(ringGeom, new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(hue, 0.85, 0.55), transparent: true, opacity: 0.28 + ratio * 0.3, depthWrite: false }));
+        const hue = renderMode === "risk" ? (0.15 - ratio * 0.15) : (0.62 - ratio * 0.62); // risk:黄橙红
+        const sat = renderMode === "risk" ? 0.95 : 0.85;
+        const ring = new THREE.Mesh(ringGeom, new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(Math.max(0, hue), sat, 0.55), transparent: true, opacity: 0.28 + ratio * 0.3, depthWrite: false }));
         ring.position.y = groundY + 0.01; ring.rotation.x = -Math.PI / 2; (ring as any).userData = { overflowRing: true };
         group.add(ring);
       }
@@ -1093,7 +1082,7 @@ export default function SandboxPage() {
 
     // 选中白亮
     // (蓄水设施已按 docx 意见移除)
-  }, [dynStep, dynRes, vertEx, heatmap, selected, rainPreview, valves, valveDraft]);
+  }, [dynStep, dynRes, vertEx, renderMode, selected, rainPreview, valves, valveDraft]);
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
@@ -1118,7 +1107,7 @@ export default function SandboxPage() {
     if (guide === 1 && selected?.type === "pipe") setGuide(2);
     else if (guide === 2 && landcover !== "default") setGuide(3);
     else if (guide === 3 && draggedRainRef.current) { setGuide(0); }
-  }, [guide, selected, landcover, dynI]);
+  }, [guide, selected, landcover, scn]);
   const finishGuide = () => { setGuide(0); };
   // 引导完成后一次性提示动手玩法(仅首次)
   useEffect(() => {
@@ -1325,32 +1314,47 @@ export default function SandboxPage() {
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-black relative">
       {/* ── Top bar ── */}
-      <div className="absolute top-0 left-0 right-0 z-10 bg-black/92 backdrop-blur border-b border-gray-800 px-2 py-1 flex items-center gap-1.5 text-[11px] flex-wrap">
-        <span className="font-bold text-gray-300 text-xs">🌊 紫荆雅园</span>
-        <div className="flex bg-gray-800 rounded-lg p-0.5">
+      <div className="absolute top-0 left-0 right-0 z-20 bg-black/90 backdrop-blur border-b border-gray-800 px-2 py-1 flex items-center gap-2 text-[11px]">
+        <span className="font-bold text-gray-200 text-xs shrink-0">🌊 紫荆雅园</span>
+        <div className="flex bg-gray-800 rounded-lg p-0.5 shrink-0">
           <button onClick={() => { setMode("static"); clearWaterMeshes(); }} className={"px-3 py-1 rounded-md font-bold text-xs " + (mode === "static" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white")}>📐 静态沙盘</button>
           <button onClick={() => setMode("dynamic")} className={"px-3 py-1 rounded-md font-bold text-xs " + (mode === "dynamic" ? "bg-cyan-600 text-white" : "text-gray-400 hover:text-white")}>▶ 动态推演</button>
         </div>
         <div className="h-4 w-px bg-gray-600" />
-        <span className="text-gray-500 text-[10px]">渲染</span>
-        <button onClick={() => setHeatmap(v => !v)} title="节点淹没深度热力图" className={"px-2 py-1 rounded-md text-xs font-bold " + (heatmap ? "bg-purple-600 text-white" : "text-gray-400 hover:text-white")}>🌡 热力图</button>
-        <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} title="切换深浅主题" className={"px-2 py-1 rounded-md text-xs font-bold " + (theme === "light" ? "bg-amber-500 text-black" : "text-gray-400 hover:text-white")}>{theme === "dark" ? "☀️ 浅色" : "🌙 深色"}</button>
-        <div className="h-4 w-px bg-gray-600" />
-        <span className="text-gray-500 text-[10px]">视角</span>
-        <button onClick={() => setOrbit(v => !v)} title="相机自动环绕" className={"px-2 py-1 rounded-md text-xs font-bold " + (orbit ? "bg-pink-600 text-white" : "text-gray-400 hover:text-white")}>🔄 环绕</button>
-        {[{ v: "panorama", l: "全景" },{ v: "topdown", l: "俯视" },{ v: "underground", l: "地下" }].map(({ v, l }) => (
-          <button key={v} onClick={() => flyTo(v)} className="px-1.5 py-0.5 rounded text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300">{l}</button>
-        ))}
-        <div className="h-4 w-px bg-gray-600" />
-        <span className="text-gray-500 text-[10px]">组成</span>
-        {[{ id: "sc", l: "汇水区" },{ id: "pipes", l: "管道" },{ id: "nodes", l: "节点" },{ id: "ground", l: "地表" }].map(({ id, l }) => (
-          <button key={id} onClick={() => toggleLayer(id)} className={"px-1.5 py-0.5 rounded text-[10px] " + (layers[id] ? "bg-gray-600 text-white" : "bg-gray-800 text-gray-500")}>{l}</button>
-        ))}
-        <div className="h-4 w-px bg-gray-600" />
-        <span className="text-gray-500 text-[10px]">↕ 竖向缩放</span>
-        {[1,3,5,8].map(v => (<button key={v} onClick={() => { setVertEx(v); rebuild(v); }} title={`把地下管网竖向放大 ${v} 倍,便于看清管道埋深与高差(仅视觉,不影响仿真)`} className={"px-1 py-0.5 rounded text-[10px] " + (vertEx===v ? "bg-blue-700" : "bg-gray-800 text-gray-400")}>{v}×</button>))}
-        <span className="text-gray-600 text-[9px] hidden lg:inline" title="竖向缩放:放大/缩小竖轴,观察地下管网埋深与落差">看埋深</span>
-        <span className="ml-auto text-[9px] text-gray-500">{stats.nodes}节点 · {stats.pipes}管 · {stats.scs}汇水区</span>
+        {/* 渲染 Popover */}
+        <div className="relative">
+          <button onClick={() => setOpenBar(openBar === "render" ? null : "render")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "render" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>渲染 ▾</button>
+          {openBar === "render" && (
+            <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-32 z-30">
+              {([["default","◉ 默认"],["depth","◉ 水深"],["flow","◉ 流量"],["risk","◉ 风险"]] as const).map(([v, l]) => (
+                <button key={v} onClick={() => { setRenderMode(v); setHeatmap(v === "depth"); setOpenBar(null); }} className={"block w-full text-left px-2 py-1.5 rounded text-[11px] " + (renderMode === v ? "text-cyan-300 font-bold bg-cyan-900/30" : "text-gray-300 hover:bg-gray-800")}>{l}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* 视角 Popover */}
+        <div className="relative">
+          <button onClick={() => setOpenBar(openBar === "view" ? null : "view")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "view" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>视角 ▾</button>
+          {openBar === "view" && (
+            <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-28 z-30">
+              {([["panorama","鸟瞰"],["topdown","俯视"],["orbit","环绕"],["reset","复位"]] as const).map(([v, l]) => (
+                <button key={v} onClick={() => { if (v === "orbit") setOrbit(o => { orbitRef.current = !o; return !o; }); else if (v === "reset") { setOrbit(false); orbitRef.current = false; flyTo("panorama"); } else flyTo(v); setOpenBar(null); }} className={"block w-full text-left px-2 py-1.5 rounded text-[11px] hover:bg-gray-800 text-gray-300 " + (v === "orbit" && orbit ? "text-cyan-300 font-bold" : "")}>{l}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* 组成 Popover */}
+        <div className="relative">
+          <button onClick={() => setOpenBar(openBar === "layer" ? null : "layer")} className={"px-2 py-1 rounded-md font-bold text-xs " + (openBar === "layer" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>组成 ▾</button>
+          {openBar === "layer" && (
+            <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-32 z-30">
+              {[{ id: "ground", l: "地表" },{ id: "sc", l: "汇水区" },{ id: "pipes", l: "管道" },{ id: "nodes", l: "节点" }].map(({ id, l }) => (
+                <button key={id} onClick={() => toggleLayer(id)} className={"block w-full text-left px-2 py-1.5 rounded text-[11px] " + (layers[id] ? "text-gray-100 font-bold" : "text-gray-500")}>{layers[id] ? "☑ " : "☐ "}{l}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        <span className="ml-auto text-[9px] text-gray-500 shrink-0">{stats.nodes}节点 · {stats.pipes}管 · {stats.scs}汇水区</span>
       </div>
 
       {/* ── Three.js canvas + 3D 悬浮迷你横截面 + 放大模态 ── */}
@@ -1518,21 +1522,36 @@ export default function SandboxPage() {
 
           {(dynPhase === "config" || dynPhase === "ready" || dynPhase === "done") && (
             <div className="space-y-2">
-              {/* 降雨情景:5/10/50/100 年一遇,带释义与降雨曲线(替代原倍率滑条) */}
+              {/* 降雨情景:真实设计暴雨重现期 3/5/10/20/50 年,展示真实累计/峰值/时长/曲线 */}
               <div className={guide === 3 ? "rounded-lg ring-2 ring-yellow-400/80 p-1" : ""}>
                 <div className="mb-1 text-[10px] text-gray-500">🌧 降雨情景(重现期)</div>
-                <div className="grid grid-cols-4 gap-1">
+                <div className="grid grid-cols-5 gap-1">
                   {RAIN_SCENARIOS.map(s => (
-                    <button key={s.pct} onClick={() => { if (s.pct === dynI) return; draggedRainRef.current = true; setDynI(s.pct); setRainPreview(null); loadSim(s.pct); }} title={s.desc} className={`py-1 rounded text-[10px] font-bold transition-colors ${dynI === s.pct ? "bg-blue-700 text-white ring-1 ring-blue-400" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{s.label}</button>
+                    <button key={s.key} onClick={() => { if (s.key === scn) return; draggedRainRef.current = true; setScn(s.key); setRainPreview(null); loadSim(undefined, undefined, undefined, undefined); }} title={s.desc} className={`py-1 rounded text-[10px] font-bold transition-colors ${scn === s.key ? "bg-blue-700 text-white ring-1 ring-blue-400" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{s.label.replace("一遇","").replace("年","")}</button>
                   ))}
                 </div>
-                <div className="mt-0.5 text-[9px] leading-3 text-gray-500">{RAIN_SCENARIOS.find(s => s.pct === dynI)?.desc || ""}</div>
-                {/* 降雨曲线(当前情景,雨强 mm/h 随时间) */}
-                <svg viewBox="0 0 200 44" className="mt-1 w-full rounded bg-blue-950/40 border border-blue-900/50" preserveAspectRatio="none">
-                  <polyline points={rainCurvePoints(dynI)} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
-                  <line x1="0" y1="40" x2="200" y2="40" stroke="#334155" strokeWidth="0.5" />
-                </svg>
-                <div className="flex justify-between text-[8px] text-gray-600"><span>0 min</span><span>峰值 {(rainCurvePeak(dynI)).toFixed(1)} mm/h</span><span>120 min</span></div>
+                {scnOf(scn) && (() => {
+                  const s = scnOf(scn)!;
+                  return (
+                    <>
+                      <div className="mt-1.5 rounded bg-blue-950/30 border border-blue-900/50 px-2 py-1.5 text-[10px] space-y-0.5">
+                        <div className="font-bold text-cyan-300">{s.label}</div>
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                          <div className="flex justify-between"><span className="text-gray-500">累计雨量</span><span className="text-gray-100">{s.totalRainfall.toFixed(1)} mm</span></div>
+                          <div className="flex justify-between"><span className="text-gray-500">峰值雨强</span><span className="text-gray-100">{s.peakIntensity.toFixed(1)} mm/h</span></div>
+                          <div className="flex justify-between"><span className="text-gray-500">持续时长</span><span className="text-gray-100">{s.durationH.toFixed(1)} h</span></div>
+                          <div className="flex justify-between"><span className="text-gray-500">峰值时刻</span><span className="text-gray-100">{s.peakTime}</span></div>
+                        </div>
+                      </div>
+                      {/* 降雨过程曲线(真实时序,mm/h) */}
+                      <svg viewBox="0 0 200 44" className="mt-1 w-full rounded bg-blue-950/40 border border-blue-900/50" preserveAspectRatio="none">
+                        <polyline points={tsToPoints(s.ts, 200, 44)} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
+                        <line x1="0" y1="40" x2="200" y2="40" stroke="#334155" strokeWidth="0.5" />
+                      </svg>
+                      <div className="flex justify-between text-[8px] text-gray-600"><span>0:00</span><span>峰值 {s.peakIntensity.toFixed(1)} mm/h</span><span>23:55</span></div>
+                    </>
+                  );
+                })()}
               </div>
               {/* 下垫面方案切换(方案2):点击改变下垫面→重新仿真→横截面水量变化 */}
               <div className={guide === 2 ? "rounded-lg ring-2 ring-yellow-400/80 p-1" : ""}>
@@ -1560,7 +1579,7 @@ export default function SandboxPage() {
           {dynPhase === "running" && (
             <div className="space-y-2">
               <div className="flex justify-between"><span className="text-gray-500">当前时间</span><span className="text-gray-200 font-bold font-mono">{currentTimeLabel}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">当前步</span><span className="text-gray-200">{dynStep+1}/{timeStepCount}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">进度</span><span className="text-gray-200">{timeStepCount > 1 ? Math.round((dynStep / Math.max(1, timeStepCount - 1)) * 100) : 100}%</span></div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800"><div className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400 transition-[width] duration-150" style={{ width: `${((dynStep + 1) / Math.max(1, timeStepCount)) * 100}%` }} /></div>
               <div className="flex justify-between"><span className="text-gray-500">最大水深</span><span className="text-gray-200">{dynRes?.summary?.maxDepth?.value?.toFixed(2)} m</span></div>
               <div className="flex gap-1.5">
@@ -1693,17 +1712,17 @@ export default function SandboxPage() {
         <div className={`absolute bottom-14 left-1/2 -translate-x-1/2 z-10 bg-black/85 border border-gray-700 rounded-lg px-3 py-1.5 text-[11px] font-bold whitespace-nowrap shadow-lg ${schemeMsg.color}`}>{schemeMsg.text}</div>
       )}
       {/* 3D 主窗口降雨曲线浮层(docx:主窗口展示降雨情景的降雨曲线,当前时刻标记同步) */}
-      {mode === "dynamic" && dynRes?.ok && (
+      {mode === "dynamic" && dynRes?.ok && (() => { const s = scnOf(scn); if (!s) return null; return (
         <div className="absolute left-3 top-16 z-10 w-[220px] bg-black/80 border border-gray-700 rounded-lg px-2 py-1.5 pointer-events-none">
-          <div className="flex justify-between text-[9px] mb-0.5"><span className="text-cyan-400 font-bold">🌧 {RAIN_SCENARIOS.find(s => s.pct === dynI)?.label || `${dynI}%`} 降雨曲线</span><span className="text-gray-500">峰值 {rainCurvePeak(dynI).toFixed(1)} mm/h</span></div>
+          <div className="flex justify-between text-[9px] mb-0.5"><span className="text-cyan-400 font-bold">🌧 {s.label} 降雨曲线</span><span className="text-gray-500">峰值 {s.peakIntensity.toFixed(1)} mm/h</span></div>
           <svg viewBox="0 0 200 44" className="w-full rounded bg-blue-950/30 border border-blue-900/50" preserveAspectRatio="none">
-            <polyline points={rainCurvePoints(dynI)} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
+            <polyline points={tsToPoints(s.ts, 200, 44)} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
             <line x1="0" y1="40" x2="200" y2="40" stroke="#334155" strokeWidth="0.5" />
             {timeStepCount > 1 && <line x1={(dynStep / (timeStepCount - 1)) * 200} y1="2" x2={(dynStep / (timeStepCount - 1)) * 200} y2="40" stroke="#ffd54f" strokeWidth="1" strokeDasharray="3 2" />}
           </svg>
-          <div className="flex justify-between text-[8px] text-gray-500"><span>0 min</span><span className="text-yellow-400/80">{currentTimeLabel}</span><span>120 min</span></div>
+          <div className="flex justify-between text-[8px] text-gray-500"><span>0:00</span><span className="text-yellow-400/80">{currentTimeLabel}</span><span>23:55</span></div>
         </div>
-      )}
+      ); })()}
       {/* 分步新手引导卡片 */}
       {guide > 0 && mode === "dynamic" && (
         <div className="absolute left-2 bottom-28 z-20 bg-cyan-950/95 border border-cyan-600 rounded-lg px-3 py-2 text-[11px] text-cyan-100 max-w-[260px] shadow-xl">
@@ -1717,6 +1736,27 @@ export default function SandboxPage() {
             {guide === 3 && <>③ <b>选择降雨情景</b>(5/10/50/100 年一遇),观察推演结果</>}
           </div>
           <div className="mt-1.5 text-[9px] text-cyan-300/60">{guide === 1 ? "试试点击场景中的管道 →" : guide === 2 ? "试试点右侧方案按钮 →" : "试试切换右侧降雨情景 →"}</div>
+        </div>
+      )}
+      {/* 渲染图例:水深/风险模式时显示于三维窗口角落,默认/流量模式不显示 */}
+      {mode === "dynamic" && (renderMode === "depth" || renderMode === "risk") && (
+        <div className="absolute right-3 bottom-4 z-10 bg-black/80 border border-gray-700 rounded-lg px-2.5 py-2 text-[10px] pointer-events-none">
+          <div className="font-bold text-gray-300 mb-1.5">{renderMode === "risk" ? "风险" : "水深"}</div>
+          {renderMode === "risk"
+            ? (
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ffe14d" }} /><span className="text-gray-400">低</span></div>
+                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#fb923c" }} /><span className="text-gray-400">中</span></div>
+                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ef4444" }} /><span className="text-gray-400">高·严重</span></div>
+              </div>
+            )
+            : (
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#38bdf8" }} /><span className="text-gray-400">低</span></div>
+                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#a3e635" }} /><span className="text-gray-400">中</span></div>
+                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ef4444" }} /><span className="text-gray-400">高</span></div>
+              </div>
+            )}
         </div>
       )}
       {/* 悬停 tooltip(位置由原生 mousemove 直改 style,内容变化才重渲染) */}
@@ -1739,7 +1779,7 @@ export default function SandboxPage() {
               <line x1="0" y1="10" x2="100" y2="10" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.7" />
               <circle cx={timeStepCount > 1 ? (dynStep / (timeStepCount - 1)) * 100 : 50} cy="10" r="3" fill="#ffd54f" stroke="#1e293b" strokeWidth="0.8" />
             </svg>
-            <span className="text-[9px] text-gray-400 min-w-[3.5rem] text-right">{RAIN_SCENARIOS.find(s => s.pct === dynI)?.label || `${dynI}%`}</span>
+            <span className="text-[9px] text-gray-400 min-w-[3.5rem] text-right">{scnOf(scn)?.label || ""}</span>
           </div>
           {/* 风险统计(满管/溢流)——来自真实结果 */}
           {riskStats && (riskStats.fullPipes.length > 0 || riskStats.overflowNodes.length > 0) && (
@@ -1783,22 +1823,19 @@ export default function SandboxPage() {
               </div>
               <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1">
                 <div className="text-[8px] text-gray-500">峰值降雨</div>
-                <div className="text-[11px] font-bold text-cyan-300">{rainCurvePeak(dynI).toFixed(1)} mm/h</div>
-                <div className="text-[7px] text-cyan-500/80 leading-3">{RAIN_SCENARIOS.find(s => s.pct === dynI)?.label || ""}</div>
+                <div className="text-[11px] font-bold text-cyan-300">{(scnOf(scn)?.peakIntensity ?? 0).toFixed(1)} mm/h</div>
+                <div className="text-[7px] text-cyan-500/80 leading-3">{scnOf(scn)?.label || ""}</div>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button title="上一步(回看前一帧)" onClick={() => { setDynStep(s=>Math.max(0,s-1)); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} className="text-[10px] bg-gray-800 hover:bg-gray-700 px-1.5 py-1 rounded text-gray-400">⏮ 上一步</button>
             <span className="text-[10px] text-gray-400 font-mono w-12 text-right">{currentTimeLabel}</span>
-            <input type="range" min={0} max={timeStepCount-1} value={dynStep} onChange={e => { setDynStep(+e.target.value); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} className="flex-1 h-2 appearance-none bg-gray-800 rounded-full cursor-pointer [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-cyan-600 [&::-webkit-slider-thumb]:rounded-full" />
-            <span className="text-gray-400 font-mono text-[10px] min-w-[4rem] text-right">{dynStep+1}/{timeStepCount}</span>
-            <button title="下一步(前进一帧)" onClick={() => { setDynStep(s=>Math.min(timeStepCount-1,s+1)); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} className="text-[10px] bg-gray-800 hover:bg-gray-700 px-1.5 py-1 rounded text-gray-400">⏭ 下一步</button>
+            <input type="range" min={0} max={timeStepCount-1} value={dynStep} onChange={e => { setDynStep(+e.target.value); if(dynPlay){setDynPlay(false);setDynPhase("paused");} }} title="拖动查看任意时刻" className="flex-1 h-2 appearance-none bg-gray-800 rounded-full cursor-pointer [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-cyan-600 [&::-webkit-slider-thumb]:rounded-full" />
             <select value={dynSpd} onChange={e=>setDynSpd(+e.target.value)} className="bg-gray-800 rounded px-1.5 py-1 text-[10px] border border-gray-700 text-gray-400"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={5}>5×</option></select>
             {dynPhase==="running"
-              ? <button title="暂停" onClick={()=>{setDynPlay(false);setDynPhase("paused");}} className="bg-yellow-800 hover:bg-yellow-700 px-2 py-1 rounded text-xs font-bold">⏸ 暂停</button>
-              : <button title="从当前帧继续播放" onClick={()=>{if(dynStep>=timeStepCount-1)setDynStep(0);setDynPlay(true);setDynPhase("running");}} className="bg-green-800 hover:bg-green-700 px-2 py-1 rounded text-xs font-bold">▶ 播放</button>}
-            <span className="hidden text-[9px] text-gray-600 sm:inline">⏮⏭ 单步 · 空格 播放/暂停 · 拖动时间轴回看</span>
+              ? <button title="暂停" onClick={()=>{setDynPlay(false);setDynPhase("paused");}} className="bg-yellow-800 hover:bg-yellow-700 px-2 py-1 rounded text-xs font-bold">⏸</button>
+              : <button title="从当前时刻继续播放" onClick={()=>{if(dynStep>=timeStepCount-1)setDynStep(0);setDynPlay(true);setDynPhase("running");}} className="bg-green-800 hover:bg-green-700 px-2 py-1 rounded text-xs font-bold">▶</button>}
+            <span className="text-[9px] text-gray-500 font-mono">{fmtTime(((dynRes.timestamps?.[dynRes.timestamps.length-1]) as number) ?? 0)}</span>
           </div>
         </div>
       )}
