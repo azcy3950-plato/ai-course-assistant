@@ -1771,7 +1771,7 @@ export default function SandboxPage() {
               const frac = (ld.depthFraction?.[dynStep] ?? 0) * 100;
               return (
                 <>
-                  <div className="w-24 h-14 shrink-0"><PipeCrossSection compact diam={pp.diameter} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={ld.flowDir?.[dynStep] ?? 0} landcover={landcover} animate={false} size="md" /></div>
+                  <div className="w-24 h-14 shrink-0"><PipeCrossSection compact diam={pp?.diam || 0.3} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={ld.flowDir?.[dynStep] ?? 0} landcover={landcover} animate={false} size="md" /></div>
                   <div className="text-[9px] text-gray-400 truncate max-w-[140px]">{pid} · {frac.toFixed(0)}% 满管 {frac >= 100 ? "⚠️" : ""}</div>
                 </>
               );
