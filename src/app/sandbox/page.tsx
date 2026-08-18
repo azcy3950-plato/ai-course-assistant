@@ -1877,19 +1877,23 @@ export default function SandboxPage() {
               {shownPipes.length > 0 && (
                 <div className="mb-1.5">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[9px] text-gray-400">🛢 关键管道横截面<span className="ml-1 text-gray-600">· 选中置顶 · 充涨/流量/水深综合 · 随时间轴同步</span></span>
+                    <span className="text-[9px] text-gray-400">🛢 关键管道横截面<span className="ml-1 text-gray-600">· 点击卡片查看右侧详细横断面 · 随时间轴同步</span></span>
                     <span className="text-[8px] text-gray-500">{shownPipes.length} 条</span>
                   </div>
                   <div className="flex gap-2 overflow-x-auto pb-1">
                     {shownPipes.map(p => {
                       const ld = (dynRes.links as any)?.[p.id];
                       const frac = ((ld?.depthFraction?.[dynStep] ?? 0) * 100);
+                      const flow = (ld?.flow?.[dynStep] ?? 0);
                       const isSel = selected?.type === "pipe" && selected.data.id === p.id;
                       return (
-                        <button key={p.id} onClick={() => { const mesh = pipeMeshMap.current.get(p.id); if (mesh) { if (selRef.current !== mesh) { if (selRef.current) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); } setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id: p.id } }); } }} className={`shrink-0 rounded border px-1.5 py-1 text-left ${isSel ? "border-cyan-500 bg-cyan-900/30" : "border-gray-700 bg-gray-900/50 hover:bg-gray-800"}`} style={{ width: 84 }}>
-                          <div className="text-[9px] font-bold text-gray-200 truncate">{p.id}</div>
-                          <PipeCrossSection compact diam={p.diam} depth={(ld?.depth?.[dynStep] ?? 0)} depthFraction={(ld?.depthFraction?.[dynStep] ?? 0)} flow={(ld?.flow?.[dynStep] ?? 0)} flowDir={`${p.from} → ${p.to}`} landcover={landcover} animate={false} size="md" />
-                          <div className="text-[8px] text-cyan-300 font-bold">{frac.toFixed(0)}%</div>
+                        <button key={p.id} onClick={() => { const mesh = pipeMeshMap.current.get(p.id); if (mesh) { if (selRef.current !== mesh) { if (selRef.current) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); } setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id: p.id } }); } }} className={`shrink-0 rounded border px-1.5 py-1 text-left transition-colors ${isSel ? "border-cyan-500 bg-cyan-900/40 ring-1 ring-cyan-500/60" : "border-gray-700 bg-gray-900/50 hover:bg-gray-800 hover:border-gray-500"}`} style={{ width: 116 }}>
+                          <div className="text-[10px] font-bold truncate" style={{ color: isSel ? "#7dd3fc" : "#e5e7eb" }}>{p.id}</div>
+                          <PipeCrossSection compact diam={p.diam} depth={(ld?.depth?.[dynStep] ?? 0)} depthFraction={(ld?.depthFraction?.[dynStep] ?? 0)} flow={flow} flowDir={`${p.from} → ${p.to}`} landcover={landcover} animate={false} size="md" />
+                          <div className="flex items-center justify-between text-[8px]">
+                            <span className={frac >= 100 ? "text-red-400 font-bold" : "text-cyan-300 font-bold"}>{frac.toFixed(0)}%</span>
+                            <span className="text-gray-400">{flow >= 0 ? "→" : "←"} {Math.abs(flow).toFixed(2)}</span>
+                          </div>
                         </button>
                       );
                     })}
@@ -1904,16 +1908,17 @@ export default function SandboxPage() {
                 if (!ld || !pp) return <div className="text-[10px] text-gray-500">推演后点击任意管道查看详细横断面</div>;
                 const frac = (ld.depthFraction?.[dynStep] ?? 0) * 100;
                 return (
-                  <div className="flex items-center gap-3 rounded bg-gray-900/40 border border-gray-800 px-2 py-1.5">
-                    <div className="w-36 h-20 shrink-0"><PipeCrossSection compact diam={pp?.diam || 0.3} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={ld.flowDir?.[dynStep] ?? 0} landcover={landcover} animate={false} size="md" /></div>
-                    <div className="text-[9px] leading-4 text-gray-300">
-                      <div className="font-bold text-gray-100">{pid} 详细横断面</div>
-                      <div className="mt-0.5 text-gray-400">当前水深 <span className="text-gray-100">{(ld.depth?.[dynStep] ?? 0).toFixed(2)} m</span></div>
-                      <div className="text-gray-400">当前流量 <span className="text-gray-100">{(ld.flow?.[dynStep] ?? 0).toFixed(2)} m³/s</span></div>
-                      <div className="text-gray-400">当前流速 <span className="text-gray-100">{(ld.velocity?.[dynStep] ?? 0).toFixed(2)} m/s</span></div>
-                      <div className={frac >= 100 ? "text-red-400 font-bold" : "text-cyan-300 font-bold"}>{frac.toFixed(0)}% 充满度 {frac >= 100 ? " ⚠️ 满管" : ""}</div>
+                  <div className={`flex items-center gap-4 rounded border px-3 py-2 ${frac >= 100 ? "border-red-600/60 bg-red-950/20" : "border-gray-800 bg-gray-900/40"}`}>
+                    <div className="shrink-0"><PipeCrossSection size="lg" diam={pp?.diam || 0.3} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`} landcover={landcover} animate={false} /></div>
+                    <div className="text-[10px] leading-4 text-gray-300">
+                      <div className="font-bold text-gray-100 text-xs">{pid} 详细横断面</div>
+                      <div className="mt-1 text-gray-500">形状 <span className="text-gray-200">{String(pp?.shape ?? "circular").toUpperCase()}</span> · 管径 <span className="text-gray-200">{((pp?.diam ?? 0)).toFixed(2)} m</span></div>
+                      <div className="text-gray-500">当前水深 <span className="text-gray-100">{(ld.depth?.[dynStep] ?? 0).toFixed(2)} m</span></div>
+                      <div className="text-gray-500">当前流量 <span className="text-gray-100">{(ld.flow?.[dynStep] ?? 0).toFixed(2)} m³/s</span></div>
+                      <div className="text-gray-500">当前流速 <span className="text-gray-100">{(ld.velocity?.[dynStep] ?? 0).toFixed(2)} m/s</span></div>
+                      <div className={frac >= 100 ? "text-red-400 font-bold" : "text-cyan-300 font-bold"}>{frac.toFixed(0)}% 充满度 {frac >= 100 ? "⚠️ 满管" : ""}</div>
+                      <div className="text-gray-500 mt-0.5">当前时间 <span className="text-gray-200">{currentTimeLabel}</span></div>
                     </div>
-                    <span className="ml-auto text-[9px] text-gray-500">管径 {((pp?.diam ?? 0)).toFixed(2)} m · 当前 {currentTimeLabel}</span>
                   </div>
                 );
               })()}
