@@ -400,10 +400,9 @@ export default function SandboxPage() {
   const [dynSpd, setDynSpd] = useState(1);
   const [dynPhase, setDynPhase] = useState<"config"|"loading"|"ready"|"running"|"paused"|"done">("config");
   const [simId, setSimId] = useState("");
-  const [heatmap, setHeatmap] = useState(false);
-  // 渲染模式:默认/水深/流量/风险(覆盖原独立热力图按钮);渲染 Popover 选择
-  const [renderMode, setRenderMode] = useState<"default" | "depth" | "flow" | "risk">("default");
-  const [openBar, setOpenBar] = useState<"render" | "view" | "layer" | null>(null);
+  // 系统自动表现:静态=结构视图;动态推演(有结果)=自动显示水深圆盘+管道流量着色+下垫面弱化
+  const showingResults = mode === "dynamic" && !!dynRes;
+  const [openBar, setOpenBar] = useState<"view" | "layer" | null>(null);
   const [curView, setCurView] = useState<"panorama" | "topdown" | "underground">("panorama");
   // 底部结果 详情展开(横断面/时序),默认收起保持底栏紧凑
   const [resultOpen, setResultOpen] = useState(false);
@@ -794,8 +793,12 @@ export default function SandboxPage() {
     // Extents
     let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity;
     let minElev = Infinity, maxElev = -Infinity;
+    // 综合 node 与所有汇水区多边形范围,确保 ground 覆盖完整项目(避免 SC 伸出底面)
     data.nodes.forEach((n: Node3D) => { if (n.x<mnX) mnX=n.x; if (n.x>mxX) mxX=n.x; if (n.z<mnZ) mnZ=n.z; if (n.z>mxZ) mxZ=n.z; if (n.invert<minElev) minElev=n.invert; if (n.ground>maxElev) maxElev=n.ground; });
+    (data.scs as Array<{ pts: Array<[number, number]> }> | undefined)?.forEach(sc => sc.pts.forEach(([x, z]) => { if (x<mnX) mnX=x; if (x>mxX) mxX=x; if (z<mnZ) mnZ=z; if (z>mxZ) mxZ=z; }));
 
+    // 若仍无数据(极端),回退 span=50
+    if (!Number.isFinite(mnX) || mnX === Infinity) { mnX = -25; mxX = 25; mnZ = -25; mxZ = 25; }
     const span = Math.max(mxX - mnX, mxZ - mnZ, 50);
     const elevY = (e: number) => (e - minElev) * ve;
     // Ground plane at engineering surface (average of all node ground elevations)
@@ -808,8 +811,8 @@ export default function SandboxPage() {
     const PIPE_MIN_R = Math.max(0.08, span * 0.0006);
     const PIPE_MAX_R = span * 0.0042;
 
-    // ── Ground (与项目范围贴合,接近背景色融为一体,不再外扩的大矩形板) ──
-    const gndSpan = span * 0.98;
+    // ── Ground (覆盖 node+汇水区综合范围,项目内不悬空,不外扩大矩形板) ──
+    const gndSpan = span * 1.02;
     const groundGeom = new THREE.PlaneGeometry(gndSpan, gndSpan);
     groundGeom.rotateX(-Math.PI / 2);
     const groundMesh = new THREE.Mesh(groundGeom, new THREE.MeshStandardMaterial({ color: "#3f4953", roughness: 0.9, transparent: true, opacity: 0.85, depthWrite: true }));
@@ -1070,13 +1073,13 @@ export default function SandboxPage() {
       if (ponding > 0.01 || isOverflow) { m.color.set("#e04040"); m.emissive.set("#300000"); m.emissiveIntensity = 0.4; }
       else { const ratio = Math.min(1, depth / (ts.summary?.maxDepth?.value || 1)); m.color.set(new THREE.Color().setHSL(0.57 - ratio * 0.12, 0.7, 0.35 + ratio * 0.2)); m.emissive.set("#001122"); m.emissiveIntensity = 0.15 + ratio * 0.2; }
 
-      // 淹没/风险着色圆盘:水深模式=蓝→红热力;风险模式=黄→红风险色阶;流量模式不画
-      if ((renderMode === "depth" || renderMode === "risk") && depth > 0.02) {
+      // 积水热力圆盘:推演有结果后自动显示(蓝→红随水深),无需用户选模式
+      if (showingResults && depth > 0.02) {
         const maxD = ts.summary?.maxDepth?.value || 1;
         const ratio = Math.min(1, depth / Math.max(0.05, maxD));
         const ringGeom = SHARED.heatDisc; // 共享几何
-        const hue = renderMode === "risk" ? (0.15 - ratio * 0.15) : (0.62 - ratio * 0.62); // risk:黄橙红
-        const sat = renderMode === "risk" ? 0.95 : 0.85;
+        const hue = 0.62 - ratio * 0.62; // 蓝→红
+        const sat = 0.85;
         const ring = new THREE.Mesh(ringGeom, new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(Math.max(0, hue), sat, 0.55), transparent: true, opacity: 0.28 + ratio * 0.3, depthWrite: false }));
         ring.position.y = groundY + 0.01; ring.rotation.x = -Math.PI / 2; (ring as any).userData = { overflowRing: true };
         group.add(ring);
@@ -1101,8 +1104,8 @@ export default function SandboxPage() {
       const ld = linkData[pid]; const flows = ld?.flow; const flow = (flows && dynStep < flows.length) ? flows[dynStep] : 0;
       const cap = ld?.capacity; const capacity = (cap && dynStep < cap.length) ? cap[dynStep] : 0;
       const absFlow = Math.abs(flow); const mat = mesh.material as THREE.MeshStandardMaterial;
-      // 默认/水深/风险模式:管道统一低饱和蓝灰(不随流量染色,保持界面清爽);仅「流量」模式才按流量着色
-      if (renderMode !== "flow" || absFlow < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
+      // 推演后管道自动按流量着色(随水流变化);静态/配置阶段统一低饱和蓝灰
+      if (!showingResults || absFlow < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
       else {
         const maxF = ts.summary?.maxFlow?.value || 0.1; const ratio = Math.min(1, absFlow / maxF);
         const isFull = capacity > 0.98;
@@ -1142,7 +1145,7 @@ export default function SandboxPage() {
 
     // 选中白亮
     // (蓄水设施已按 docx 意见移除)
-  }, [dynStep, dynRes, vertEx, renderMode, selected, rainPreview, valves, valveDraft]);
+  }, [dynStep, dynRes, vertEx, showingResults, selected, rainPreview, valves, valveDraft]);
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
@@ -1222,15 +1225,15 @@ export default function SandboxPage() {
   }, [landcover, greenLevel]);
   useEffect(() => { applyLandcoverPreview(); }, [applyLandcoverPreview]);
 
-  // 下垫面弱化:进入结果渲染模式(水深/流量/风险)或推演后,降低汇水区填充到背景层,突出结果
+  // 下垫面弱化:推演有结果后降低汇水区填充到背景层,自动突出积水/流量
   useEffect(() => {
     const grp = groupsRef.current["sc"]; if (!grp) return;
-    const weak = (renderMode === "depth" || renderMode === "flow" || renderMode === "risk");
+    const weak = mode === "dynamic" && !!dynRes;
     grp.children.forEach(c => {
       const m = c as THREE.Mesh; const mat = m.material as THREE.MeshStandardMaterial | undefined;
       if (mat && typeof mat.opacity === "number" && mat.transparent) mat.opacity = weak ? 0.07 : 0.2;
     });
-  }, [renderMode]);
+  }, [mode, dynRes]);
 
   // 面积加权平均不透水率 Σ(area×%Imperv)/Σ(area);现状=模型原始,海绵=imperv×(1-0.5·gl),高开发=imperv+(100-imperv)*0.6
   const weightedImperv = useCallback(() => {
@@ -1407,17 +1410,6 @@ export default function SandboxPage() {
           <button onClick={() => setMode("dynamic")} className={"px-3 py-1.5 rounded-md font-semibold text-xs " + (mode === "dynamic" ? "bg-cyan-700 text-white" : "text-gray-400 hover:text-white")}>动态推演</button>
         </div>
         <div className="h-4 w-px bg-gray-600" />
-        {/* 渲染 Popover */}
-        <div className="relative">
-          <button onClick={() => setOpenBar(openBar === "render" ? null : "render")} className={"px-2.5 py-1.5 min-h-[30px] rounded-md font-semibold text-xs " + (openBar === "render" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>渲染 · {{ default: "默认", depth: "水深", flow: "流量", risk: "风险" }[renderMode]} ▾</button>
-          {openBar === "render" && (
-            <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-32 z-30">
-              {([["default","◉ 默认"],["depth","◉ 水深"],["flow","◉ 流量"],["risk","◉ 风险"]] as const).map(([v, l]) => (
-                <button key={v} onClick={() => { setRenderMode(v); setHeatmap(v === "depth"); setOpenBar(null); }} className={"block w-full text-left px-2 py-1.5 rounded text-[11px] " + (renderMode === v ? "text-cyan-300 font-bold bg-cyan-900/30" : "text-gray-300 hover:bg-gray-800")}>{l}</button>
-              ))}
-            </div>
-          )}
-        </div>
         {/* 视角 Popover */}
         <div className="relative">
           <button onClick={() => setOpenBar(openBar === "view" ? null : "view")} className={"px-2.5 py-1.5 min-h-[30px] rounded-md font-semibold text-xs " + (openBar === "view" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>视角 · {{ panorama: "鸟瞰", topdown: "俯视", underground: "地下" }[curView]} ▾</button>
@@ -1646,20 +1638,26 @@ export default function SandboxPage() {
               <div className={guide === 2 ? "rounded-lg ring-2 ring-yellow-400/80 p-1" : ""}>
                 <div className="mb-1 text-[10px] text-gray-500">🏞 下垫面方案</div>
                 <div className="grid grid-cols-1 gap-1">
-                  {([["default", "现状方案", "不透水率按模型原始值"], ["green", "海绵提升方案", "降低不透水率,提升汇水区整体透水能力"], ["gray", "高开发方案", "提高不透水率,地表更硬化"]] as const).map(([val, label, reveal]) => (
-                    <button key={val} onClick={() => { if (val === landcover) return; clearTimeout(greenTimerRef.current ?? undefined); greenTimerRef.current = null; setLandcover(val); setRainPreview(null); }} className={`flex items-center justify-between px-2 py-1.5 rounded text-[10px] font-bold transition-colors ${landcover === val ? (val === "green" ? "bg-emerald-700/70 text-white ring-1 ring-emerald-400/60" : val === "gray" ? "bg-stone-700/70 text-white ring-1 ring-stone-400/60" : "bg-gray-600/70 text-white ring-1 ring-gray-400/60") : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>
-                      <span>{landcover === val ? "● " : "○ "}{label}</span>
+                  {([["default", "现状方案", "原始城市状态"], ["green", "海绵提升方案", "提升透水能力"], ["gray", "高开发方案", "增强硬化开发"]] as const).map(([val, label, hint]) => (
+                    <button key={val} onClick={() => { if (val === landcover) return; clearTimeout(greenTimerRef.current ?? undefined); greenTimerRef.current = null; setLandcover(val); setRainPreview(null); }} className={`px-2 py-1.5 rounded text-left transition-colors ${landcover === val ? (val === "green" ? "bg-emerald-700/70 text-white ring-1 ring-emerald-400/60" : val === "gray" ? "bg-stone-700/70 text-white ring-1 ring-stone-400/60" : "bg-gray-600/70 text-white ring-1 ring-gray-400/60") : "bg-gray-800 text-gray-300 hover:bg-gray-700"}`}>
+                      <div className="text-[10px] font-bold">{landcover === val ? "● " : "○ "}{label}</div>
+                      <div className="text-[8px] font-normal opacity-80">{hint}</div>
                     </button>
                   ))}
                 </div>
-                {(() => { const wi = weightedImperv(); const cur = landcover === "green" ? wi.green : landcover === "gray" ? wi.gray : wi.base; const d = cur - wi.base; const curName = landcover === "green" ? "海绵提升" : landcover === "gray" ? "高开发" : "现状"; return (
-                  <div className="mt-1 rounded bg-gray-900/60 border border-gray-700 px-2 py-1.5 text-[10px] space-y-0.5">
-                    <div className="flex justify-between"><span className="text-gray-500">当前方案 · {curName}</span><span className="text-gray-100 font-bold">{cur.toFixed(1)}%</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">面积加权平均不透水率</span><span className="text-gray-200">{wi.base.toFixed(1)}% → {cur.toFixed(1)}%</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">相对现状</span><span className={d > 0 ? "text-orange-400" : d < 0 ? "text-emerald-400" : "text-gray-400"}>{d > 0 ? "↑" : d < 0 ? "↓" : "="} {Math.abs(d).toFixed(1)} 个百分点</span></div>
+                {(() => { const wi = weightedImperv(); const cur = landcover === "green" ? wi.green : landcover === "gray" ? wi.gray : wi.base; const d = cur - wi.base; const curName = landcover === "green" ? "海绵提升方案" : landcover === "gray" ? "高开发方案" : "现状方案"; return (
+                  <div className="mt-1 rounded bg-gray-900/60 border border-gray-700 px-2 py-1.5 text-[10px] space-y-1">
+                    <div className="flex justify-between"><span className="text-gray-500">平均不透水率</span><span className="text-gray-100 font-bold">{cur.toFixed(1)}%</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">较现状</span><span className={d > 0 ? "text-orange-400" : d < 0 ? "text-emerald-400" : "text-gray-400"}>{d > 0 ? "↑" : d < 0 ? "↓" : "="} {Math.abs(d).toFixed(1)} 个百分点</span></div>
+                    {landcover === "default" && (
+                      <div className="pt-1 border-t border-gray-700 text-[8px] leading-3 text-gray-500">现状 LID 组成(按真实设施面积):<div className="mt-0.5">透水铺装 64.7% · 绿色屋顶 30.3% · 绿色空间 3.3% · 渗透调蓄 1.7%</div></div>
+                    )}
+                    {landcover !== "default" && (
+                      <div className="pt-1 border-t border-gray-700 text-[8px] leading-3 text-gray-500">该方案通过真实调整不透水率(%Imperv)改变径流;LID 空间分布与现状一致。</div>
+                    )}
                   </div>
                 ); })()}
-                <div className="mt-0.5 text-[8px] leading-3 text-gray-600">三个固定方案均基于真实模型参数(各汇水区不透水率 %Imperv)计算面积加权平均 · 空间细节为示意图,非精确设施位置</div>
+                <div className="mt-0.5 text-[8px] leading-3 text-gray-600">三个固定方案均为离散可选 · 均由真实 SWMM 参数(%Imperv / LID)驱动 · 无手动调参滑杆</div>
                 <div className="mt-1 flex items-center gap-1 text-[8px] text-gray-500">
                   <span>下垫面不透水率 低</span>
                   <div className="flex-1 h-1.5 rounded overflow-hidden" style={{ background: "linear-gradient(90deg,#8fa890,#b0a898,#c09088)" }} />
@@ -1783,28 +1781,15 @@ export default function SandboxPage() {
           <div className="mt-1.5 text-[9px] text-cyan-300/60">{guide === 1 ? "试试点击场景中的管道 →" : guide === 2 ? "试试点右侧方案按钮 →" : "试试切换右侧降雨情景 →"}</div>
         </div>
       )}
-      {/* 渲染图例:水深/风险模式时显示于三维窗口角落,默认/流量模式不显示 */}
-      {mode === "dynamic" && (renderMode === "depth" || renderMode === "risk") && (
-        <div className="absolute right-3 bottom-4 z-10 bg-black/80 border border-gray-700 rounded-lg px-2.5 py-2 text-[10px] pointer-events-none">
-          <div className="font-bold text-gray-300 mb-1.5">{renderMode === "risk" ? "风险" : "水深"}</div>
-          {renderMode === "risk"
-            ? (
-              <>
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ffe14d" }} /><span className="text-gray-400">低</span></div>
-                  <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#fb923c" }} /><span className="text-gray-400">中</span></div>
-                  <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ef4444" }} /><span className="text-gray-400">高·严重</span></div>
-                </div>
-                <div className="mt-1.5 w-44 border-t border-gray-700 pt-1 text-[8px] leading-3 text-gray-500">风险按节点水深相对最大值与管道满管率呈现：越大越接近红色(黄=较轻,红=严重)。</div>
-              </>
-            )
-            : (
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#38bdf8" }} /><span className="text-gray-400">低</span></div>
-                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#a3e635" }} /><span className="text-gray-400">中</span></div>
-                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ background: "#ef4444" }} /><span className="text-gray-400">高</span></div>
-              </div>
-            )}
+      {/* 下垫面方案示意图例:配置阶段显示于 3D 右下角,颜色=不透水率 */}
+      {mode === "dynamic" && !dynRes && (
+        <div className="absolute right-3 bottom-4 z-10 bg-black/80 border border-gray-700 rounded-lg px-2.5 py-2 text-[8px] pointer-events-none">
+          <div className="font-bold text-gray-300 mb-1">{landcover === "green" ? "海绵提升" : landcover === "gray" ? "高开发" : "现状"} · 下垫面示意</div>
+          <div className="flex items-center gap-1">
+            <span className="text-gray-500">透水性高</span>
+            <div className="w-24 h-1.5 rounded overflow-hidden" style={{ background: "linear-gradient(90deg,#8fa890,#b0a898,#c09088)" }} />
+            <span className="text-gray-500">不透水性高</span>
+          </div>
         </div>
       )}
       {/* 悬停 tooltip(位置由原生 mousemove 直改 style,内容变化才重渲染) */}
@@ -1818,6 +1803,20 @@ export default function SandboxPage() {
           <button onClick={() => setShowTip(false)} className="absolute -top-1.5 -right-1.5 bg-gray-700 hover:bg-gray-600 rounded-full w-4 h-4 text-[9px] leading-4 text-center">✕</button>
         </div>
       )}
+      {/* 主窗口降雨卡:动态推演时右上角轻量显示,曲线随时间轴同步(当前时刻线) */}
+      {mode === "dynamic" && dynRes?.ok && scnOf(scn) && (() => { const s = scnOf(scn)!; return (
+        <div className="absolute right-3 top-14 z-10 w-[240px] bg-black/80 border border-gray-700 rounded-lg px-2 py-1.5 pointer-events-none">
+          <div className="flex justify-between text-[9px] mb-0.5">
+            <span className="text-cyan-400 font-bold">{s.label} 设计暴雨</span>
+            <span className="text-gray-500">{currentTimeLabel}</span>
+          </div>
+          <div className="flex gap-3 text-[8px] mb-1">
+            <span className="text-gray-400">总雨量 <span className="text-gray-100">{s.totalRainfall.toFixed(1)} mm</span></span>
+            <span className="text-gray-400">峰值 <span className="text-gray-100">{s.peakIntensity.toFixed(1)} mm/h</span></span>
+          </div>
+          <ReactEChartsCore echarts={echarts} option={rainChartOption(s, dynStep > 0)} style={{ height: 72, width: "100%" }} notMerge />
+        </div>
+      ); })()}
       {mode === "dynamic" && dynRes?.ok && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && timeStepCount > 0 && (
         <div className="absolute bottom-0 left-0 right-0 bg-black/92 backdrop-blur border-t border-gray-800 px-4 py-2 z-10">
           {/* 底部小型降雨轨迹已删除:仅保留左侧主降雨曲线;时间轴上以 ▲ 峰值时刻 标记真实峰值 */}
@@ -1832,7 +1831,7 @@ export default function SandboxPage() {
               <span className="text-orange-400">满管 {riskStats.fullPipes.length} 条</span>
               <span className="text-orange-400">溢流 {riskStats.overflowNodes.length} 个</span>
               <span className="text-gray-600">·</span>
-              <span className="text-gray-500">选「渲染 → 风险」查看详情</span>
+              <span className="text-gray-500">风险详情见结果摘要/选中对象</span>
             </div>
           )}
           {/* 底部结果 — 第一层:紧凑结果摘要(KPI) + 展开分析 */}
