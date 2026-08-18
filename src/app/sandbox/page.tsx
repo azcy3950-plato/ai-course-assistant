@@ -1357,24 +1357,28 @@ export default function SandboxPage() {
   const curLinkData = (mode === "dynamic" && selected?.type === "pipe" && dynRes?.links) ? dynRes.links[selected.data.id] : null;
   // Links now use velocity + depthFraction (not flow) — correct SWMM per-step API
 
-  // 组件级:最满管道列表(数量可配 2-6;选中置顶),供 TopN 区块共用
+  // 关键管道概览:按当前时间步综合优先级选择 4~6 条
+  // ① 用户选中的管道(置顶) ② 充满度最高 ③ 流量最大 ④ 水深最大 ⑤ 其他高负荷,去重后取 4~6
   const topPipes = (() => {
     const links = dynRes?.links;
     if (!links) return [];
+    const now = dynStep;
     const entries = Object.entries(links as Record<string, any>).map(([id, ld]) => {
       const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === id);
-      // 按全曲线最大充满度排序(ready 态 t=0 充满度≈0 也能显示 Top3)
-      const dfArr = ld?.depthFraction || [];
-      const df = dfArr.length ? Math.max(0, ...dfArr) : 0;
-      return { id, df, diam: pp?.diam || 0.3, from: pp?.from ?? "?", to: pp?.to ?? "?" };
-    }).filter(x => x.df > 0.001);
-    entries.sort((a, b) => b.df - a.df);
-    const top = entries.slice(0, Math.max(2, Math.min(6, pipeCount)));
-    if (selected?.type === "pipe" && top.length && !top.find(t => t.id === selected.data.id)) {
-      const sel = entries.find(e => e.id === selected.data.id);
-      if (sel) { top.pop(); top.unshift(sel); }
-    }
-    return top;
+      const dfa = ld?.depthFraction || [], fl = ld?.flow || [], dp = ld?.depth || [];
+      const dfCur = dfa[now] ?? 0;
+      const flowCur = Math.abs(fl[now] ?? 0);
+      // 综合分:当前充满度为主,流量/水深为次(归一化到 0~1)
+      const score = dfCur * 3 + Math.min(1, flowCur / 10) + Math.min(1, (dp[now] ?? 0) / 2);
+      const dfPeak = dfa.length ? Math.max(0, ...dfa) : 0;
+      return { id, df: dfCur, dfPeak, flow: flowCur, score, diam: pp?.diam || 0.3, from: pp?.from ?? "?", to: pp?.to ?? "?" };
+    }).filter(x => x.df > 0.001 || x.flow > 0.001);
+    // 选中管道无条件置顶
+    const sel = selected?.type === "pipe" ? selected.data.id : null;
+    const rest = entries.filter(e => e.id !== sel);
+    rest.sort((a, b) => b.score - a.score);
+    const chosen = (sel ? entries.filter(e => e.id === sel) : []).concat(rest.slice(0, 5)).slice(0, 6);
+    return chosen;
   })();
   // 自选管道模式:customPipes 非空时按 id 映射(缺失跳过,保序),否则自动 TopN
   const shownPipes = customPipes.length
@@ -1866,25 +1870,54 @@ export default function SandboxPage() {
               </div>
             </div>
           </div>
-          {/* 底部结果 — 第二层:展开详情(管道横断面,随时间轴变化) */}
+          {/* 底部结果 — 第二层:关键管道横截面概览 + 单管道详细横断面,随时时间轴同步 */}
           {resultOpen && (
-            <div className="flex items-center gap-3 mb-1.5 rounded bg-gray-900/50 border border-gray-800 px-2 py-1.5">
-              <span className="text-[9px] text-gray-400 shrink-0">🛢 管道横断面</span>
+            <>
+              {/* 概览:4~6 条关键管道(选中置顶·充涨/流量/水深综合),横向滚动 */}
+              {shownPipes.length > 0 && (
+                <div className="mb-1.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[9px] text-gray-400">🛢 关键管道横截面<span className="ml-1 text-gray-600">· 选中置顶 · 充涨/流量/水深综合 · 随时间轴同步</span></span>
+                    <span className="text-[8px] text-gray-500">{shownPipes.length} 条</span>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {shownPipes.map(p => {
+                      const ld = (dynRes.links as any)?.[p.id];
+                      const frac = ((ld?.depthFraction?.[dynStep] ?? 0) * 100);
+                      const isSel = selected?.type === "pipe" && selected.data.id === p.id;
+                      return (
+                        <button key={p.id} onClick={() => { const mesh = pipeMeshMap.current.get(p.id); if (mesh) { if (selRef.current !== mesh) { if (selRef.current) resetHL(selRef.current); selRef.current = mesh; hlObj(mesh); } setSelected({ type: "pipe", data: { ...(mesh.userData?.data || {}), id: p.id } }); } }} className={`shrink-0 rounded border px-1.5 py-1 text-left ${isSel ? "border-cyan-500 bg-cyan-900/30" : "border-gray-700 bg-gray-900/50 hover:bg-gray-800"}`} style={{ width: 84 }}>
+                          <div className="text-[9px] font-bold text-gray-200 truncate">{p.id}</div>
+                          <PipeCrossSection compact diam={p.diam} depth={(ld?.depth?.[dynStep] ?? 0)} depthFraction={(ld?.depthFraction?.[dynStep] ?? 0)} flow={(ld?.flow?.[dynStep] ?? 0)} flowDir={`${p.from} → ${p.to}`} landcover={landcover} animate={false} size="md" />
+                          <div className="text-[8px] text-cyan-300 font-bold">{frac.toFixed(0)}%</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* 详细横断面:选中管道(或概览首位) */}
               {(() => {
-                const pid = (selected?.type === "pipe" ? selected.data.id : null) || topPipes[0]?.id;
-                const ld = (dynRes.links as any)?.[pid];
-                const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === pid);
-                if (!ld || !pp) return <div className="text-[10px] text-gray-500">推演后点击任意管道查看横断面</div>;
+                const pid = (selected?.type === "pipe" ? selected.data.id : null) || shownPipes[0]?.id;
+                const ld = pid ? (dynRes.links as any)?.[pid] : null;
+                const pp = pid ? (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === pid) : null;
+                if (!ld || !pp) return <div className="text-[10px] text-gray-500">推演后点击任意管道查看详细横断面</div>;
                 const frac = (ld.depthFraction?.[dynStep] ?? 0) * 100;
                 return (
-                  <>
-                    <div className="w-28 h-16 shrink-0"><PipeCrossSection compact diam={pp?.diam || 0.3} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={ld.flowDir?.[dynStep] ?? 0} landcover={landcover} animate={false} size="md" /></div>
-                    <div className="text-[9px] text-gray-300 leading-4">{pid}<div className="text-cyan-300 font-bold">{frac.toFixed(0)}% 满管 {frac >= 100 ? " ⚠️" : ""}</div></div>
-                  </>
+                  <div className="flex items-center gap-3 rounded bg-gray-900/40 border border-gray-800 px-2 py-1.5">
+                    <div className="w-36 h-20 shrink-0"><PipeCrossSection compact diam={pp?.diam || 0.3} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={ld.flowDir?.[dynStep] ?? 0} landcover={landcover} animate={false} size="md" /></div>
+                    <div className="text-[9px] leading-4 text-gray-300">
+                      <div className="font-bold text-gray-100">{pid} 详细横断面</div>
+                      <div className="mt-0.5 text-gray-400">当前水深 <span className="text-gray-100">{(ld.depth?.[dynStep] ?? 0).toFixed(2)} m</span></div>
+                      <div className="text-gray-400">当前流量 <span className="text-gray-100">{(ld.flow?.[dynStep] ?? 0).toFixed(2)} m³/s</span></div>
+                      <div className="text-gray-400">当前流速 <span className="text-gray-100">{(ld.velocity?.[dynStep] ?? 0).toFixed(2)} m/s</span></div>
+                      <div className={frac >= 100 ? "text-red-400 font-bold" : "text-cyan-300 font-bold"}>{frac.toFixed(0)}% 充满度 {frac >= 100 ? " ⚠️ 满管" : ""}</div>
+                    </div>
+                    <span className="ml-auto text-[9px] text-gray-500">管径 {((pp?.diam ?? 0)).toFixed(2)} m · 当前 {currentTimeLabel}</span>
+                  </div>
                 );
               })()}
-              <span className="ml-auto text-[9px] text-gray-500">拖动下方时间轴查看横断面水位变化</span>
-            </div>
+            </>
           )}
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-gray-300 font-mono w-14 text-right font-medium">{currentTimeLabel}</span>
