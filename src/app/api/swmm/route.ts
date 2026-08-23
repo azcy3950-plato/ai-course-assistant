@@ -39,7 +39,30 @@ function cleanupStaleTasks() {
 
 // ─── Modify INP ───
 
-// 真实设计暴雨时序:解析 [TIMESERIES] 中按重现期命名的序列(3A/5A/10A/20A/50A)
+// ─── LID 优化策略:四种策略的设施组成比例(概念层设施)
+// 注:比例代表「LID 设施组合内部的配置比例」,不是整个研究区土地覆盖构成。
+// 模型假设:本实现按【固定优化设施总规模】、仅重分配其内部设施构成来驱动 SWMM;缺逐汇水区精确选址数据故规则化,不当已知事实。
+// 概念层设施 → 当前 INP 设施 → SWMM Type 的显式映射(不按 SWMM 缩写字母推断):
+//   GR 绿色屋顶 → 绿色屋顶 → SWMM GR
+//   VS 植草沟   → 植草沟   → SWMM VS
+//   RG 雨水花园 → 雨水花园 → SWMM BC   (师姐方案语义=雨水花园,映射到 INP 名为"雨水花园"的 BC;而非 SWMM 类型字母 RG 的下凹式绿地)
+//   PP 透水铺装 → 透水砖铺装/透水沥青铺装 → SWMM PP
+// 固定(不参与四类优化): 下凹式绿地(SWMM RG)、雨水花坛(SWMM RG)、渗渠(SWMM IT)。
+export const LID_STRATEGIES: Record<string, { label: string; GR: number; VS: number; RG: number; PP: number }> = {
+  "balanced":        { label: "均衡型",       GR: 6.28,  VS: 7.12,  RG: 7.12,  PP: 79.48 },
+  "runoff":          { label: "径流削减优先", GR: 3.03,  VS: 8.59,  RG: 2.15,  PP: 86.24 },
+  "waterquality":    { label: "水质控制优先", GR: 2.76,  VS: 11.31, RG: 4.35,  PP: 81.57 },
+  "ecological":      { label: "生态服务优先", GR: 12.20, VS: 6.92,  RG: 34.58, PP: 46.31 },
+};
+// 概念层键 → 参与优化的 INP 设施名(SWMM Type 由 LID_CONTROLS 解析或不依赖,用于识别参与行)
+export const CONCEPT_FACILITIES: Record<string, string[]> = {
+  GR: ["绿色屋顶"],
+  VS: ["植草沟"],
+  RG: ["雨水花园"],      // 师姐雨水花园 → INP 名为"雨水花园"(BC),不映射到 SWMM 类型 RG 的下凹式绿地
+  PP: ["透水砖铺装", "透水沥青铺装"],
+};
+
+// ─── 真实设计暴雨时序:解析 [TIMESERIES] 中按重现期命名的序列(3A/5A/10A/20A/50A)
 // 每个序列:5min 步长,288 步(0:00–23:55),INTENSITY(mm/h)
 // 返回元数据:累计雨量(mm)、峰值雨强(mm/h)、峰值时刻、有雨时长(h)
 interface RainfallSeries {
@@ -87,7 +110,84 @@ function parseRainfallSeries(inpText: string): Record<string, RainfallSeries> {
   return result;
 }
 
-function modifyRainfall(originalInpPath: string, intensity: number, simDir: string, landcover?: string, greenLevel?: number, seriesName?: string, seriesMap?: Record<string, RainfallSeries>): string {
+// ─── LID 面积重分配:按策略比例调整 [LID_USAGE] 各设施面积
+// 【数据真实性约束】:COVERAGES 仅覆盖 930 汇水区中的 29 个(3.1%),无法为 GR/VS/BC/PP 提供完整
+// A/B/C 级候选集;且现状 [LID_USAGE] 无 VS(植草沟)行。在此前提下,旧的「仅缩放现有 LID_USAGE 行」
+// 算法会导致 VS=0、策略比例与 INP 不一致(如 UI 显示植草沟 11.31% 而 INP 中 VS=0)。
+// 因此在「候选空间联合约束优化」正式实现并验证之前,(a) 四策略重分配被禁用(blocked),
+// (b) 保留旧缩放算法仅作调试引用,不作为任一策略的正式执行路径。
+export function modifyLid(text: string, strategy: string | undefined): { text: string; applied: boolean } {
+  if (!strategy || !LID_STRATEGIES[strategy]) return { text, applied: false };
+  // 策略重分配被数据约束阻断:VS 无候选(COVERAGES 覆盖率 3.1% 不足以定 B 级)、GR/BC 候选仅 A 级且总量不足以承载全部四类目标。
+  // 避免 UI 显示策略比例而 INP 未真实实现 —— 返回不应用,由调用方根据 blockedReason 给出明确提示。
+  return {
+    text,
+    applied: false,
+    // 附注:下方旧实现（等比缩放现有 LID_USAGE 行）已判定不满足「候选约束优化」要求,
+    // 只可作调试参考,不得作为四策略正式执行路径。
+  } as ReturnType<typeof modifyLid>;
+  /* 旧实现（已禁用,仅调试参考）
+  const target = LID_STRATEGIES[strategy];
+  const start = text.toUpperCase().indexOf('[LID_USAGE]');
+  if (start < 0) return { text, applied: false };
+  const rest = text.slice(start);
+  const end = rest.search(/\n\s*\[/);
+  const block = (end >= 0 ? rest.slice(0, end) : rest);
+  const blockRest = end >= 0 ? rest.slice(end) : '';
+  const lines = block.split('\n');
+  // 设施名 → SWMM LID Type(解析 [LID_CONTROLS] 真实映射)
+  const name2type: Record<string, string> = {};
+  const TYPE_FACILITY: Record<string, string> = {}; // SWMM Type → 该类型在 LID_CONTROLS 中的现有设施名(供新建/保留行)
+  {
+    const cs = text.toUpperCase().indexOf('[LID_CONTROLS]');
+    if (cs >= 0) {
+      const crest = text.slice(cs);
+      const cend = crest.search(/\n\s*\[/);
+      const cblock = (cend >= 0 ? crest.slice(0, cend) : crest);
+      const KNOWN = ['GR','VS','RG','PP','BC','IT','RB','RD','TR','ALL','BH','PC','VR','RR','FR','GI'];
+      for (const l of cblock.split('\n')) {
+        const p = l.trim().split(/\s+/);
+        if (p.length >= 2 && KNOWN.includes((p[1] || '').toUpperCase())) { const ty=(p[1]||'').toUpperCase(); name2type[p[0]]=ty; if (!TYPE_FACILITY[ty]) TYPE_FACILITY[ty]=p[0]; }
+      }
+    }
+  }
+  // 参与策略重分配的 SWMM Type:GR(绿色屋顶)/VS(植草沟)/BC(雨水花园)/PP(透水铺装)——师姐四类概念;
+  // RG(下凹式绿地/雨水花坛)、IT(渗渠)作为既有固定设施保留现状,不参与重分配。
+  // 注:当前按【现有参与类型行等比缩放】;若某类型现状无行(如现状无 VS),该类型目标不可达,如实记录可实现比例,不强行凑数。
+  const PARTICIPATING = ['GR', 'VS', 'BC', 'PP'];
+  const areaByType: Record<string, number> = { GR: 0, VS: 0, RG: 0, PP: 0 };
+  const rows: Array<{ raw: string[]; type: string }> = [];
+  const keepLines: string[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const lt = lines[i].trim();
+    if (!lt || lt.startsWith(';') || lt.startsWith('[')) { keepLines.push(lines[i]); continue; }
+    const parts = lines[i].split(/\t|\s+/);
+    if (parts.length >= 4 && /^C\d/.test(parts[0])) {
+      const type = name2type[parts[1]] || 'PP';
+      if (PARTICIPATING.includes(type)) { rows.push({ raw: parts, type }); areaByType[type] += parseFloat(parts[3]) || 0; }
+      else keepLines.push(lines[i]); // BC/IT 保留
+    } else keepLines.push(lines[i]);
+  }
+  const total = rows.reduce((s, r) => s + (parseFloat(r.raw[3]) || 0), 0);
+  if (total <= 0) return { text, applied: false };
+  // 目标面积(以参与类型总池为 100% 基数)
+  const targetType: Record<string, number> = { GR: target.GR / 100 * total, VS: target.VS / 100 * total, RG: target.RG / 100 * total, PP: target.PP / 100 * total };
+  // 按类型维持现状各汇水区相对分布,等比缩放使该类合计=目标;仅对现状存在该类型的行缩放
+  const scaled: string[] = [];
+  rows.forEach(r => {
+    const cur = parseFloat(r.raw[3]) || 0;
+    const curTypeTotal = areaByType[r.type] || 0;
+    const newArea = curTypeTotal > 0 ? cur * (targetType[r.type] / curTypeTotal) : cur;
+    r.raw[3] = newArea.toFixed(2);
+    scaled.push(r.raw.join('\t'));
+  });
+  const out: string[] = [lines[0]].concat(scaled);
+  for (const l of keepLines) out.push(l);
+  */ // 旧实现结束(已禁用:会致 VS=0 与策略比例不一致,仅调试参考,不作为四策略正式执行路径)
+}
+
+
+function modifyRainfall(originalInpPath: string, intensity: number, simDir: string, landcover?: string, greenLevel?: number, seriesName?: string, seriesMap?: Record<string, RainfallSeries>, lidStrategy?: string): string {
   const tempInp = join(simDir, 'model.inp');
   let text = readFileSync(originalInpPath, 'utf-8');
   const lines = text.split('\n');
@@ -365,6 +465,10 @@ export async function POST(req: NextRequest) {
     const rainfallScenarios = parseRainfallSeries(readFileSync(originalInpForSeries, 'utf-8'));
     const allowedSeries = ["3A", "5A", "10A", "20A", "50A"];
     const series = typeof body.series === "string" && allowedSeries.includes(body.series) && rainfallScenarios[body.series] ? body.series : undefined;
+    // LID 优化策略(均衡/径流削减/水质/生态):海绵优化走真实 [LID_USAGE] 面积重分配,不改 %Imperv;
+    // 选中策略时禁用 landcover 的 %Imperv 调整,避免「LID 重分配 + %Imperv」双重计算海绵措施
+    const lidStrategy = typeof body.lidStrategy === "string" && Object.keys(LID_STRATEGIES).includes(body.lidStrategy) ? body.lidStrategy : undefined;
+    const landcoverEffective = lidStrategy ? undefined : landcover;
     // 绿色海绵强度(0-1):仅 landcover=green 时生效,%Imperv 线性插值
     const rawGL = body.greenLevel == null ? NaN : Number(body.greenLevel);
     const greenLevel = Number.isFinite(rawGL) ? Math.max(0, Math.min(1, rawGL)) : undefined;
@@ -410,7 +514,20 @@ export async function POST(req: NextRequest) {
     tasks.set(simulationId, task);
 
     const originalInp = join(process.cwd(), 'public', 'zijing_inp.inp');
-    const tempInp = modifyRainfall(originalInp, intensity, simDir, landcover, greenLevel, series, rainfallScenarios);
+    const tempInp = modifyRainfall(originalInp, intensity, simDir, landcoverEffective, greenLevel, series, rainfallScenarios);
+    // 海绵优化:按 LID 策略在 model.inp 的 [LID_USAGE] 重分配各设施面积(总量不变,构成=策略比例)
+    // 数据真实性约束:COVERAGES 覆盖率仅 3.1%、现状无 VS(植草沟),旧"等比缩放"算法会致策略比例与 INP 不一致,
+    // 已被禁用作为正式执行路径。故当前 lidStrategy 暂不修改 [LID_USAGE],并以 lidRedist 标记状态供前端提示。
+    const lidRedist = { attempted: !!lidStrategy, applied: false, blockedReason: '' as string };
+    if (lidStrategy) {
+      const lidApplied = modifyLid(readFileSync(tempInp, 'utf-8'), lidStrategy);
+      lidRedist.attempted = true;
+      lidRedist.applied = lidApplied.applied;
+      if (!lidApplied.applied) {
+        lidRedist.blockedReason = 'LID策略重分配因空间候选数据不足暂不应用(COVERAGES覆盖率3.1%,现状无VS植草沟);避免UI比例与INP不符';
+      }
+      writeFileSync(tempInp, lidApplied.text, 'utf-8');
+    }
     // 阀门/蓄水注入:在雨强与下垫面修改后的文本上再改直径/洼地面积(失败即标记 task failed,不滞留 running 至超时)
     let affected = { valves: [] as string[], storages: [] as string[] };
     try {
@@ -440,7 +557,8 @@ export async function POST(req: NextRequest) {
       );
       return NextResponse.json({
         ok: true, simulationId, status: 'completed',
-        parameters: { intensity, landcover: landcover || 'default', series },
+        parameters: { intensity, landcover: landcover || 'default', series, lidStrategy },
+        lidRedist,
         affected,
         rainfallScenarios: scenariosMeta,
         rainfall: series && rainfallScenarios[series] ? {

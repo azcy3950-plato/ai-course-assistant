@@ -53,3 +53,10 @@ tsconfig.tsbuildinfo
 # test files with credentials
 /test-pdf.js
 /test-pipeline.js
+
+# 本地验收截图(临时产物,不进仓库)
+/shots/
+/.tmp-swmm/
+
+# 本地真实SWMM回放fixture(仅开发验收,不进生产仓库)
+/public/sandbox-fixture.json
