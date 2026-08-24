@@ -48,9 +48,9 @@ function chineseType(t: string): string {
 function formatVal(key: string, v: any): string {
   if (v == null || v === "") return "未配置";
   if (typeof v !== "number") return String(v);
-  if (key === "area") return (v / 10000).toFixed(3) + " ha";
+  if (key === "area") return v.toFixed(3) + " ha"; // INP [SUBCATCHMENTS] Area 结在 ha(如 0.029),直接显示
   if (key === "imperv") return v.toFixed(0) + " %";
-  if (key === "slope") return (v * 100).toFixed(2) + " %";
+  if (key === "slope") return v.toFixed(2) + " %"; // INP %Slope 已是百分比(如 1.39),不再 ×100
   if (["invert","ground","maxDepth","initDepth","diam","length","inOffset","outOffset","width"].includes(key)) return v.toFixed(2) + " m";
   return v.toFixed(3);
 }
@@ -515,7 +515,7 @@ export default function SandboxPage() {
       const cx = (mnX + mxX) / 2, cz = (mnZ + mxZ) / 2;
       const span = Math.max(mxX - mnX, mxZ - mnZ, 50);
       spanRef.current = span;
-      camState.current = { theta: 0.45, phi: 0.85, dist: span * 0.95, tx: cx, tz: cz };
+      camState.current = { theta: 0.45, phi: 0.8, dist: span * 0.72, tx: cx, tz: cz };
 
       const updateCam = () => {
         const cs = camState.current;
@@ -851,14 +851,15 @@ export default function SandboxPage() {
     // ── Scale parameters (all from span, NOT hardcoded) ──
     const NODE_R    = Math.max(0.2, span * 0.001);
     const OUTFALL_R = NODE_R * 1.5;
-    const PIPE_MIN_R = Math.max(0.08, span * 0.0006);
+    const PIPE_MIN_R = Math.max(0.12, span * 0.0011);
     const PIPE_MAX_R = span * 0.0042;
 
     // ── Ground (覆盖 node+汇水区综合范围,项目内不悬空,不外扩大矩形板) ──
+    // 灰度图地面板:非 TIN,是研究区底板;降低透明度和明度,避免被误认为“巨大灰色悬空面”
     const gndSpan = span * 1.02;
     const groundGeom = new THREE.PlaneGeometry(gndSpan, gndSpan);
     groundGeom.rotateX(-Math.PI / 2);
-    const groundMesh = new THREE.Mesh(groundGeom, new THREE.MeshStandardMaterial({ color: "#3f4953", roughness: 0.9, transparent: true, opacity: 0.85, depthWrite: true }));
+    const groundMesh = new THREE.Mesh(groundGeom, new THREE.MeshStandardMaterial({ color: "#22272e", roughness: 0.95, transparent: true, opacity: 0.45, depthWrite: true }));
     groundMesh.position.y = gndY; groundMesh.receiveShadow = true; groundMesh.renderOrder = 0;
     groundMesh.userData = { type: "ground" };
     grp.ground.add(groundMesh);
@@ -876,7 +877,7 @@ export default function SandboxPage() {
 
       // Thin fill
       const geom = new THREE.ExtrudeGeometry(shape, { steps: 1, depth: 0.015, bevelEnabled: false });
-      const fill = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color, roughness: 0.75, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }));
+      const fill = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color, roughness: 0.75, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }));
       fill.rotation.x = -Math.PI / 2; fill.position.y = gndY + 0.04; fill.renderOrder = 1;
       fill.userData = { type: "subcatchment", data: { id: sc.id, area: sc.area, imperv: sc.imperv, outlet: sc.outlet, width: sc.width, slope: sc.slope, vertices: sc.pts.length } };
       grp.sc.add(fill);
@@ -886,7 +887,7 @@ export default function SandboxPage() {
         const edgePts = sc.pts.map(([x, z]) => new THREE.Vector3(x, gndY + 0.05, z));
         edgePts.push(edgePts[0].clone());
         const edgeGeom = new THREE.BufferGeometry().setFromPoints(edgePts);
-        const edgeLine = new THREE.Line(edgeGeom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.42, depthTest: true }));
+        const edgeLine = new THREE.Line(edgeGeom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.32, depthTest: true }));
         edgeLine.renderOrder = 2; grp.sc.add(edgeLine);
       }
     });
@@ -895,7 +896,8 @@ export default function SandboxPage() {
     data.nodes.forEach((n: Node3D) => {
       const g = new THREE.Group();
       const invertY = elevY(n.invert), groundY = elevY(n.ground);
-      const shaftH = Math.max(0.12, groundY - invertY);
+      // 节点柱高:压缩 0.55 降低“电线杆”感,保留相对差异;shaft.position 随之调整
+      const shaftH = Math.max(0.12, (groundY - invertY) * 0.55);
       const isOut = n.type === "outfall";
       const r = isOut ? OUTFALL_R : NODE_R;
 
@@ -931,7 +933,7 @@ export default function SandboxPage() {
 
       const curve = new THREE.CatmullRomCurve3(path);
       const tubeGeom = new THREE.TubeGeometry(curve, Math.max(6, path.length * 3), visualR, 8, false);
-      const tube = new THREE.Mesh(tubeGeom, new THREE.MeshStandardMaterial({ color: PIPE_COLOR, roughness: 0.45, metalness: 0.1, emissive: PIPE_EMISSIVE, emissiveIntensity: 0.08 }));
+      const tube = new THREE.Mesh(tubeGeom, new THREE.MeshStandardMaterial({ color: PIPE_COLOR, roughness: 0.35, metalness: 0.12, emissive: PIPE_EMISSIVE, emissiveIntensity: 0.18 }));
       tube.castShadow = true; tube.receiveShadow = true;
       tube.userData = { type: "pipe", data: { id: p.id, from: p.from, to: p.to, diam: p.diam, length: p.length, roughness: p.roughness, shape: p.shape, inOffset: p.inOffset, outOffset: p.outOffset, vertCount: p.verts.length } };
       grp.pipes.add(tube);
@@ -960,7 +962,7 @@ export default function SandboxPage() {
     data.nodes.forEach((n: Node3D) => { if(n.x<mnX)mnX=n.x; if(n.x>mxX)mxX=n.x; if(n.z<mnZ)mnZ=n.z; if(n.z>mxZ)mxZ=n.z; });
     const cx = (mnX+mxX)/2, cz = (mnZ+mxZ)/2, span = Math.max(mxX-mnX, mxZ-mnZ, 50);
     const presets: Record<string, any> = {
-      panorama:    { theta: 0.45, phi: 0.85, dist: span * 0.95, tx: cx, tz: cz },
+      panorama:    { theta: 0.45, phi: 0.8,  dist: span * 0.72, tx: cx, tz: cz },
       topdown:     { theta: 0,    phi: 0.08, dist: span * 0.85, tx: cx, tz: cz },
       underground: { theta: 0.35, phi: 1.1,  dist: span * 0.55, tx: cx, tz: cz },
     };
@@ -983,12 +985,15 @@ export default function SandboxPage() {
   // DYNAMIC MODE — kept from working backend, visuals cleaned
   // ═══════════════════════════════════════════════════════════
   const loadSim = useCallback(async (overrideIntensity?: number, overrideLandcover?: "default" | "green", overrideValves?: Record<string, number>, overrideGreenLevel?: number, overrideLidStrategy?: string | null) => {
+    // 唯一有效 LID 策略:baseline(现状基准)必须完全忽略残留的 lidStrategy——
+    // 仅当 simMode===“optimize” 才用 lidStrategy;override 显式传入时优先(用于海绵优化重跑)。
+    const effectiveLidStrategy = overrideLidStrategy !== undefined
+      ? overrideLidStrategy
+      : (simMode === "optimize" ? lidStrategy : null);
     // 安全护栏:LID 空间重分配当前被冻结(modifyLid 禁返回 applied:false)。
-    // 海绵优化(optimize + LID策略)不再发起真实 SWMM 优化仿真,避免 UI 展示策略结果而 INP 未应用造成误导。
-    // (四种策略可查看配置比例;推演仅对「现状基准」开放。按钮层已禁用,此处为二次防护。)
-    const guardLid = overrideLidStrategy !== undefined ? overrideLidStrategy : lidStrategy;
-    if (guardLid && guardLid !== null) {
-      setSchemeMsg({ text: "⚠ LID方案尚未应用:空间配置数据不足,lidRedist.applied=false。本次未启动优化方案仿真,请选择「现状基准」推演。", color: "#fbbf24" });
+    // 仅当「海绵优化 + 有效 LID 策略」才拦截(禁止伪造优化仿真);baseline 不拦截,正常真实推演。
+    if (effectiveLidStrategy) {
+      setSchemeMsg({ text: "当前海绵方案空间配置数据不足,暂不执行优化仿真。请切换至“现状基准”进行真实水动力推演。", color: "#fbbf24" });
       setDynPhase("config");
       return;
     }
@@ -1004,7 +1009,7 @@ export default function SandboxPage() {
     const simIntensity = overrideIntensity ?? (scnOf(scn)?.key === scn ? 100 : 80);
     const simLandcover = overrideLandcover ?? landcover;
     // LID 策略:海绵优化走真实 [LID_USAGE] 面积重分配(后端),现状基准/null=不重分配
-    const simLidStrategy = overrideLidStrategy !== undefined ? overrideLidStrategy : lidStrategy;
+    const simLidStrategy = effectiveLidStrategy;
     // 开始推演时把调节阀拖动的 draft 合并为正式阀门(预览→生效仅在点开始推演)
     const mergedValves: Record<string, number> = { ...valves };
     for (const [pid, k] of Object.entries(valveDraft)) if (k != null) mergedValves[pid] = k;
@@ -1268,28 +1273,12 @@ export default function SandboxPage() {
     setValveDraft({});
   };
 
-  // 下垫面 3D 实时预览:切换模拟方案(不跑 SWMM)时按真实 %Imperv 调整汇水区覆盖色(现状=原始,海绵=降低不透水更偏绿),仅视觉,不伪造设施
-  // 下垫面 3D 实时预览:切换模拟方案/策略(不跑 SWMM)时按真实 %Imperv 调整汇水区色调
-  // 现状=原始不透水灰调;海绵优化=整体透水增强偏绿,并按策略叠加 LID 设施示意色调(规则化示意,非精确选址,UI 已注明)
+  // 下垫面 3D 预览:仅按真实 %Imperv 显示地表属性(baseline/optimize 同一套,不做策略 tint)
+  // LID 空间数据冻结:禁止按策略对全图做 hueShift/整图染色;策略差异只通过比例卡/组成条/图例表达,不伪造设施位置
   const applyLandcoverPreview = useCallback(() => {
     const grp = groupsRef.current["sc"]; if (!grp) return;
-    const lc = landcover, gl = greenLevel;
-    const strat = lidStrategy ? LID_STRATEGY_MAP[lidStrategy] : null;
-    // 策略→示意色调:GR绿青/RG浅绿/VS翠绿/PP蓝灰,按占比加权成一种"海绵增强色"
-    let hueShift = 0;
-    if (strat) {
-      const total = strat.GR + strat.VS + strat.RG + strat.PP || 1;
-      const gr = strat.GR / total, rg = strat.RG / total, vs = strat.VS / total, pp = strat.PP / total;
-      hueShift = (gr * 0.45 + rg * 0.36 + vs * 0.42 + pp * 0.57) - 0.42; // 设施占比决定偏绿程度
-    }
     const toColor = (orig: number) => {
-      if (lc !== "green") {
-        if (orig > 80) return "#c09088"; if (orig > 40) return "#b0a898"; return "#8fa890";
-      }
-      const eff = orig * (1 - 0.5 * gl);
-      // 海绵:按策略 hueShift 偏绿/偏蓝灰,仍随不透水率体现梯度
-      const g = Math.round(160 + hueShift * 80); const b = Math.round(150 + (0.57 - (hueShift + 0.42)) * 80);
-      return `rgb(120, ${Math.max(110, Math.min(200, g))}, ${Math.max(110, Math.min(200, b))})`;
+      if (orig > 80) return "#c09088"; if (orig > 40) return "#b0a898"; return "#8fa890";
     };
     grp.children.forEach(c => {
       const ud = c.userData as any;
@@ -1298,7 +1287,7 @@ export default function SandboxPage() {
       const imperv = ud.data?.imperv;
       if (typeof imperv === "number") (mat as THREE.MeshStandardMaterial | THREE.LineBasicMaterial).color.set(toColor(imperv));
     });
-  }, [landcover, greenLevel, lidStrategy]);
+  }, []);
   useEffect(() => { applyLandcoverPreview(); }, [applyLandcoverPreview]);
 
   // 下垫面弱化:推演有结果后降低汇水区填充到背景层,自动突出积水/流量
@@ -1791,10 +1780,11 @@ export default function SandboxPage() {
         <div className="absolute right-3 bottom-4 z-10 bg-black/80 border border-gray-700 rounded-lg px-2.5 py-2 text-[8px] pointer-events-none">
           <div className="font-bold text-gray-300 mb-1">{landcover === "green" ? "海绵优化" : "现状基准"} · 下垫面示意</div>
           <div className="flex items-center gap-1">
-            <span className="text-gray-500">透水性高</span>
+            <span className="text-gray-500">不透水率低</span>
             <div className="w-24 h-1.5 rounded overflow-hidden" style={{ background: "linear-gradient(90deg,#8fa890,#b0a898,#c09088)" }} />
-            <span className="text-gray-500">不透水性高</span>
+            <span className="text-gray-500">不透水率高</span>
           </div>
+          <div className="text-gray-600 mt-0.5">地表颜色 = %Imperv 不透水率,非渗透性</div>
         </div>
       )}
       {/* 悬停 tooltip(位置由原生 mousemove 直改 style,内容变化才重渲染) */}
