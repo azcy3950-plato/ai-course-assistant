@@ -466,6 +466,21 @@ export default function SandboxPage() {
   // 方案对比 / 事件记录:默认收起,按钮展开(不长期占主画面)
   const [showCompare, setShowCompare] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
+  // ── 可调布局(#29):底部诊断台高度 / 右侧栏宽度 / 各自的收起状态 / 拖拽进行中 ──
+  const [bottomH, setBottomH] = useState(240);
+  const [rightW, setRightW] = useState(284);
+  const [bottomCollapsed, setBottomCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const dragRef = useRef<{ axis: "h" | "v"; orig: number; start: number } | null>(null);
+  const resetLayout = useCallback(() => { setBottomH(240); setRightW(284); setBottomCollapsed(false); setRightCollapsed(false); }, []);
+  // 拖拽分隔条:鼠标移动更新面板尺寸,bottom/right 面板 absolute 覆盖,3D 露出区域随尺寸增减(视觉 3D 变大缩小)
+  useEffect(() => {
+    const mv = (e: PointerEvent) => { const d = dragRef.current; if (!d) return; e.preventDefault(); if (d.axis === "h") setBottomH(Math.max(150, Math.min(380, d.orig + (d.start - e.clientY)))); else setRightW(Math.max(220, Math.min(420, d.orig + (e.clientX - d.start)))); };
+    const up = () => { dragRef.current = null; };
+    window.addEventListener("pointermove", mv);
+    window.addEventListener("pointerup", up);
+    return () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
+  }, []);
   const [theme, setTheme] = useState<"dark" | "light">(() => { try { return localStorage.getItem("sandbox-theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
   // 场景主题联动:深色 ↔ 浅色(背景/雾/网格)
   const applyTheme = useCallback(() => {
@@ -1621,6 +1636,7 @@ export default function SandboxPage() {
             </>
           )}
           <div className="ml-auto flex items-center gap-2 shrink-0">
+            <button onClick={resetLayout} title="恢复默认布局：右栏280 · 底栏240 · 展开" className="px-2 py-1 rounded text-[10px] font-bold text-gray-300 hover:bg-gray-700">⟲ 恢复布局</button>
             {dynPhase === "loading"
               ? <span className="px-3 py-1 rounded bg-cyan-800 font-bold text-[10px] text-cyan-100 cursor-wait inline-flex items-center gap-1">⏳ 推演中…</span>
               : <button onClick={() => loadSim()} className="px-3 py-1 rounded bg-cyan-700 font-bold text-[10px] text-white hover:bg-cyan-600 shadow-md shadow-cyan-950/40">▶ 开始推演</button>}
@@ -1633,8 +1649,8 @@ export default function SandboxPage() {
         {/* 推演等待:轻量半透明层覆盖在 3D 之上,3D 保留可见;仅展示已等待时间,不伪造百分比进度 */}
         {dynPhase === "loading" && (
           <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center">
-            <div className="bg-black/55 backdrop-blur-sm rounded-xl border border-cyan-700/50 px-6 py-5 text-center shadow-2xl">
-              <div className="text-3xl mb-2 animate-spin text-cyan-300 inline-block">◉</div>
+            <div className="bg-black/35 backdrop-blur-sm rounded-xl border border-cyan-700/50 px-5 py-4 text-center shadow-2xl">
+              <div className="text-2xl mb-1.5 animate-spin text-cyan-300 inline-block">◉</div>
               <div className="text-sm font-bold text-cyan-200">正在运行 SWMM 水动力模型</div>
               <div className="mt-1 text-[11px] text-gray-300">{scnOf(scn)?.label ? `${scnOf(scn)!.label}降雨` : "降雨"} · {simMode === "optimize" ? (lidStrategy ? LID_STRATEGY_MAP[lidStrategy].label : "海绵优化") : "现状基准"}</div>
               {simMode === "optimize" && lidStrategy && <div className="mt-0.5 text-[9px] text-gray-400">LID规则化情景配置,用于方案比较</div>}
@@ -1896,11 +1912,22 @@ export default function SandboxPage() {
         // 全程峰值(本次推演最大):最高充满度全程最大值
         let peaksDF = { id: "", v: 0 };
         for (const [id, l] of Object.entries(links) as any) { const dfA = l.depthFraction as number[]; if (dfA?.length) { let mx = 0; for (let k = 0; k < dfA.length; k++) if (dfA[k] > mx) mx = dfA[k]; if (mx > peaksDF.v) { peaksDF.v = mx; peaksDF.id = id; } } }
+        const curBH = bottomCollapsed ? 40 : Math.max(150, Math.min(380, bottomH));
+        if (rightCollapsed) return (
+          <div style={{ width: 38, top: 150, bottom: curBH + 10, right: 12 }} className="absolute z-20 rounded-lg overflow-hidden bg-black/60 border border-gray-700 flex flex-col items-center pt-3 pointer-events-auto">
+            <button onClick={() => setRightCollapsed(false)} title="展开右栏" className="text-gray-300 hover:text-white text-base leading-none">〉</button>
+          </div>
+        );
         return (
-          <div className="absolute right-3 top-[150px] z-20 w-[248px] bg-black/85 backdrop-blur border border-gray-700 rounded-lg px-2.5 py-2 text-[11px] pointer-events-auto">
+          <div style={{ width: Math.max(220, Math.min(420, rightW)), top: 150, bottom: curBH + 10, right: 12 }} className="absolute z-20 bg-black/85 backdrop-blur border border-gray-700 rounded-lg px-2.5 py-2 text-[11px] pointer-events-auto overflow-y-auto overscroll-contain">
+            {/* 垂直分隔条:左拖=右栏变宽 → 3D变小;右拖=右栏变窄 → 3D变大 */}
+            <div onPointerDown={(e) => { e.preventDefault(); dragRef.current = { axis: "v", orig: rightW, start: e.clientX }; }} className="absolute -left-[4px] top-0 bottom-0 w-[8px] cursor-ew-resize hover:bg-cyan-500/30 z-20" />
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold text-gray-200 text-xs">📊 实时运行状态</span>
-              <span className="text-[9px] text-gray-400">{{ config: "待推演", loading: "计算中…", ready: "就绪", running: "推演中", paused: "已暂停", done: "已完成" }[dynPhase]}</span>
+              <span className="flex items-center gap-1 shrink-0">
+                <span className="text-[9px] text-gray-400">{{ config: "待推演", loading: "计算中…", ready: "就绪", running: "推演中", paused: "已暂停", done: "已完成" }[dynPhase]}</span>
+                <button onClick={() => setRightCollapsed(true)} title="收起右栏" className="w-4 h-4 leading-[15px] text-center rounded bg-gray-700 hover:bg-gray-600 text-[10px] text-gray-300">〈</button>
+              </span>
             </div>
             <div className="flex justify-between text-[10px]"><span className="text-gray-400">当前时间</span><span className="text-gray-100 font-mono font-bold">{currentTimeLabel}</span></div>
             <div className="flex justify-between text-[10px]"><span className="text-gray-400">进度</span><span className="text-gray-100">{pct}%</span></div>
@@ -1997,8 +2024,14 @@ export default function SandboxPage() {
         );
       })()}
       {mode === "dynamic" && dynRes?.ok && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && timeStepCount > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/92 backdrop-blur border-t border-gray-800 px-4 py-2 z-10 max-h-[34vh] overflow-y-auto overscroll-contain">
-          {/* 底部诊断抽屉:固定高度(约34vh),保证 3D 主体(上方66%)常驻可见可点 */}
+        <div style={{ height: (bottomCollapsed ? 40 : Math.max(150, Math.min(380, bottomH))) }} className="absolute bottom-0 left-0 right-0 bg-black/92 backdrop-blur border-t border-gray-800 z-10 px-4 py-2 overflow-y-auto overscroll-contain">
+          {/* 水平分隔条:向上拖=底部诊断台变高 → 3D变小;向下拖=底栏变矮 → 3D变大 */}
+          <div onPointerDown={(e) => { e.preventDefault(); dragRef.current = { axis: "h", orig: bottomH, start: e.clientY }; }} className="absolute top-0 left-0 right-0 h-[6px] cursor-ns-resize hover:bg-cyan-500/40 z-20" />
+          {/* 底部诊断抽屉:可拖高度(150-380px),保证 3D 主体常驻可见可点 */}
+          <div className="flex items-center justify-between mb-1 shrink-0">
+            <span className="font-bold text-gray-200 text-xs">🔧 24h 推演诊断</span>
+            <button onClick={() => setBottomCollapsed(v => !v)} title={bottomCollapsed ? "展开底栏" : "收起底栏"} className="px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-[9px] font-bold text-gray-200">{bottomCollapsed ? "展开 ↓" : "收起 ↑"}</button>
+          </div>
           {/* 降雨过程曲线(真实时序,移自左栏/右上:与24h时间轴、管道诊断同处统一推演区) */}
           {scnOf(scn) && (() => { const s = scnOf(scn)!; return (
             <div className="mb-1.5 flex items-stretch gap-2">
