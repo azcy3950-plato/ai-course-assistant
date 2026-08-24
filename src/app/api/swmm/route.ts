@@ -126,9 +126,21 @@ export function modifyLid(text: string, strategy: string | undefined): { text: s
   const block = (end >= 0 ? rest.slice(0, end) : rest);
   const blockRest = end >= 0 ? rest.slice(end) : '';
   const lines = block.split('\n');
-  // 参与类:师姐四类概念 GR(绿色屋顶)/VS(植草沟)/RG(雨水花园,SWMM BC)/PP(透水砖+透水沥青)
-  // 固定不参与:下凹式绿地(RG)/雨水花坛/RG 渗渠(IT)
-  const concept: Record<string, string> = { "绿色屋顶": "GR", "植草沟": "VS", "雨水花园": "RG", "透水砖铺装": "PP", "透水沥青铺装": "PP" };
+  // SWMM Type 名称来自 [LID_CONTROLS](与 model.inp 同编码/同乱码),保证与 LID_USAGE 行名一致匹配
+  const KNOWN = ['GR','VS','RG','PP','BC','IT','RB','RD','TR','ALL','BH','PC','VR','RR','FR','GI'];
+  const name2type: Record<string, string> = {};
+  const cs = text.toUpperCase().indexOf('[LID_CONTROLS]');
+  if (cs >= 0) {
+    const crest = text.slice(cs); const cend = crest.search(/\n\s*\[/);
+    const cblock = (cend >= 0 ? crest.slice(0, cend) : crest);
+    for (const l of cblock.split('\n')) {
+      const p = l.trim().split(/\s+/);
+      if (p.length >= 2 && KNOWN.includes((p[1] || '').toUpperCase())) name2type[p[0]] = (p[1] || '').toUpperCase();
+    }
+  }
+  // 参与 SWMM Type:GR(绿色屋顶)/VS(植草沟)/BC(雨水花园,师姐概念RG)/PP(透水砖/透水沥青)
+  // 固定不参与:RG(下凹式绿地/雨水花坛)/IT(渗渠)
+  const TYPE2CONCEPT: Record<string, string> = { GR: 'GR', VS: 'VS', BC: 'RG', PP: 'PP' };
   const areas: Record<string, number> = { GR: 0, VS: 0, RG: 0, PP: 0 };
   const rows: Array<{ raw: string[]; c: string }> = [];
   const keep: string[] = [];
@@ -137,7 +149,7 @@ export function modifyLid(text: string, strategy: string | undefined): { text: s
     if (!lt || lt.startsWith(';') || lt.startsWith('[')) { keep.push(lines[i]); continue; }
     const parts = lines[i].split(/\t|\s+/);
     if (parts.length >= 4 && /^C\d/.test(parts[0])) {
-      const c = concept[parts[1]];
+      const c = TYPE2CONCEPT[name2type[parts[1]] || ''];
       if (c) { rows.push({ raw: parts, c }); areas[c] += parseFloat(parts[3]) || 0; }
       else keep.push(lines[i]); // 固定设施保留
     } else keep.push(lines[i]);
