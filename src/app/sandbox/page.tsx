@@ -434,11 +434,6 @@ export default function SandboxPage() {
   const [showTip, setShowTip] = useState(false);
   // 本次推演的实际参数(mode/lidStrategy/rainfall),结果标签必须绑定它,避免切按钮改旧结果标题
   const [resultScenario, setResultScenario] = useState<{ mode: string; lidStrategy: string | null; rainfall: string | null }>({ mode: "baseline", lidStrategy: null, rainfall: null });
-  // 自定义 LID 比例(state,lidStrategy 用 "custom" 表示):4 个输入,合计须 100%
-  const [customRatios, setCustomRatios] = useState<{ GR: number; VS: number; RG: number; PP: number }>({ GR: 12, VS: 6, RG: 34, PP: 48 });
-  const customSum = customRatios.GR + customRatios.VS + customRatios.RG + customRatios.PP;
-  const customValid = Math.abs(customSum - 100) < 0.01;
-  const [customOn, setCustomOn] = useState(false);
   // 分步新手引导:1 点击管道 → 2 切换方案 → 3 拖动雨强滑条(每步完成自动下一步,可跳过)
   const [guide, setGuide] = useState(0);
   // 悬停提示:内容变化才 setState(位置由原生事件直接改 style,避免高频重渲染)
@@ -452,12 +447,25 @@ export default function SandboxPage() {
   const [dynSpd, setDynSpd] = useState(1);
   const [dynPhase, setDynPhase] = useState<"config"|"loading"|"ready"|"running"|"paused"|"done">("config");
   const [simId, setSimId] = useState("");
+  // 推演等待计时(秒,loading 阶段递增;仅展示已等待时间,非伪造进度)
+  const [loadingSec, setLoadingSec] = useState(0);
+  useEffect(() => {
+    if (dynPhase === "loading") {
+      setLoadingSec(0);
+      const iv = setInterval(() => setLoadingSec(s => + (s + 0.1).toFixed(1)), 100);
+      return () => clearInterval(iv);
+    }
+    setLoadingSec(0);
+  }, [dynPhase]);
   // 系统自动表现:静态=结构视图;动态推演(有结果)=自动显示水深圆盘+管道流量着色+下垫面弱化
   const showingResults = mode === "dynamic" && !!dynRes;
   const [openBar, setOpenBar] = useState<"view" | "layer" | null>(null);
   const [curView, setCurView] = useState<"panorama" | "topdown" | "underground">("panorama");
   // 底部结果 详情展开(横断面/时序),默认收起保持底栏紧凑
   const [resultOpen, setResultOpen] = useState(true);
+  // 方案对比 / 事件记录:默认收起,按钮展开(不长期占主画面)
+  const [showCompare, setShowCompare] = useState(false);
+  const [showEvents, setShowEvents] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">(() => { try { return localStorage.getItem("sandbox-theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
   // 场景主题联动:深色 ↔ 浅色(背景/雾/网格)
   const applyTheme = useCallback(() => {
@@ -529,7 +537,7 @@ export default function SandboxPage() {
       const updateCam = () => {
         const cs = camState.current;
         camera.position.x = cs.tx + cs.dist * Math.sin(cs.phi) * Math.cos(cs.theta);
-        camera.position.y = cs.dist * Math.cos(cs.phi) * 0.65;
+        camera.position.y = Math.max(0.8, cs.dist * Math.cos(cs.phi) * 0.65);
         camera.position.z = cs.tz + cs.dist * Math.sin(cs.phi) * Math.sin(cs.theta);
         camera.lookAt(cs.tx, cs.dist * 0.04, cs.tz);
       };
@@ -539,7 +547,7 @@ export default function SandboxPage() {
       // Mouse controls
       let dragging = false, last = { x: 0, y: 0 };
       renderer.domElement.addEventListener("mousedown", e => { if (e.button <= 1) { dragging = true; last = { x: e.clientX, y: e.clientY }; } });
-      renderer.domElement.addEventListener("mousemove", e => { if (!dragging) return; camState.current.theta -= (e.clientX - last.x) * 0.005; camState.current.phi = Math.max(0.15, Math.min(1.5, camState.current.phi - (e.clientY - last.y) * 0.005)); last = { x: e.clientX, y: e.clientY }; updateCam(); });
+      renderer.domElement.addEventListener("mousemove", e => { if (!dragging) return; camState.current.theta -= (e.clientX - last.x) * 0.005; camState.current.phi = Math.max(0.15, Math.min(1.15, camState.current.phi - (e.clientY - last.y) * 0.005)); last = { x: e.clientX, y: e.clientY }; updateCam(); });
       window.addEventListener("mouseup", () => { dragging = false; });
       renderer.domElement.addEventListener("wheel", e => { e.preventDefault(); camState.current.dist = Math.max(span * 0.25, Math.min(span * 4, camState.current.dist + e.deltaY * 0.5)); updateCam(); });
 
@@ -985,7 +993,7 @@ export default function SandboxPage() {
     }
     if (cameraRef.current) {
       const cs = camState.current;
-      cameraRef.current.position.set(cs.tx + cs.dist * Math.sin(cs.phi) * Math.cos(cs.theta), cs.dist * Math.cos(cs.phi) * 0.65, cs.tz + cs.dist * Math.sin(cs.phi) * Math.sin(cs.theta));
+      cameraRef.current.position.set(cs.tx + cs.dist * Math.sin(cs.phi) * Math.cos(cs.theta), Math.max(0.8, cs.dist * Math.cos(cs.phi) * 0.65), cs.tz + cs.dist * Math.sin(cs.phi) * Math.sin(cs.theta));
       cameraRef.current.lookAt(cs.tx, cs.dist * 0.04, cs.tz);
     }
   };
@@ -999,13 +1007,7 @@ export default function SandboxPage() {
     const effectiveLidStrategy = overrideLidStrategy !== undefined
       ? overrideLidStrategy
       : (simMode === "optimize" ? lidStrategy : null);
-    // 自定义方案：暂只做组成预览(未接 customRatios→modifyLid→SWMM 写入),禁用真实推演。
-    // 四个固定策略(balanced/runoff/waterquality/ecological)后端已解冻可真实进入 SWMM,不拦截。
-    if (customOn) {
-      setSchemeMsg({ text: "自定义方案当前仅用于组成预览；空间配置与模型写入待完善，暂不执行真实优化仿真。", color: "#fbbf24" });
-      setDynPhase("config");
-      return;
-    }
+    // 四个固定策略(balanced/runoff/waterquality/ecological)可真实进入 SWMM,不拦截。
     const reqSeq = ++simSeqRef.current;
     // 取消待执行的雨强/绿色强度防抖重跑(避免旧闭包竞态覆盖新方案状态)
     if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
@@ -1596,44 +1598,31 @@ export default function SandboxPage() {
                 <span className="text-[10px] text-gray-500 shrink-0">LID策略<span className="text-amber-400/70" title="组成比例方案情景,不参与当前SWMM仿真">·情景</span></span>
                 <div className="flex gap-0.5">
                   {([["balanced", "均衡型"], ["runoff", "径流削减"], ["waterquality", "水质控制"], ["ecological", "生态服务"]] as const).map(([k, l]) => (
-                    <button key={k} onClick={() => { setLidStrategy(k); setCustomOn(false); setRainPreview(null); }} className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${!customOn && lidStrategy === k ? "bg-emerald-700 text-white ring-1 ring-emerald-400/60" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{l}</button>
+                    <button key={k} onClick={() => { setLidStrategy(k); setRainPreview(null); }} className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${lidStrategy === k ? "bg-emerald-700 text-white ring-1 ring-emerald-400/60" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{l}</button>
                   ))}
-                  <button onClick={() => { setCustomOn(true); setLidStrategy(null); }} className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${customOn ? "bg-purple-700 text-white ring-1 ring-purple-400/60" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>自定义</button>
                 </div>
               </div>
-              {/* 选中 LID 组成:师姐原始比例 + 100% 组成条(或自定义 slider) */}
-              {((customOn) || lidStrategy) && ((() => {
-                const sel = customOn ? null : LID_STRATEGY_MAP[lidStrategy as LidStrategyKey];
-                const ratios = customOn ? customRatios : { GR: sel!.GR, VS: sel!.VS, RG: sel!.RG, PP: sel!.PP };
+              {/* 选中 LID 组成:师姐原始比例 + 100% 组成条 */}
+              {lidStrategy && (() => {
+                const sel = LID_STRATEGY_MAP[lidStrategy as LidStrategyKey];
+                const ratios = { GR: sel!.GR, VS: sel!.VS, RG: sel!.RG, PP: sel!.PP };
                 const total = ratios.GR + ratios.VS + ratios.RG + ratios.PP;
                 const rows: Array<[string, string, number, string]> = [["GR", "绿色屋顶", ratios.GR, "bg-cyan-600/80"], ["VS", "植草沟", ratios.VS, "bg-emerald-500/70"], ["RG", "雨水花园", ratios.RG, "bg-lime-500/70"], ["PP", "透水铺装", ratios.PP, "bg-slate-500/80"]];
                 return (
                   <div className="px-2 py-1 rounded bg-gray-900/70 border border-gray-700 text-[9px] w-[248px] space-y-0.5">
-                    <div className="font-bold text-emerald-300 text-[10px]">{customOn ? "自定义" : sel!.label}<span className="ml-1 font-normal text-amber-400/90">LID规则化情景配置 · 不代表最终工程选址</span></div>
+                    <div className="font-bold text-emerald-300 text-[10px]">{sel!.label}<span className="ml-1 font-normal text-amber-400/90">LID规则化情景配置 · 用于方案比较,不代表最终工程选址</span></div>
                     <div className="flex h-2 rounded overflow-hidden">{rows.map(([, , v, c]) => <div key={v as number} className={c} style={{ width: `${v / total * 100}%` }} />)}</div>
                     <div className="grid grid-cols-2 gap-x-2 text-gray-400">{rows.map(([k, n, v]) => <div key={k}><span className="text-gray-300">{k}</span> {n} {v.toFixed(2)}%</div>)}</div>
-                    {customOn && (
-                      <div className="space-y-0.5 border-t border-gray-700 pt-1">
-                        {(["GR", "VS", "RG", "PP"] as const).map((k) => (
-                          <div key={k} className="flex items-center gap-1">
-                            <span className="text-cyan-300 w-4">{k}</span>
-                            <input type="range" min={0} max={100} step={0.01} value={customRatios[k]} onChange={e => setCustomRatios(p => ({ ...p, [k]: Number(e.target.value) }))} className="flex-1 accent-cyan-500" />
-                            <span className="w-12 text-right text-gray-200">{customRatios[k].toFixed(1)}%</span>
-                          </div>
-                        ))}
-                        <div className={"flex justify-between text-[9px] " + (customValid ? "text-green-400" : "text-red-400")}>合计 {customSum.toFixed(2)}% · {customValid ? "比例有效" : "比例合计必须为100%"}</div>
-                        <div className="text-[8px] leading-3 text-gray-500">自定义方案当前用于组成预览；空间配置与模型写入待完善。固定四策略可运行真实SWMM。</div>
-                      </div>
-                    )}
+                    <div className="text-[8px] leading-3 text-gray-500">固定方案可运行真实 SWMM 推演。</div>
                     {lidStrategy === "waterquality" && <div className="text-[8px] leading-3 text-gray-500 pt-0.5">【水质指标】模型已包含污染物过程(COD/TN/TP)；当前页面尚未接入水质结果输出，本次暂展示水动力响应。</div>}
                   </div>
                 );
-              })())}
+              })()}
             </>
           )}
           <div className="ml-auto flex items-center gap-2 shrink-0">
-            {simMode === "optimize" && customOn
-              ? <span className="px-2 py-1 rounded font-bold text-[10px] text-amber-300 bg-gray-800 border border-dashed border-amber-500/60 cursor-not-allowed">方案组成预览(模型写入待完善,暂不执行真实优化)</span>
+            {dynPhase === "loading"
+              ? <span className="px-3 py-1 rounded bg-cyan-800 font-bold text-[10px] text-cyan-100 cursor-wait inline-flex items-center gap-1">⏳ 推演中…</span>
               : <button onClick={() => loadSim()} className="px-3 py-1 rounded bg-cyan-700 font-bold text-[10px] text-white hover:bg-cyan-600 shadow-md shadow-cyan-950/40">▶ 开始推演</button>}
           </div>
         </div>
@@ -1641,6 +1630,18 @@ export default function SandboxPage() {
       {/* ── Three.js canvas + 3D 悬浮迷你横截面 + 放大模态 ── */}
       <div className="relative flex-1">
         <div ref={cr} className="absolute inset-0" />
+        {/* 推演等待:轻量半透明层覆盖在 3D 之上,3D 保留可见;仅展示已等待时间,不伪造百分比进度 */}
+        {dynPhase === "loading" && (
+          <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center">
+            <div className="bg-black/55 backdrop-blur-sm rounded-xl border border-cyan-700/50 px-6 py-5 text-center shadow-2xl">
+              <div className="text-3xl mb-2 animate-spin text-cyan-300 inline-block">◉</div>
+              <div className="text-sm font-bold text-cyan-200">正在运行 SWMM 水动力模型</div>
+              <div className="mt-1 text-[11px] text-gray-300">{scnOf(scn)?.label ? `${scnOf(scn)!.label}降雨` : "降雨"} · {simMode === "optimize" ? (lidStrategy ? LID_STRATEGY_MAP[lidStrategy].label : "海绵优化") : "现状基准"}</div>
+              {simMode === "optimize" && lidStrategy && <div className="mt-0.5 text-[9px] text-gray-400">LID规则化情景配置,用于方案比较</div>}
+              <div className="mt-2 text-[11px] text-gray-400 font-mono">已等待 {loadingSec.toFixed(1)} s</div>
+            </div>
+          </div>
+        )}
         {floatPipeId && (() => {
           const ld = (dynRes?.links as any)?.[floatPipeId];
           const pp = (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === floatPipeId);
@@ -1938,7 +1939,7 @@ export default function SandboxPage() {
                 <span className="text-[8px] text-gray-600">{events.filter(e => e.idx <= dynStep).length} 条</span>
               </div>
               <div className="max-h-[96px] overflow-y-auto space-y-0.5 text-[9px]">
-                {events.filter(e => e.idx <= dynStep).slice().reverse().map((e, i) => (
+                {events.filter(e => e.idx <= dynStep).slice().reverse().slice(0, showEvents ? undefined : 5).map((e, i) => (
                   <button key={e.type + e.id + i} onClick={() => jumpToEvent(e)} title="点击:跳转时间+三维定位+同步横截面"
                     className={"flex items-center gap-1 w-full text-left px-1 py-0.5 rounded hover:bg-gray-800 " + (e.idx === dynStep ? "bg-gray-800/80 ring-1 ring-cyan-500/50" : "")}>
                     <span className="text-gray-500 font-mono shrink-0">{fmtTime(dynRes.timestamps?.[e.idx] ?? 0)}</span>
@@ -1949,6 +1950,9 @@ export default function SandboxPage() {
                 ))}
                 {events.filter(e => e.idx <= dynStep).length === 0 && <div className="text-[8px] text-gray-600">当前无跨阈值异常</div>}
               </div>
+              {(!showEvents ? events.filter(e => e.idx <= dynStep).length > 5 : true) && events.filter(e => e.idx <= dynStep).length > 0 && (
+                <button onClick={() => setShowEvents(v => !v)} className="mt-0.5 text-[8px] text-cyan-400 hover:text-cyan-300">{showEvents ? "▲ 收起" : "查看全部事件 ▾"}</button>
+              )}
             </div>
             {/* 选中对象动态详情(节点/管道属性 + 横截面 + 调节阀),右列随推演同步;横截面主展示在底部诊断区 */}
             {selected && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && (
@@ -1993,7 +1997,8 @@ export default function SandboxPage() {
         );
       })()}
       {mode === "dynamic" && dynRes?.ok && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && timeStepCount > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/92 backdrop-blur border-t border-gray-800 px-4 py-2 z-10">
+        <div className="absolute bottom-0 left-0 right-0 bg-black/92 backdrop-blur border-t border-gray-800 px-4 py-2 z-10 max-h-[34vh] overflow-y-auto overscroll-contain">
+          {/* 底部诊断抽屉:固定高度(约34vh),保证 3D 主体(上方66%)常驻可见可点 */}
           {/* 降雨过程曲线(真实时序,移自左栏/右上:与24h时间轴、管道诊断同处统一推演区) */}
           {scnOf(scn) && (() => { const s = scnOf(scn)!; return (
             <div className="mb-1.5 flex items-stretch gap-2">
@@ -2113,7 +2118,13 @@ export default function SandboxPage() {
           {/* 底部结果 — 第二层:关键管道横截面概览 + 单管道详细横断面,随时时间轴同步 */}
           {resultOpen && (
             <>
-              {/* 概览:拆为「我的监测」(用户锁定)+「系统推荐」(自动TopN)两组,不与前者混排 */}
+              {/* 操作:查看方案对比(默认收起,点击展开) */}
+              {resultScenario.rainfall && comparisonCacheRef.current[resultScenario.rainfall] && (
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="text-[9px] text-gray-400 shrink-0">方案对比</span>
+                  <button onClick={() => setShowCompare(v => !v)} className={"px-2 py-0.5 rounded text-[9px] font-bold " + (showCompare ? "bg-cyan-700 text-white" : "bg-gray-800 text-cyan-300 hover:bg-gray-700")}>{showCompare ? "收起 ▲" : "查看 ▽"}</button>
+                </div>
+              )}              {/* 概览:拆为「我的监测」(用户锁定)+「系统推荐」(自动TopN)两组,不与前者混排 */}
               {shownPipes.length > 0 && (() => {
                 const myMon = monitoredPipes;
                 const sysRec = systemRecommendedPipes;
@@ -2158,8 +2169,8 @@ export default function SandboxPage() {
                   {myMon.length === 0 && <div className="mb-1 text-[8px] text-gray-600">尚未加入「我的监测」—— 点击下方系统推荐卡片中的 🔓 可锁定管道到此组</div>}
                 </>);
               })()}
-              {/* 方案对比表:现状/均衡/径流/水质/生态,真实已运行结果,未运行显示"未运行" */}
-              {resultScenario.rainfall && (() => { const g = comparisonCacheRef.current[resultScenario.rainfall]; if (!g) return null;
+              {/* 方案对比表:默认收起(showCompare),点击「查看方案对比」展开;真实已运行结果,未运行显示"未运行" */}
+              {showCompare && resultScenario.rainfall && (() => { const g = comparisonCacheRef.current[resultScenario.rainfall]; if (!g) return null;
                 const cols = [["baseline", "现状"], ["balanced", "均衡"], ["runoff", "径流"], ["waterquality", "水质"], ["ecological", "生态"]];
                 const cell = (k: string, f: (v: any) => string) => { const v = g[k]; if (!v || !v.summary) return <span className="text-gray-600">未运行</span>; return <span className="text-gray-100">{f(v)}</span>; };
                 const metric = (label: string, f: (v: any) => string) => (
