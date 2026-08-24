@@ -999,10 +999,10 @@ export default function SandboxPage() {
     const effectiveLidStrategy = overrideLidStrategy !== undefined
       ? overrideLidStrategy
       : (simMode === "optimize" ? lidStrategy : null);
-    // 安全护栏:LID 空间重分配当前被冻结(modifyLid 禁返回 applied:false)。
-    // 仅当「海绵优化 + 有效 LID 策略」才拦截(禁止伪造优化仿真);baseline 不拦截,正常真实推演。
-    if (effectiveLidStrategy) {
-      setSchemeMsg({ text: "当前海绵方案空间配置数据不足,暂不执行优化仿真。请切换至“现状基准”进行真实水动力推演。", color: "#fbbf24" });
+    // 自定义方案：暂只做组成预览(未接 customRatios→modifyLid→SWMM 写入),禁用真实推演。
+    // 四个固定策略(balanced/runoff/waterquality/ecological)后端已解冻可真实进入 SWMM,不拦截。
+    if (customOn) {
+      setSchemeMsg({ text: "自定义方案当前仅用于组成预览；空间配置与模型写入待完善，暂不执行真实优化仿真。", color: "#fbbf24" });
       setDynPhase("config");
       return;
     }
@@ -1048,6 +1048,10 @@ export default function SandboxPage() {
       if (reqSeq !== simSeqRef.current) return;
       setDynRes(d); setDynPhase("ready"); setSimId(d.simulationId || ""); setLidRedistApplied(!!d?.lidRedist?.applied);
       setResultScenario({ mode: simMode, lidStrategy: simLidStrategy || null, rainfall: simSeries || null });
+      // 以 BACKEND response.lidRedist.applied 判断海绵是否真正应用(不前端提前猜)
+      if (simLidStrategy && d?.lidRedist?.attempted && !d?.lidRedist?.applied) {
+        setSchemeMsg({ text: "当前 LID 情景未成功应用，未生成优化结果。", color: "#fbbf24" });
+      }
       // 方案对比缓存:按降雨情景分组,存各方案真实 summary(现状/均衡/径流/水质/生态)
       if (simSeries && d?.summary) {
         const g = (comparisonCacheRef.current[simSeries] = comparisonCacheRef.current[simSeries] || {});
@@ -1628,8 +1632,8 @@ export default function SandboxPage() {
             </>
           )}
           <div className="ml-auto flex items-center gap-2 shrink-0">
-            {simMode === "optimize"
-              ? <span className="px-2 py-1 rounded font-bold text-[10px] text-amber-300 bg-gray-800 border border-dashed border-amber-500/60 cursor-not-allowed">⏸ 空间配置待完善(不执行优化仿真)</span>
+            {simMode === "optimize" && customOn
+              ? <span className="px-2 py-1 rounded font-bold text-[10px] text-amber-300 bg-gray-800 border border-dashed border-amber-500/60 cursor-not-allowed">方案组成预览(模型写入待完善,暂不执行真实优化)</span>
               : <button onClick={() => loadSim()} className="px-3 py-1 rounded bg-cyan-700 font-bold text-[10px] text-white hover:bg-cyan-600 shadow-md shadow-cyan-950/40">▶ 开始推演</button>}
           </div>
         </div>
