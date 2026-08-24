@@ -420,6 +420,8 @@ export default function SandboxPage() {
   const prevSimRef = useRef<any>(null);
   // 现状基准结果缓存(键=降雨情景 series):海绵优化运行后与基线对比;缓存键含 series 且绑定当前 INP 模型(重启即失效)
   const baselineCacheRef = useRef<Record<string, any>>({});
+  // 方案对比缓存:以降雨情景+input版本分组,存各方案(现状/均衡/径流/水质/生态)的 summary(真实 SWMM 结果)
+  const comparisonCacheRef = useRef<Record<string, Record<string, any>>>({});
   const [schemeMsg, setSchemeMsg] = useState<{ text: string; color: string } | null>(null);
   const schemeMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Δ 高亮由着色 effect 统一应用(避免被 effect 重着色覆盖),until 后自然过期
@@ -430,6 +432,13 @@ export default function SandboxPage() {
   const traceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 首次进入动态模式引导气泡(一次性,localStorage 记忆)
   const [showTip, setShowTip] = useState(false);
+  // 本次推演的实际参数(mode/lidStrategy/rainfall),结果标签必须绑定它,避免切按钮改旧结果标题
+  const [resultScenario, setResultScenario] = useState<{ mode: string; lidStrategy: string | null; rainfall: string | null }>({ mode: "baseline", lidStrategy: null, rainfall: null });
+  // 自定义 LID 比例(state,lidStrategy 用 "custom" 表示):4 个输入,合计须 100%
+  const [customRatios, setCustomRatios] = useState<{ GR: number; VS: number; RG: number; PP: number }>({ GR: 12, VS: 6, RG: 34, PP: 48 });
+  const customSum = customRatios.GR + customRatios.VS + customRatios.RG + customRatios.PP;
+  const customValid = Math.abs(customSum - 100) < 0.01;
+  const [customOn, setCustomOn] = useState(false);
   // 分步新手引导:1 点击管道 → 2 切换方案 → 3 拖动雨强滑条(每步完成自动下一步,可跳过)
   const [guide, setGuide] = useState(0);
   // 悬停提示:内容变化才 setState(位置由原生事件直接改 style,避免高频重渲染)
@@ -448,7 +457,7 @@ export default function SandboxPage() {
   const [openBar, setOpenBar] = useState<"view" | "layer" | null>(null);
   const [curView, setCurView] = useState<"panorama" | "topdown" | "underground">("panorama");
   // 底部结果 详情展开(横断面/时序),默认收起保持底栏紧凑
-  const [resultOpen, setResultOpen] = useState(false);
+  const [resultOpen, setResultOpen] = useState(true);
   const [theme, setTheme] = useState<"dark" | "light">(() => { try { return localStorage.getItem("sandbox-theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
   // 场景主题联动:深色 ↔ 浅色(背景/雾/网格)
   const applyTheme = useCallback(() => {
@@ -1038,6 +1047,19 @@ export default function SandboxPage() {
       if (abortRef.current === ctrl) abortRef.current = null;
       if (reqSeq !== simSeqRef.current) return;
       setDynRes(d); setDynPhase("ready"); setSimId(d.simulationId || ""); setLidRedistApplied(!!d?.lidRedist?.applied);
+      setResultScenario({ mode: simMode, lidStrategy: simLidStrategy || null, rainfall: simSeries || null });
+      // 方案对比缓存:按降雨情景分组,存各方案真实 summary(现状/均衡/径流/水质/生态)
+      if (simSeries && d?.summary) {
+        const g = (comparisonCacheRef.current[simSeries] = comparisonCacheRef.current[simSeries] || {});
+        const key = simLidStrategy || (simLandcover === "green" ? "optimize" : "baseline");
+        // 存 summary + 全程最高充满度/积水节点/高负荷管道(真实 SWMM 全程统计)
+        let maxDF = 0, pondN = 0, highN = 0;
+        const links = (d?.links as Record<string, any>) || {};
+        const nodes = (d?.nodes as Record<string, any>) || {};
+        for (const l of Object.values(links)) { const a = l?.depthFraction as number[]; if (a?.length) { let m = 0; for (let k = 0; k < a.length; k++) if (a[k] > m) m = a[k]; if (m > 0.8) highN++; if (m > maxDF) maxDF = m; } }
+        for (const n of Object.values(nodes)) { const pv = n?.pondedVolume as number[]; if (pv?.some ? pv.some(x => x > 0.01) : false) pondN++; }
+        g[key] = { summary: d.summary, maxDF, pondN, highN };
+      }
       // 现状基准结果入缓存:仅当未选 LID 策略(landcover=default 或无 lidStrategy)时缓存,供海绵优化对比
       if (!simLidStrategy && simLandcover !== "green" && simSeries) baselineCacheRef.current[simSeries] = d;
       simIBaseRef.current = simIntensity;
@@ -1567,26 +1589,39 @@ export default function SandboxPage() {
               <div className="h-4 w-px bg-gray-700" />
               {/* LID策略 */}
               <div className="flex items-center gap-1">
-                <span className="text-[10px] text-gray-500 shrink-0">LID策略<span className="text-amber-400/70" title="方案组合预览/示意,不参与当前SWMM仿真">·示意</span></span>
+                <span className="text-[10px] text-gray-500 shrink-0">LID策略<span className="text-amber-400/70" title="组成比例方案情景,不参与当前SWMM仿真">·情景</span></span>
                 <div className="flex gap-0.5">
                   {([["balanced", "均衡型"], ["runoff", "径流削减"], ["waterquality", "水质控制"], ["ecological", "生态服务"]] as const).map(([k, l]) => (
-                    <button key={k} onClick={() => { setLidStrategy(k); setRainPreview(null); }} className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${lidStrategy === k ? "bg-emerald-700 text-white ring-1 ring-emerald-400/60" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{l}</button>
+                    <button key={k} onClick={() => { setLidStrategy(k); setCustomOn(false); setRainPreview(null); }} className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${!customOn && lidStrategy === k ? "bg-emerald-700 text-white ring-1 ring-emerald-400/60" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>{l}</button>
                   ))}
+                  <button onClick={() => { setCustomOn(true); setLidStrategy(null); }} className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${customOn ? "bg-purple-700 text-white ring-1 ring-purple-400/60" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}>自定义</button>
                 </div>
               </div>
-              {/* 选中策略组成预览:GR/VS/RG/PP 百分比 + 100% 组成条(方案组成预览,不参与当前 SWMM 仿真) */}
-              {lidStrategy && ((() => {
-                const s = LID_STRATEGY_MAP[lidStrategy]; const total = s.GR + s.VS + s.RG + s.PP;
-                const rows: Array<[string, string, number, string]> = [["GR", "绿色屋顶", s.GR, "bg-cyan-600/80"], ["VS", "植草沟", s.VS, "bg-emerald-500/70"], ["RG", "雨水花园", s.RG, "bg-lime-500/70"], ["PP", "透水铺装", s.PP, "bg-slate-500/80"]];
+              {/* 选中 LID 组成:师姐原始比例 + 100% 组成条(或自定义 slider) */}
+              {((customOn) || lidStrategy) && ((() => {
+                const sel = customOn ? null : LID_STRATEGY_MAP[lidStrategy as LidStrategyKey];
+                const ratios = customOn ? customRatios : { GR: sel!.GR, VS: sel!.VS, RG: sel!.RG, PP: sel!.PP };
+                const total = ratios.GR + ratios.VS + ratios.RG + ratios.PP;
+                const rows: Array<[string, string, number, string]> = [["GR", "绿色屋顶", ratios.GR, "bg-cyan-600/80"], ["VS", "植草沟", ratios.VS, "bg-emerald-500/70"], ["RG", "雨水花园", ratios.RG, "bg-lime-500/70"], ["PP", "透水铺装", ratios.PP, "bg-slate-500/80"]];
                 return (
-                  <div className="px-2 py-1 rounded bg-gray-900/70 border border-gray-700 text-[9px] w-[228px] space-y-0.5">
-                    <div className="font-bold text-emerald-300 text-[10px]">{s.label}<span className="ml-1 font-normal text-amber-400/90">方案组成预览 · 空间配置待完善</span></div>
-                    <div className="flex h-2 rounded overflow-hidden">
-                      {rows.map(([k, , v, c]) => <div key={k} className={c} style={{ width: `${v / total * 100}%` }} />)}
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-2 text-gray-400">
-                      {rows.map(([k, n, v]) => <div key={k}><span className="text-gray-300">{k}</span> {n} {v.toFixed(2)}%</div>)}
-                    </div>
+                  <div className="px-2 py-1 rounded bg-gray-900/70 border border-gray-700 text-[9px] w-[248px] space-y-0.5">
+                    <div className="font-bold text-emerald-300 text-[10px]">{customOn ? "自定义" : sel!.label}<span className="ml-1 font-normal text-amber-400/90">LID规则化情景配置 · 不代表最终工程选址</span></div>
+                    <div className="flex h-2 rounded overflow-hidden">{rows.map(([, , v, c]) => <div key={v as number} className={c} style={{ width: `${v / total * 100}%` }} />)}</div>
+                    <div className="grid grid-cols-2 gap-x-2 text-gray-400">{rows.map(([k, n, v]) => <div key={k}><span className="text-gray-300">{k}</span> {n} {v.toFixed(2)}%</div>)}</div>
+                    {customOn && (
+                      <div className="space-y-0.5 border-t border-gray-700 pt-1">
+                        {(["GR", "VS", "RG", "PP"] as const).map((k) => (
+                          <div key={k} className="flex items-center gap-1">
+                            <span className="text-cyan-300 w-4">{k}</span>
+                            <input type="range" min={0} max={100} step={0.01} value={customRatios[k]} onChange={e => setCustomRatios(p => ({ ...p, [k]: Number(e.target.value) }))} className="flex-1 accent-cyan-500" />
+                            <span className="w-12 text-right text-gray-200">{customRatios[k].toFixed(1)}%</span>
+                          </div>
+                        ))}
+                        <div className={"flex justify-between text-[9px] " + (customValid ? "text-green-400" : "text-red-400")}>合计 {customSum.toFixed(2)}% · {customValid ? "比例有效" : "比例合计必须为100%"}</div>
+                        <div className="text-[8px] leading-3 text-gray-500">自定义方案当前用于组成预览；空间配置与模型写入待完善。固定四策略可运行真实SWMM。</div>
+                      </div>
+                    )}
+                    {lidStrategy === "waterquality" && <div className="text-[8px] leading-3 text-gray-500 pt-0.5">【水质指标】模型已包含污染物过程(COD/TN/TP)；当前页面尚未接入水质结果输出，本次暂展示水动力响应。</div>}
                   </div>
                 );
               })())}
@@ -1830,24 +1865,32 @@ export default function SandboxPage() {
       {mode === "dynamic" && dynRes?.ok && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && (() => {
         const links = dynRes.links || {};
         const nodes = dynRes.nodes || {};
+        const i = dynStep; // currentTimeIndex
         let highLoad = 0, fullCount = 0, pondCount = 0;
         for (const l of Object.values(links) as any[]) {
-          const df = Math.max(0, ...(Array.isArray(l.depthFraction) ? l.depthFraction : []));
-          const st = getPipeLoadState(df);
+          const dfNow = (Array.isArray(l.depthFraction)) ? (l.depthFraction[i] ?? 0) : 0;
+          const st = getPipeLoadState(dfNow);
           if (st === "high" || st === "nearFull" || st === "full") highLoad++;
           if (st === "full") fullCount++;
         }
         for (const n of Object.values(nodes) as any[]) {
-          const pv = Math.max(0, ...(Array.isArray(n.pondedVolume) ? n.pondedVolume : []));
-          if (pv > 0.01) pondCount++;
+          const pvNow = (Array.isArray(n.pondedVolume)) ? (n.pondedVolume[i] ?? 0) : 0;
+          if (pvNow > 0.01) pondCount++;
         }
         const maxDF = { id: "", v: 0 };
         for (const [id, l] of Object.entries(links) as any) {
-          const df = Math.max(0, ...(Array.isArray(l.depthFraction) ? l.depthFraction : []));
-          if (df > maxDF.v) { maxDF.v = df; maxDF.id = id; }
+          const dfNow = (Array.isArray(l.depthFraction)) ? (l.depthFraction[i] ?? 0) : 0;
+          if (dfNow > maxDF.v) { maxDF.v = dfNow; maxDF.id = id; }
         }
         const pct = timeStepCount > 1 ? Math.round((dynStep / Math.max(1, timeStepCount - 1)) * 100) : (dynPhase === "done" ? 100 : 0);
         const sm = dynRes.summary || {};
+        // 当前时刻(currentTimeIndex)的最大积水深度/最大流量(实时值)
+        let curMaxDepth = 0, curMaxFlow = 0;
+        for (const n of Object.values(nodes) as any[]) { const d = (Array.isArray(n.depth) ? n.depth[i] : 0) || 0; if (d > curMaxDepth) curMaxDepth = d; }
+        for (const l of Object.values(links) as any[]) { const f = (Array.isArray(l.flow) ? l.flow[i] : 0) || 0; const af = Math.abs(f); if (af > curMaxFlow) curMaxFlow = af; }
+        // 全程峰值(本次推演最大):最高充满度全程最大值
+        let peaksDF = { id: "", v: 0 };
+        for (const [id, l] of Object.entries(links) as any) { const dfA = l.depthFraction as number[]; if (dfA?.length) { let mx = 0; for (let k = 0; k < dfA.length; k++) if (dfA[k] > mx) mx = dfA[k]; if (mx > peaksDF.v) { peaksDF.v = mx; peaksDF.id = id; } } }
         return (
           <div className="absolute right-3 top-[150px] z-20 w-[248px] bg-black/85 backdrop-blur border border-gray-700 rounded-lg px-2.5 py-2 text-[11px] pointer-events-auto">
             <div className="flex items-center justify-between mb-1">
@@ -1858,10 +1901,16 @@ export default function SandboxPage() {
             <div className="flex justify-between text-[10px]"><span className="text-gray-400">进度</span><span className="text-gray-100">{pct}%</span></div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800 mt-0.5 mb-1.5"><div className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400" style={{ width: `${pct}%` }} /></div>
             <div className="space-y-0.5 text-[10px] border-t border-gray-800 pt-1">
-              <div className="font-bold text-[9px] text-gray-500 mb-0.5">关键指标</div>
+              <div className="font-bold text-[9px] text-gray-500 mb-0.5">当前状态(当前时刻)</div>
+              <div className="flex justify-between"><span className="text-gray-400">最大积水深度</span><span className="text-rose-300 font-mono">{curMaxDepth.toFixed(3)} m</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">峰值流量</span><span className="text-cyan-300 font-mono">{curMaxFlow.toFixed(3)} m³/s</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">最高充满度</span><span className="text-gray-100 font-mono">{maxDF.v ? maxDF.id : "—"}{maxDF.v ? ` ${(maxDF.v * 100).toFixed(0)}%` : ""}</span></div>
+            </div>
+            <div className="space-y-0.5 text-[10px] border-t border-gray-800 pt-1 mt-1">
+              <div className="font-bold text-[9px] text-gray-500 mb-0.5">本次推演峰值(24h全程)</div>
               <div className="flex justify-between"><span className="text-gray-400">最大积水深度</span><span className="text-rose-300 font-mono">{sm.maxDepth?.value?.toFixed(3) ?? "—"} m</span></div>
               <div className="flex justify-between"><span className="text-gray-400">峰值流量</span><span className="text-cyan-300 font-mono">{sm.maxFlow?.value?.toFixed(3) ?? "—"} m³/s</span></div>
-              <div className="flex justify-between"><span className="text-gray-400">最大充满度</span><span className="text-gray-100 font-mono">{maxDF.v ? maxDF.id : "—"}{maxDF.v ? ` ${(maxDF.v * 100).toFixed(0)}%` : ""}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">最高充满度</span><span className="text-gray-100 font-mono">{peaksDF.v ? peaksDF.id : "—"}{peaksDF.v ? ` ${(peaksDF.v * 100).toFixed(0)}%` : ""}</span></div>
             </div>
             <div className="space-y-0.5 text-[10px] border-t border-gray-800 pt-1 mt-1">
               <div className="font-bold text-[9px] text-gray-500 mb-0.5">网格健康(运行负荷分级)</div>
@@ -1959,11 +2008,11 @@ export default function SandboxPage() {
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[9px] text-cyan-500 font-bold shrink-0">峰值</span>
                   <span className="text-[9px] text-rose-300 font-mono">▲ {scnOf(scn)?.peakTime ?? "--:--"}</span>
-                  <span className="ml-auto text-[9px] text-gray-500">{scnOf(scn)?.label || ""}</span>
+                  <span className="ml-auto text-[9px] text-gray-500">{resultScenario.rainfall ? scnOf(resultScenario.rainfall)?.label || resultScenario.rainfall : ""}</span>
                 </div>
                 <div className="flex items-center gap-1 text-[9px] text-gray-500">
-                  <span>下垫面</span><b className={landcover === "green" ? "text-emerald-300" : "text-gray-200"}>{landcover === "green" ? "海绵优化" : "现状基准"}</b>
-                  {simMode === "optimize" && lidStrategy && <><span>·</span><span>LID {LID_STRATEGY_MAP[lidStrategy].label}</span><span className="text-amber-400">(配置已定义,数据待完善)</span></>}
+                  <span>方案</span><b className={resultScenario.mode === "optimize" ? "text-emerald-300" : "text-gray-200"}>{resultScenario.mode === "optimize" ? "海绵优化" : "现状基准"}</b>
+                  {resultScenario.mode === "optimize" && resultScenario.lidStrategy && <><span>·</span><span>LID {LID_STRATEGY_MAP[resultScenario.lidStrategy as LidStrategyKey].label}</span><span className="text-amber-400">(方案情景配置)</span></>}
                 </div>
               </div>
             </div>
@@ -1985,7 +2034,7 @@ export default function SandboxPage() {
                 <span>结果摘要</span>
                 <button onClick={() => setResultOpen(v => !v)} className={"px-1.5 py-1 rounded text-[9px] font-bold " + (resultOpen ? "bg-cyan-700 text-white" : "bg-gray-700 text-cyan-300 hover:bg-gray-600")}>{resultOpen ? "收起 ▲" : "展开分析 ▼"}</button>
               </div>
-              <div className="mt-0.5 text-[8px] text-gray-500">{scnOf(scn)?.label || ""} · {landcover === "green" ? "海绵优化" : "现状基准"}</div>
+              <div className="mt-0.5 text-[8px] text-gray-500">{resultScenario.rainfall ? scnOf(resultScenario.rainfall)?.label || "" : ""} · {resultScenario.mode === "optimize" ? (resultScenario.lidStrategy ? LID_STRATEGY_MAP[resultScenario.lidStrategy as LidStrategyKey].label : "海绵优化") : "现状基准"}</div>
             </div>
             <div className="ml-auto grid grid-cols-4 gap-2 shrink-0 text-center">
               <div className="rounded bg-gray-950/70 border border-gray-800 px-2 py-1 cursor-pointer hover:bg-gray-900" title={`点击定位 ${dynRes.summary?.maxDepth?.nodeId ?? ""} · 跳到 ${fmtTime(dynRes.summary?.maxDepth?.timestamp ?? 0)}`} onClick={() => { const h = dynRes.summary?.maxDepth?.timestamp; const ta = dynRes.timestamps; if (ta && h != null) { let best = 0, bd = 1e9; ta.forEach((t: number, i: number) => { const d = Math.abs(t - h); if (d < bd) { bd = d; best = i; } }); setDynStep(best); if (dynPlay) setDynPlay(false); } jumpToObject(dynRes.summary?.maxDepth?.nodeId, "node"); }}>
@@ -2031,7 +2080,7 @@ export default function SandboxPage() {
             );
           })()}
           {/* 现状 vs 海绵优化 对比(仅当 LID 真实重分配已应用 lidRedist.applied===true 才显示;冻结期不展示,避免误导) */}
-          {lidRedistApplied && simMode === "optimize" && lidStrategy && scn && baselineCacheRef.current[scn] && dynRes?.summary && (() => {
+          {lidRedistApplied && resultScenario.mode === "optimize" && resultScenario.lidStrategy && scn && baselineCacheRef.current[scn] && dynRes?.summary && (() => {
             const b = baselineCacheRef.current[scn].summary, c = dynRes.summary;
             const pct = (x: number, y: number) => y > 0 ? ((x - y) / y * 100) : 0;
             const rows: Array<[string, string, string, string]> = [];
@@ -2039,7 +2088,7 @@ export default function SandboxPage() {
             rows.push(["峰值流量", `${(b?.maxFlow?.value ?? 0).toFixed(2)} m³/s`, `${(c?.maxFlow?.value ?? 0).toFixed(2)} m³/s`, pct(c?.maxFlow?.value ?? 0, b?.maxFlow?.value ?? 0).toFixed(0) + "%"]);
             return (
               <div className="mb-1.5 rounded bg-gray-900/50 border border-gray-800 px-2 py-1.5 text-[9px]">
-                <div className="font-bold text-gray-300 mb-1">现状基准 vs {LID_STRATEGY_MAP[lidStrategy].label}(同一降雨 {scnOf(scn)?.label})</div>
+                <div className="font-bold text-gray-300 mb-1">现状基准 vs {resultScenario.lidStrategy ? LID_STRATEGY_MAP[resultScenario.lidStrategy as LidStrategyKey].label : ""}(同一降雨 {resultScenario.rainfall ? scnOf(resultScenario.rainfall)?.label : ""})</div>
                 <div className="grid grid-cols-3 gap-x-3 text-[8px] text-gray-500 leading-3">
                   <div>指标</div><div className="text-center">现状</div><div className="text-center">海绵优化</div>
                   {rows.map(([k, a, c2, d]) => {
@@ -2105,25 +2154,66 @@ export default function SandboxPage() {
                   {myMon.length === 0 && <div className="mb-1 text-[8px] text-gray-600">尚未加入「我的监测」—— 点击下方系统推荐卡片中的 🔓 可锁定管道到此组</div>}
                 </>);
               })()}
-              {/* 详细横断面:选中管道(或概览首位) */}
-              {(() => {
-                const pid = (selected?.type === "pipe" ? selected.data.id : null) || shownPipes[0]?.id;
-                const ld = pid ? (dynRes.links as any)?.[pid] : null;
-                const pp = pid ? (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === pid) : null;
-                if (!ld || !pp) return <div className="text-[10px] text-gray-500">推演后点击任意管道查看详细横断面</div>;
-                const frac = (ld.depthFraction?.[dynStep] ?? 0) * 100;
+              {/* 方案对比表:现状/均衡/径流/水质/生态,真实已运行结果,未运行显示"未运行" */}
+              {resultScenario.rainfall && (() => { const g = comparisonCacheRef.current[resultScenario.rainfall]; if (!g) return null;
+                const cols = [["baseline", "现状"], ["balanced", "均衡"], ["runoff", "径流"], ["waterquality", "水质"], ["ecological", "生态"]];
+                const cell = (k: string, f: (v: any) => string) => { const v = g[k]; if (!v || !v.summary) return <span className="text-gray-600">未运行</span>; return <span className="text-gray-100">{f(v)}</span>; };
+                const metric = (label: string, f: (v: any) => string) => (
+                  <div className="grid" style={{ gridTemplateColumns: "64px repeat(5,1fr)" }}>
+                    <div className="text-gray-500">{label}</div>
+                    {cols.map(([k]) => <div key={k}>{cell(k, f)}</div>)}
+                  </div>
+                );
                 return (
-                  <div className={`flex items-center gap-4 rounded border px-3 py-2 ${frac >= 100 ? "border-red-600/60 bg-red-950/20" : "border-gray-800 bg-gray-900/40"}`}>
-                    <div className="shrink-0"><PipeCrossSection size="lg" diam={pp?.diam || 0.3} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`} landcover={landcover} animate={false} /></div>
-                    <div className="text-[10px] leading-4 text-gray-300">
-                      <div className="font-bold text-gray-100 text-xs">{pid} 详细横断面</div>
-                      <div className="mt-1 text-gray-500">形状 <span className="text-gray-200">{String(pp?.shape ?? "circular").toUpperCase()}</span> · 管径 <span className="text-gray-200">{((pp?.diam ?? 0)).toFixed(2)} m</span></div>
-                      <div className="text-gray-500">当前水深 <span className="text-gray-100">{(ld.depth?.[dynStep] ?? 0).toFixed(2)} m</span></div>
-                      <div className="text-gray-500">当前流量 <span className="text-gray-100">{(ld.flow?.[dynStep] ?? 0).toFixed(2)} m³/s</span></div>
-                      <div className="text-gray-500">当前流速 <span className="text-gray-100">{(ld.velocity?.[dynStep] ?? 0).toFixed(2)} m/s</span></div>
-                      <div className={frac >= 100 ? "text-red-400 font-bold" : "text-cyan-300 font-bold"}>{frac.toFixed(0)}% 充满度 {frac >= 100 ? "⚠️ 满管" : ""}</div>
-                      <div className="text-gray-500 mt-0.5">当前时间 <span className="text-gray-200">{currentTimeLabel}</span></div>
+                  <div className="mb-1.5 rounded bg-gray-900/50 border border-gray-800 px-2 py-1.5 text-[9px]">
+                    <div className="font-bold text-gray-300 mb-1">方案对比 <span className="text-gray-500">({resultScenario.rainfall ? scnOf(resultScenario.rainfall)?.label || resultScenario.rainfall : ""},真实 SWMM 结果)</span></div>
+                    <div className="space-y-0.5">
+                      <div className="grid" style={{ gridTemplateColumns: "64px repeat(5,1fr)" }}>
+                        <div /><div className="text-cyan-300">现状</div><div className="text-emerald-300">均衡</div><div className="text-emerald-400">径流</div><div className="text-sky-300">水质</div><div className="text-lime-300">生态</div>
+                      </div>
+                      {metric("最大积水深度(m)", (v) => `${v.summary.maxDepth?.value?.toFixed(2) ?? "--"}`)}
+                      {metric("峰值流量(m³/s)", (v) => `${v.summary.maxFlow?.value?.toFixed(2) ?? "--"}`)}
+                      {metric("最高充满度(%)", (v) => `${((v.maxDF || 0) * 100).toFixed(0)}`)}
+                      {metric("积水节点数", (v) => `${v.pondN ?? "--"}`)}
+                      {metric("高负荷管道数", (v) => `${v.highN ?? "--"}`)}
                     </div>
+                    <div className="text-[8px] leading-3 text-gray-500 mt-1">不同策略优化目标不同，单一水动力峰值指标不一定能完全区分方案效果。仅展示已运行的方案（真实 SWMM 全程统计）。</div>
+                  </div>
+                );
+              })()}
+              {/* 三个动态横截面(峰值流量最大 / 最大充满度最高 / 我的监测),全部跟随 currentTimeIndex 涨落 */}
+              {(() => {
+                const peakFlow = systemRecommendedPipes.find(x => (x.diags || []).includes("峰值流量最大")) || systemRecommendedPipes[0];
+                const peakDf = systemRecommendedPipes.find(x => (x.diags || []).includes("最大充满度最高")) || systemRecommendedPipes[1] || systemRecommendedPipes[0];
+                const monitor = monitoredPipes[0] || systemRecommendedPipes[0];
+                const cards = [
+                  { pid: peakFlow?.id, label: "峰值流量最大", tag: peakFlow?.diags?.[0] },
+                  { pid: peakDf?.id, label: "最大充满度最高", tag: peakDf?.diags?.[0] },
+                  { pid: monitor?.id, label: "我的监测", tag: monitoredLinkIds.includes(monitor?.id || "") ? "已加入监测" : "默认/点击管道替换" },
+                ];
+                if (!dynRes?.links) return <div className="text-[10px] text-gray-500">推演后展示峰值流量/最高充满度/我的监测三张动态横截面</div>;
+                return (
+                  <div className="grid grid-cols-3 gap-2">
+                    {cards.map(c => {
+                      const pid = c.pid; const ld = pid ? (dynRes.links as any)?.[pid] : null; const pp = pid ? (dataRef.current?.pipes as any)?.find?.((p: any) => p.id === pid) : null;
+                      if (!pid || !ld || !pp) return <div key={c.label} className="rounded border border-gray-800 bg-gray-900/40 px-2 py-1.5 text-[9px] text-gray-500">{c.label}: 未运行/无数据</div>;
+                      const frac = (ld.depthFraction?.[dynStep] ?? 0) * 100;
+                      return (
+                        <div key={c.label} className={`rounded border px-2 py-1.5 ${frac >= 100 ? "border-red-600/50 bg-red-950/10" : "border-gray-800 bg-gray-900/50"}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] font-bold text-gray-100">{pid}<span className="ml-1 text-[8px] font-normal text-cyan-400">{c.tag}</span></span>
+                            <span className="text-[8px] text-gray-500">{pp?.from}→{pp?.to}</span>
+                          </div>
+                          <div className="flex justify-center my-0.5"><PipeCrossSection size="md" diam={pp?.diam || 0.3} depth={ld.depth?.[dynStep] ?? 0} depthFraction={ld.depthFraction?.[dynStep] ?? 0} flow={ld.flow?.[dynStep] ?? 0} flowDir={`${pp?.from ?? "?"} → ${pp?.to ?? "?"}`} landcover={landcover} animate={false} /></div>
+                          <div className="grid grid-cols-2 gap-x-1 text-[8px] text-gray-500 leading-3">
+                            <div>流量 <span className="text-gray-100">{(ld.flow?.[dynStep] ?? 0).toFixed(2)}</span></div>
+                            <div>水深 <span className="text-gray-100">{(ld.depth?.[dynStep] ?? 0).toFixed(2)} m</span></div>
+                            <div className={frac >= 100 ? "text-red-400 font-bold" : "text-cyan-300 font-bold"}>{frac.toFixed(0)}% 充满度</div>
+                            <div>时间 <span className="text-gray-100">{currentTimeLabel}</span></div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })()}
