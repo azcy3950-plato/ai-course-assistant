@@ -1574,6 +1574,22 @@ export default function SandboxPage() {
                   ))}
                 </div>
               </div>
+              {/* 选中策略组成预览:GR/VS/RG/PP 百分比 + 100% 组成条(方案组成预览,不参与当前 SWMM 仿真) */}
+              {lidStrategy && ((() => {
+                const s = LID_STRATEGY_MAP[lidStrategy]; const total = s.GR + s.VS + s.RG + s.PP;
+                const rows: Array<[string, string, number, string]> = [["GR", "绿色屋顶", s.GR, "bg-cyan-600/80"], ["VS", "植草沟", s.VS, "bg-emerald-500/70"], ["RG", "雨水花园", s.RG, "bg-lime-500/70"], ["PP", "透水铺装", s.PP, "bg-slate-500/80"]];
+                return (
+                  <div className="px-2 py-1 rounded bg-gray-900/70 border border-gray-700 text-[9px] w-[228px] space-y-0.5">
+                    <div className="font-bold text-emerald-300 text-[10px]">{s.label}<span className="ml-1 font-normal text-amber-400/90">方案组成预览 · 空间配置待完善</span></div>
+                    <div className="flex h-2 rounded overflow-hidden">
+                      {rows.map(([k, , v, c]) => <div key={k} className={c} style={{ width: `${v / total * 100}%` }} />)}
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-2 text-gray-400">
+                      {rows.map(([k, n, v]) => <div key={k}><span className="text-gray-300">{k}</span> {n} {v.toFixed(2)}%</div>)}
+                    </div>
+                  </div>
+                );
+              })())}
             </>
           )}
           <div className="ml-auto flex items-center gap-2 shrink-0">

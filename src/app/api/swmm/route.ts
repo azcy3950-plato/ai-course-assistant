@@ -118,15 +118,6 @@ function parseRainfallSeries(inpText: string): Record<string, RainfallSeries> {
 // (b) 保留旧缩放算法仅作调试引用,不作为任一策略的正式执行路径。
 export function modifyLid(text: string, strategy: string | undefined): { text: string; applied: boolean } {
   if (!strategy || !LID_STRATEGIES[strategy]) return { text, applied: false };
-  // 策略重分配被数据约束阻断:VS 无候选(COVERAGES 覆盖率 3.1% 不足以定 B 级)、GR/BC 候选仅 A 级且总量不足以承载全部四类目标。
-  // 避免 UI 显示策略比例而 INP 未真实实现 —— 返回不应用,由调用方根据 blockedReason 给出明确提示。
-  return {
-    text,
-    applied: false,
-    // 附注:下方旧实现（等比缩放现有 LID_USAGE 行）已判定不满足「候选约束优化」要求,
-    // 只可作调试参考,不得作为四策略正式执行路径。
-  } as ReturnType<typeof modifyLid>;
-  /* 旧实现（已禁用,仅调试参考）
   const target = LID_STRATEGIES[strategy];
   const start = text.toUpperCase().indexOf('[LID_USAGE]');
   if (start < 0) return { text, applied: false };
@@ -135,55 +126,35 @@ export function modifyLid(text: string, strategy: string | undefined): { text: s
   const block = (end >= 0 ? rest.slice(0, end) : rest);
   const blockRest = end >= 0 ? rest.slice(end) : '';
   const lines = block.split('\n');
-  // 设施名 → SWMM LID Type(解析 [LID_CONTROLS] 真实映射)
-  const name2type: Record<string, string> = {};
-  const TYPE_FACILITY: Record<string, string> = {}; // SWMM Type → 该类型在 LID_CONTROLS 中的现有设施名(供新建/保留行)
-  {
-    const cs = text.toUpperCase().indexOf('[LID_CONTROLS]');
-    if (cs >= 0) {
-      const crest = text.slice(cs);
-      const cend = crest.search(/\n\s*\[/);
-      const cblock = (cend >= 0 ? crest.slice(0, cend) : crest);
-      const KNOWN = ['GR','VS','RG','PP','BC','IT','RB','RD','TR','ALL','BH','PC','VR','RR','FR','GI'];
-      for (const l of cblock.split('\n')) {
-        const p = l.trim().split(/\s+/);
-        if (p.length >= 2 && KNOWN.includes((p[1] || '').toUpperCase())) { const ty=(p[1]||'').toUpperCase(); name2type[p[0]]=ty; if (!TYPE_FACILITY[ty]) TYPE_FACILITY[ty]=p[0]; }
-      }
-    }
-  }
-  // 参与策略重分配的 SWMM Type:GR(绿色屋顶)/VS(植草沟)/BC(雨水花园)/PP(透水铺装)——师姐四类概念;
-  // RG(下凹式绿地/雨水花坛)、IT(渗渠)作为既有固定设施保留现状,不参与重分配。
-  // 注:当前按【现有参与类型行等比缩放】;若某类型现状无行(如现状无 VS),该类型目标不可达,如实记录可实现比例,不强行凑数。
-  const PARTICIPATING = ['GR', 'VS', 'BC', 'PP'];
-  const areaByType: Record<string, number> = { GR: 0, VS: 0, RG: 0, PP: 0 };
-  const rows: Array<{ raw: string[]; type: string }> = [];
-  const keepLines: string[] = [];
+  // 参与类:师姐四类概念 GR(绿色屋顶)/VS(植草沟)/RG(雨水花园,SWMM BC)/PP(透水砖+透水沥青)
+  // 固定不参与:下凹式绿地(RG)/雨水花坛/RG 渗渠(IT)
+  const concept: Record<string, string> = { "绿色屋顶": "GR", "植草沟": "VS", "雨水花园": "RG", "透水砖铺装": "PP", "透水沥青铺装": "PP" };
+  const areas: Record<string, number> = { GR: 0, VS: 0, RG: 0, PP: 0 };
+  const rows: Array<{ raw: string[]; c: string }> = [];
+  const keep: string[] = [];
   for (let i = 1; i < lines.length; i++) {
     const lt = lines[i].trim();
-    if (!lt || lt.startsWith(';') || lt.startsWith('[')) { keepLines.push(lines[i]); continue; }
+    if (!lt || lt.startsWith(';') || lt.startsWith('[')) { keep.push(lines[i]); continue; }
     const parts = lines[i].split(/\t|\s+/);
     if (parts.length >= 4 && /^C\d/.test(parts[0])) {
-      const type = name2type[parts[1]] || 'PP';
-      if (PARTICIPATING.includes(type)) { rows.push({ raw: parts, type }); areaByType[type] += parseFloat(parts[3]) || 0; }
-      else keepLines.push(lines[i]); // BC/IT 保留
-    } else keepLines.push(lines[i]);
+      const c = concept[parts[1]];
+      if (c) { rows.push({ raw: parts, c }); areas[c] += parseFloat(parts[3]) || 0; }
+      else keep.push(lines[i]); // 固定设施保留
+    } else keep.push(lines[i]);
   }
   const total = rows.reduce((s, r) => s + (parseFloat(r.raw[3]) || 0), 0);
   if (total <= 0) return { text, applied: false };
-  // 目标面积(以参与类型总池为 100% 基数)
-  const targetType: Record<string, number> = { GR: target.GR / 100 * total, VS: target.VS / 100 * total, RG: target.RG / 100 * total, PP: target.PP / 100 * total };
-  // 按类型维持现状各汇水区相对分布,等比缩放使该类合计=目标;仅对现状存在该类型的行缩放
+  // 目标面积 = 参与池总规模 × 策略比例(师姐四类;缺失类型如现状无 VS 则其面积 0,不伪造)
+  const tgt: Record<string, number> = { GR: total * target.GR / 100, VS: total * target.VS / 100, RG: total * target.RG / 100, PP: total * target.PP / 100 };
   const scaled: string[] = [];
-  rows.forEach(r => {
-    const cur = parseFloat(r.raw[3]) || 0;
-    const curTypeTotal = areaByType[r.type] || 0;
-    const newArea = curTypeTotal > 0 ? cur * (targetType[r.type] / curTypeTotal) : cur;
+  for (const r of rows) {
+    const base = areas[r.c] || 0;
+    const newArea = base > 0 ? (parseFloat(r.raw[3]) || 0) * (tgt[r.c] / base) : (parseFloat(r.raw[3]) || 0);
     r.raw[3] = newArea.toFixed(2);
     scaled.push(r.raw.join('\t'));
-  });
-  const out: string[] = [lines[0]].concat(scaled);
-  for (const l of keepLines) out.push(l);
-  */ // 旧实现结束(已禁用:会致 VS=0 与策略比例不一致,仅调试参考,不作为四策略正式执行路径)
+  }
+  const out = [lines[0]].concat(scaled).concat(keep);
+  return { text: out.join('\n') + blockRest, applied: true };
 }
 
 
@@ -515,9 +486,9 @@ export async function POST(req: NextRequest) {
 
     const originalInp = join(process.cwd(), 'public', 'zijing_inp.inp');
     const tempInp = modifyRainfall(originalInp, intensity, simDir, landcoverEffective, greenLevel, series, rainfallScenarios);
-    // 海绵优化:按 LID 策略在 model.inp 的 [LID_USAGE] 重分配各设施面积(总量不变,构成=策略比例)
-    // 数据真实性约束:COVERAGES 覆盖率仅 3.1%、现状无 VS(植草沟),旧"等比缩放"算法会致策略比例与 INP 不一致,
-    // 已被禁用作为正式执行路径。故当前 lidStrategy 暂不修改 [LID_USAGE],并以 lidRedist 标记状态供前端提示。
+    // 海绵优化:按 LID 策略在 model.inp 的 [LID_USAGE] 重分配各设施面积(构成=策略比例,参与池总面积不变)
+    // 参与类 = 师姐四类概念(绿色屋顶GR/植草沟VS/雨水花园RG-SWMM BC/透水PP);现状无的行(如 VS)不伪造,
+    // 其余参与行按策略比例等比缩放 → 四策略产出不同 [LID_USAGE] 与 SWMM 结果。lidRedist 供前端提示。
     const lidRedist = { attempted: !!lidStrategy, applied: false, blockedReason: '' as string };
     if (lidStrategy) {
       const lidApplied = modifyLid(readFileSync(tempInp, 'utf-8'), lidStrategy);
