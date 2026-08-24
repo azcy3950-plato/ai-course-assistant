@@ -594,6 +594,30 @@ export default function SandboxPage() {
         }
         return null;
       };
+      // 最近对象回退:点击未命中精确 mesh 时,选屏幕距离最近的可交互管网对象(容差 ~30px),保证"点到即选中"
+      const pickNearest = (nx: number, ny: number, maxPx: number): any => {
+        const box = new THREE.Box3(), vp = new THREE.Vector3();
+        let best: any = null, bestPx = maxPx;
+        const visit = (o: THREE.Object3D) => {
+          const t = (o as any).userData?.type;
+          if (t === "pipe" || t === "node" || (o as any).userData?.storage) {
+            try {
+              const g = (o as THREE.Mesh).geometry as any;
+              if (g && g.boundingBox) g.boundingBox.getCenter(vp);
+              else if (g) { g.computeBoundingBox(); g.boundingBox.getCenter(vp); }
+              else o.getWorldPosition(vp);
+            } catch { o.getWorldPosition(vp); }
+            vp.project(camera);
+            const dx = (vp.x - nx) * 0.5 * (renderer.domElement.clientWidth || 1);
+            const dy = (vp.y - ny) * 0.5 * (renderer.domElement.clientHeight || 1);
+            const pxd = Math.hypot(dx, dy);
+            if (pxd < bestPx) { bestPx = pxd; best = o; }
+          }
+          if (o.children) for (const c of o.children) visit(c);
+        };
+        for (const c of scene.children) visit(c);
+        return best;
+      };
       // 地面拾取:放置/移动蓄水池时求地面交点坐标
       const groundPoint = (nx: number, ny: number): { x: number; z: number } | null => {
         raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
@@ -611,9 +635,11 @@ export default function SandboxPage() {
         if (moved > 5) return;
         const rect = renderer.domElement.getBoundingClientRect();
         const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1, ny = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        const obj = pick(nx, ny);
+        let obj = pick(nx, ny);
+        if (!obj) obj = pickNearest(nx, ny, 90);
         if (obj) {
           if (selRef.current !== obj) { if (selRef.current) resetHL(selRef.current); selRef.current = obj; hlObj(obj); setSelected({ type: obj.userData.type, data: obj.userData.data }); }
+          setRightCollapsed(false); // 命中后展开右栏,确保选中详情/横截面可见
           flyToObj(obj);
         } else if (selRef.current) { resetHL(selRef.current); selRef.current = null; setSelected(null); }
       });
@@ -657,7 +683,8 @@ export default function SandboxPage() {
         if (nowT - lastHoverRay < 50) return;
         lastHoverRay = nowT;
         const rect = renderer.domElement.getBoundingClientRect();
-        const obj = pick(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        const _nx = ((e.clientX - rect.left) / rect.width) * 2 - 1, _ny = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        const obj = pick(_nx, _ny) || pickNearest(_nx, _ny, 28);
         if (obj !== hoverObj) {
           // 离开旧对象:恢复其原 emissiveIntensity(若未恢复)
           if (hoverObj && hoverObj !== selRef.current && hoverObj.material) {
