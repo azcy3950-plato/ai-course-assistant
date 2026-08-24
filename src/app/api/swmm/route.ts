@@ -142,31 +142,28 @@ export function modifyLid(text: string, strategy: string | undefined): { text: s
   // 固定不参与:RG(下凹式绿地/雨水花坛)/IT(渗渠)
   const TYPE2CONCEPT: Record<string, string> = { GR: 'GR', VS: 'VS', BC: 'RG', PP: 'PP' };
   const areas: Record<string, number> = { GR: 0, VS: 0, RG: 0, PP: 0 };
-  const rows: Array<{ raw: string[]; c: string }> = [];
-  const keep: string[] = [];
+  const rows: Array<{ li: number; parts: string[]; c: string }> = [];
   for (let i = 1; i < lines.length; i++) {
     const lt = lines[i].trim();
-    if (!lt || lt.startsWith(';') || lt.startsWith('[')) { keep.push(lines[i]); continue; }
+    if (!lt || lt.startsWith(';') || lt.startsWith('[')) continue;
     const parts = lines[i].split(/\t|\s+/);
     if (parts.length >= 4 && /^C\d/.test(parts[0])) {
       const c = TYPE2CONCEPT[name2type[parts[1]] || ''];
-      if (c) { rows.push({ raw: parts, c }); areas[c] += parseFloat(parts[3]) || 0; }
-      else keep.push(lines[i]); // 固定设施保留
-    } else keep.push(lines[i]);
+      if (c) { rows.push({ li: i, parts, c }); areas[c] += parseFloat(parts[3]) || 0; }
+    }
   }
-  const total = rows.reduce((s, r) => s + (parseFloat(r.raw[3]) || 0), 0);
+  const total = rows.reduce((s, r) => s + (parseFloat(r.parts[3]) || 0), 0);
   if (total <= 0) return { text, applied: false };
   // 目标面积 = 参与池总规模 × 策略比例(师姐四类;缺失类型如现状无 VS 则其面积 0,不伪造)
   const tgt: Record<string, number> = { GR: total * target.GR / 100, VS: total * target.VS / 100, RG: total * target.RG / 100, PP: total * target.PP / 100 };
-  const scaled: string[] = [];
+  // 仅替换面积字段(第 4 列),保留原行分隔/顺序,避免破坏 SWMM 对 [LID_USAGE] 的解析
   for (const r of rows) {
     const base = areas[r.c] || 0;
-    const newArea = base > 0 ? (parseFloat(r.raw[3]) || 0) * (tgt[r.c] / base) : (parseFloat(r.raw[3]) || 0);
-    r.raw[3] = newArea.toFixed(2);
-    scaled.push(r.raw.join('\t'));
+    const newArea = base > 0 ? (parseFloat(r.parts[3]) || 0) * (tgt[r.c] / base) : (parseFloat(r.parts[3]) || 0);
+    lines[r.li] = lines[r.li].replace(/^(\S+\s+\S+\s+\S+\s+)\S+/, '$1' + newArea.toFixed(2));
   }
-  const out = [lines[0]].concat(scaled).concat(keep);
-  return { text: out.join('\n') + blockRest, applied: true };
+  const out = lines.join('\n');
+  return { text: out + blockRest, applied: true };
 }
 
 
