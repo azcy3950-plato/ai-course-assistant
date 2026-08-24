@@ -142,7 +142,7 @@ export function modifyLid(text: string, strategy: string | undefined): { text: s
   // 固定不参与:RG(下凹式绿地/雨水花坛)/IT(渗渠)
   const TYPE2CONCEPT: Record<string, string> = { GR: 'GR', VS: 'VS', BC: 'RG', PP: 'PP' };
   const areas: Record<string, number> = { GR: 0, VS: 0, RG: 0, PP: 0 };
-  const rows: Array<{ li: number; parts: string[]; c: string }> = [];
+  const rows: Array<{ li: number; parts: string[]; c: string; n2?: number }> = [];
   for (let i = 1; i < lines.length; i++) {
     const lt = lines[i].trim();
     if (!lt || lt.startsWith(';') || lt.startsWith('[')) continue;
@@ -156,11 +156,24 @@ export function modifyLid(text: string, strategy: string | undefined): { text: s
   if (total <= 0) return { text, applied: false };
   // 目标面积 = 参与池总规模 × 策略比例(师姐四类;缺失类型如现状无 VS 则其面积 0,不伪造)
   const tgt: Record<string, number> = { GR: total * target.GR / 100, VS: total * target.VS / 100, RG: total * target.RG / 100, PP: total * target.PP / 100 };
-  // 仅替换面积字段(第 4 列),保留原行分隔/顺序,避免破坏 SWMM 对 [LID_USAGE] 的解析
+  // 每汇水区先记原参与 LID 总面积,用于 clamp
+  const origSub: Record<string, number> = {};
+  for (const r of rows) origSub[r.parts[0]] = (origSub[r.parts[0]] || 0) + (parseFloat(r.parts[3]) || 0);
+  // 第一遍:按类型整体缩放(类型目标/现状);同时对每汇水区 clamp——若该汇水区参与 LID 超过其原总面积则等比缩回
+  const subNew: Record<string, number> = {};
   for (const r of rows) {
     const base = areas[r.c] || 0;
     const newArea = base > 0 ? (parseFloat(r.parts[3]) || 0) * (tgt[r.c] / base) : (parseFloat(r.parts[3]) || 0);
-    lines[r.li] = lines[r.li].replace(/^(\S+\s+\S+\s+\S+\s+)\S+/, '$1' + newArea.toFixed(2));
+    r.n2 = newArea;
+    subNew[r.parts[0]] = (subNew[r.parts[0]] || 0) + newArea;
+  }
+  for (const r of rows) {
+    const orig = origSub[r.parts[0]] || 0;
+    const nsum = subNew[r.parts[0]] || 0;
+    // clamp:每汇水区参与 LID 不得超其原总面积(原已合法,SWMM 不会报 187 超汇水区面积)
+    const factor = (orig > 0 && nsum > orig) ? (orig / nsum) : 1;
+    const finalArea = factor * (r.n2 ?? 0);
+    lines[r.li] = lines[r.li].replace(/^(\S+\s+\S+\s+\S+\s+)\S+/, '$1' + finalArea.toFixed(2));
   }
   const out = lines.join('\n');
   // 必须保留 [LID_USAGE] 之前的整段(SUBCATCHMENTS/RAINGAGES/TIMESERIES 等),否则 SWMM 找不到汇水区(ERROR 209 undefined object)
