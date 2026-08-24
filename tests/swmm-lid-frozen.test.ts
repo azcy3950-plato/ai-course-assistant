@@ -20,7 +20,7 @@ const lidUsage = (text: string) => {
   return text.slice(s, e < 0 ? text.length : e);
 };
 
-describe('LID 冻结(frozen):双轨开发安全边界回归', () => {
+describe('LID 策略真实重分配回归', () => {
   it('现状基准(不带 lidStrategy)不修改 [LID_USAGE]', () => {
     const inp = makeInp();
     const r = modifyLid(inp, undefined);
@@ -30,13 +30,16 @@ describe('LID 冻结(frozen):双轨开发安全边界回归', () => {
   });
 
   it.each(Object.keys(LID_STRATEGIES))(
-    '冻结状态下 lidStrategy=%s 返回 applied=false 且 [LID_USAGE] 保持原样',
+    '策略 lidStrategy=%s 返回 applied=true 且 [LID_USAGE] 面积被重分配(保留前部[LID_CONTROLS])',
     (strategy) => {
       const inp = makeInp();
       const r = modifyLid(inp, strategy);
-      expect(r.applied).toBe(false);
-      expect(lidUsage(r.text)).toBe(lidUsage(inp));
-      // 冻结期绝不能写入策略的比例(避免 UI 显示策略而 INP 未真实实现)
+      expect(r.applied).toBe(true);
+      // 必须保留 [LID_USAGE] 之前的整段([LID_CONTROLS] 前置段),否则 SWMM 找不到汇水区
+      expect(r.text.startsWith('[TITLE]')).toBe(true);
+      expect(r.text.indexOf('[LID_CONTROLS]')).toBeLessThan(r.text.indexOf('[LID_USAGE]'));
+      // 面积被重分配:与原始不同
+      expect(lidUsage(r.text)).not.toBe(lidUsage(inp));
       expect(r.text.indexOf('C1\t绿色屋顶\t1\t')).toBeGreaterThan(-1);
     },
   );

@@ -163,7 +163,8 @@ export function modifyLid(text: string, strategy: string | undefined): { text: s
     lines[r.li] = lines[r.li].replace(/^(\S+\s+\S+\s+\S+\s+)\S+/, '$1' + newArea.toFixed(2));
   }
   const out = lines.join('\n');
-  return { text: out + blockRest, applied: true };
+  // 必须保留 [LID_USAGE] 之前的整段(SUBCATCHMENTS/RAINGAGES/TIMESERIES 等),否则 SWMM 找不到汇水区(ERROR 209 undefined object)
+  return { text: text.slice(0, start) + out + blockRest, applied: true };
 }
 
 
