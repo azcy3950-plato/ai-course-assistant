@@ -183,12 +183,12 @@ const SHARED = {
   overflowDisc: new THREE.CircleGeometry(1, 20), // 单位圆,半径用 scale 缩放(积水圆盘共享几何)
 };
 
-function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false, size = "md", onCanvas }: {
-  diam: number; depth: number; depthFraction: number; flow: number; flowDir: string; landcover: string; previewRatio?: number; animate?: boolean; compact?: boolean; size?: "md" | "lg"; onCanvas?: (c: HTMLCanvasElement | null) => void;
+function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false, largeLabels = false, size = "md", onCanvas }: {
+  diam: number; depth: number; depthFraction: number; flow: number; flowDir: string; landcover: string; previewRatio?: number; animate?: boolean; compact?: boolean; largeLabels?: boolean; size?: "md" | "lg"; onCanvas?: (c: HTMLCanvasElement | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const latest = useRef({ diam, depth, depthFraction, flow, flowDir, previewRatio, compact, size });
-  latest.current = { diam, depth, depthFraction, flow, flowDir, previewRatio, compact, size };
+  const latest = useRef({ diam, depth, depthFraction, flow, flowDir, previewRatio, compact, largeLabels, size });
+  latest.current = { diam, depth, depthFraction, flow, flowDir, previewRatio, compact, largeLabels, size };
   const displayFill = useRef(0); // 显示充满度(平滑过渡到目标值,方案切换/时间轴跳转时变化过程可见)
   const displayFlow = useRef(0); // 流量数字滚动动画
   const animRef = useRef<{ from: number; to: number; t0: number } | null>(null); // easeOutCubic 0.4s 缓动
@@ -284,7 +284,7 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
       const danger = fillRatio > 0.9;
       const dangerColor = danger && animate ? `rgba(255,90,70,${(0.75 + 0.25 * Math.sin(now * 0.006)).toFixed(2)})` : "#f87171";
       ctx.fillStyle = "#9fb2c0";
-      ctx.font = L.compact ? "8px monospace" : "9px monospace";
+      ctx.font = L.compact ? `${L.largeLabels ? 10 : 8}px monospace` : `${L.largeLabels ? 11 : 9}px monospace`;
       ctx.textAlign = "center";
       ctx.fillText(L.compact ? `${(fillRatio * 100).toFixed(0)}%` : `d=${L.diam.toFixed(2)}m 充满度=${(fillRatio * 100).toFixed(0)}%`, cx, h - 5);
       ctx.fillStyle = danger ? dangerColor : "rgba(80,170,230,0.9)";
@@ -297,7 +297,7 @@ function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover
       draw(0); // 静态模式(如三方案对比):一次性绘制,零 rAF 空转
     }
     return () => cancelAnimationFrame(raf);
-  }, [animate, diam, depth, depthFraction, flow, previewRatio]);
+  }, [animate, diam, depth, depthFraction, flow, previewRatio, largeLabels]);
 
   return (
     <div className={`rounded-lg border border-gray-700 bg-black/80 ${latest.current.compact ? "p-0.5" : "p-1.5"}`}>
@@ -433,14 +433,14 @@ export default function SandboxPage() {
     return () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
   }, []);
   const [theme, setTheme] = useState<"dark" | "light">(() => { try { return localStorage.getItem("sandbox-theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
-  // 场景主题联动:深色 ↔ 浅色(背景/雾/网格)
+  // 静态与动态沙盘统一使用站点的浅色工作台背景。
   const applyTheme = useCallback(() => {
     const sc = sceneRef.current; if (!sc) return;
-    // 3D 背景恒为深冷灰蓝(与控制台深色统一,不再因浅色主题出现"白画布"割裂)
-    (sc.background as THREE.Color)?.set("#1a222c");
-    (sc.fog as THREE.Fog)?.color?.set("#1a222c");
+    const sceneBackground = "#edf3f9";
+    (sc.background as THREE.Color)?.set(sceneBackground);
+    (sc.fog as THREE.Fog)?.color?.set(sceneBackground);
     const gm = gridRef.current?.material as THREE.LineBasicMaterial | undefined;
-    if (gm) gm.color.set("#5f6b78");
+    if (gm) gm.color.set("#b9c7d6");
   }, []);
   const themeRef = useRef(theme);
   themeRef.current = theme;
@@ -465,8 +465,9 @@ export default function SandboxPage() {
       const w = cr.current.clientWidth, h = cr.current.clientHeight;
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color("#1a222c");
-      scene.fog = new THREE.Fog("#1a222c", 300, 1200);
+      const initialSceneBackground = "#edf3f9";
+      scene.background = new THREE.Color(initialSceneBackground);
+      scene.fog = new THREE.Fog(initialSceneBackground, 300, 1200);
       sceneRef.current = scene;
 
       const camera = new THREE.PerspectiveCamera(48, w / h, 0.3, 2500);
@@ -754,6 +755,26 @@ export default function SandboxPage() {
     } catch (e: any) { setError(e.message); }
   })(); }, []);
 
+  // 三栏布局会改变地图容器尺寸，但不会触发 window.resize。
+  // 仅同步画布与相机尺寸，保持既有 Three.js 场景与推演逻辑不变。
+  useEffect(() => {
+    const host = cr.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      const width = Math.max(1, Math.floor(entry.contentRect.width));
+      const height = Math.max(1, Math.floor(entry.contentRect.height));
+      const camera = cameraRef.current;
+      const renderer = rendererRef.current;
+      if (!camera || !renderer) return;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height, false);
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
   function hlObj(obj: THREE.Object3D) {
     obj.traverse(c => { if (c instanceof THREE.Mesh && c.material && !(c.material as any)._isWater) { (c.material as any).emissive = new THREE.Color(HIGHLIGHT_EMI); (c.material as any).emissiveIntensity = 0.5; } });
   }
@@ -827,7 +848,7 @@ export default function SandboxPage() {
     const gndSpan = span * 1.02;
     const groundGeom = new THREE.PlaneGeometry(gndSpan, gndSpan);
     groundGeom.rotateX(-Math.PI / 2);
-    const groundMesh = new THREE.Mesh(groundGeom, new THREE.MeshStandardMaterial({ color: "#22272e", roughness: 0.95, transparent: true, opacity: 0.45, depthWrite: true }));
+    const groundMesh = new THREE.Mesh(groundGeom, new THREE.MeshStandardMaterial({ color: "#d8e2ec", roughness: 0.96, transparent: true, opacity: 0.72, depthWrite: true }));
     groundMesh.position.y = gndY; groundMesh.receiveShadow = true; groundMesh.renderOrder = 0;
     groundMesh.userData = { type: "ground" };
     grp.ground.add(groundMesh);
@@ -1005,7 +1026,7 @@ export default function SandboxPage() {
       // 仅开发验收模式(URL 带 ?fixture=1):加载真实 SWMM 历史结果(public/sandbox-fixture.json)驱动动态 UI,不走 /api(不需 token)。
       // 默认(无 fixture=1)完全走正常 /api/swmm 真实推演,此分支不参与任何正式运行。
       if (typeof window !== "undefined" && new URLSearchParams(location.search).get("fixture") === "1") {
-        if (simLidStrategy) { setSchemeMsg({ text: "fixture 模式仅支持现状基准，LID 情景不能在此回放。", color: "text-amber-300" }); setDynPhase("config"); return; }
+        if (simLidStrategy) { setSchemeMsg({ text: "fixture 模式仅支持现状基准，LID 情景不能在此回放。", color: "text-amber-700" }); setDynPhase("config"); return; }
         setRunStage("baseline");
         const fr = await fetch("/sandbox-fixture.json", { signal: ctrl.signal });
         if (!fr.ok) throw new Error("fixture missing");
@@ -1035,7 +1056,7 @@ export default function SandboxPage() {
       setResultScenario({ mode: simLidStrategy ? "optimize" : "baseline", lidStrategy: simLidStrategy || null, rainfall: simSeries || null });
       // 以 BACKEND response.lidRedist.applied 判断海绵是否真正应用(不前端提前猜)
       if (simLidStrategy && d?.lidRedist?.attempted && !d?.lidRedist?.applied) {
-        setSchemeMsg({ text: "当前 LID 情景未成功应用，未生成优化结果。", color: "text-amber-300" });
+        setSchemeMsg({ text: "当前 LID 情景未成功应用，未生成优化结果。", color: "text-amber-700" });
       }
       cacheComparisonResult(simSeries, simLidStrategy || (simLandcover === "green" ? "optimize" : "baseline"), d);
       // 现状基准结果入缓存:仅当未选 LID 策略(landcover=default 或无 lidStrategy)时缓存,供海绵优化对比
@@ -1091,7 +1112,7 @@ export default function SandboxPage() {
           }, 5200);
           const down = top.filter(([, v]) => v < 0).length, up = top.filter(([, v]) => v > 0).length;
           const msg = simLandcover === "green" ? `🟢 海绵优化方案:${down} 条管道水量下降` : `⚪ 现状基准`;
-          setSchemeMsg({ text: msg, color: simLandcover === "green" ? "text-green-400" : "text-gray-300" });
+          setSchemeMsg({ text: msg, color: simLandcover === "green" ? "text-emerald-700" : "text-slate-600" });
           if (schemeMsgTimer.current) clearTimeout(schemeMsgTimer.current);
           schemeMsgTimer.current = setTimeout(() => setSchemeMsg(null), 4000);
         }
@@ -1241,7 +1262,7 @@ export default function SandboxPage() {
       try {
         if (!localStorage.getItem("sandbox-hands-v1")) {
           localStorage.setItem("sandbox-hands-v1", "1");
-          setSchemeMsg({ text: "选择情景与降雨条件后开始推演；结果区统一对比现状基准与海绵优化。", color: "text-teal-300" });
+          setSchemeMsg({ text: "选择情景与降雨条件后开始推演；结果区统一对比现状基准与海绵优化。", color: "text-blue-700" });
           if (schemeMsgTimer.current) clearTimeout(schemeMsgTimer.current);
           schemeMsgTimer.current = setTimeout(() => setSchemeMsg(null), 6000);
         }
@@ -1425,17 +1446,17 @@ export default function SandboxPage() {
       backgroundColor: "transparent",
       animation: false,
       grid: { left: 52, right: 52, top: 34, bottom: 30 },
-      legend: { top: 2, textStyle: { color: "#cbd5e1", fontSize: 9 }, data: ["降雨过程", "现状基准", "海绵优化"] },
-      tooltip: { trigger: "axis", axisPointer: { type: "line" } },
-      xAxis: { type: "category", data: categories, name: "时间", nameTextStyle: { color: "#94a3b8", fontSize: 9 }, axisLabel: { color: "#94a3b8", fontSize: 8, interval: Math.max(0, Math.floor(categories.length / 6) - 1) }, axisLine: { lineStyle: { color: "#334155" } } },
+      legend: { top: 2, textStyle: { color: "#475569", fontSize: 11 }, data: ["降雨过程", "现状基准", "海绵优化"] },
+      tooltip: { trigger: "axis", axisPointer: { type: "line", lineStyle: { color: "#94a3b8" } }, backgroundColor: "rgba(255,255,255,.96)", borderColor: "#dbe4ef", textStyle: { color: "#334155", fontSize: 12 } },
+      xAxis: { type: "category", data: categories, name: "时间", nameTextStyle: { color: "#64748b", fontSize: 11 }, axisLabel: { color: "#64748b", fontSize: 10, interval: Math.max(0, Math.floor(categories.length / 6) - 1) }, axisLine: { lineStyle: { color: "#cbd5e1" } }, axisTick: { lineStyle: { color: "#cbd5e1" } } },
       yAxis: [
-        { type: "value", name: "径流量 (m³/s)", nameTextStyle: { color: "#94a3b8", fontSize: 8 }, axisLabel: { color: "#94a3b8", fontSize: 8 }, splitLine: { lineStyle: { color: "#1f2937" } } },
-        { type: "value", name: "降雨 (mm/h)", nameTextStyle: { color: "#64748b", fontSize: 8 }, axisLabel: { color: "#64748b", fontSize: 8 }, splitLine: { show: false } },
+        { type: "value", name: "径流量 (m³/s)", nameTextStyle: { color: "#64748b", fontSize: 10 }, axisLabel: { color: "#64748b", fontSize: 10 }, splitLine: { lineStyle: { color: "#e8eef5" } }, axisLine: { show: false } },
+        { type: "value", name: "降雨 (mm/h)", nameTextStyle: { color: "#64748b", fontSize: 10 }, axisLabel: { color: "#64748b", fontSize: 10 }, splitLine: { show: false }, axisLine: { show: false } },
       ],
       series: [
-        { name: "降雨过程", type: "bar", yAxisIndex: 1, data: rainfall, barMaxWidth: 5, itemStyle: { color: "#2563eb", opacity: 0.35 } },
+        { name: "降雨过程", type: "bar", yAxisIndex: 1, data: rainfall, barMaxWidth: 5, itemStyle: { color: "#14b8a6", opacity: 0.34 } },
         { name: "现状基准", type: "line", data: baselineMetrics?.runoffSeries || [], smooth: false, showSymbol: false, lineStyle: { color: "#94a3b8", width: 1.8 } },
-        { name: "海绵优化", type: "line", data: optimizedMetrics?.runoffSeries || emptyOptimized, smooth: false, showSymbol: false, connectNulls: false, lineStyle: { color: "#2dd4bf", width: 2 } },
+        { name: "海绵优化", type: "line", data: optimizedMetrics?.runoffSeries || emptyOptimized, smooth: false, showSymbol: false, connectNulls: false, lineStyle: { color: "#2563eb", width: 2.2 } },
       ],
     };
   }, [comparisonRainfallKey, baselineResult, optimizedResult, baselineMetrics, optimizedMetrics]);
@@ -1487,53 +1508,123 @@ export default function SandboxPage() {
     else { jumpToObject(e.id, "node"); const ng = nodeGeomMap.current.get(e.id); if (ng && selRef.current !== ng.group) { if (selRef.current) resetHL(selRef.current); selRef.current = ng.group; hlObj(ng.group); } setSelected({ type: "node", data: { ...((nodeGeomMap.current.get(e.id) as any)?.group?.userData?.data || {}), id: e.id } }); }
   };
 
+  const dynamicResultsVisible = mode === "dynamic" && !!dynRes?.ok
+    && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready")
+    && timeStepCount > 0;
+  const resultTrayHeight = dynamicResultsVisible
+    ? (bottomCollapsed ? 42 : Math.max(180, Math.min(380, bottomH)))
+    : 0;
+  const sidePanelBottom = resultTrayHeight > 0 ? resultTrayHeight + 20 : 12;
+  const staticOverviewVisible = mode === "static" && staticOverviewOpen && !selected;
+  const staticObjectVisible = mode === "static" && !!selected;
+
   // ═══════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="h-[calc(100vh-3.5rem)] flex flex-col bg-black relative">
+    <div className={`relative flex h-[calc(100vh-3.5rem)] min-h-[620px] flex-col overflow-hidden bg-slate-100 text-slate-900 ${mode === "dynamic" ? "sandbox-dynamic-fonts" : ""}`}>
+      <style>{`
+        .sandbox-dynamic-fonts [class~="text-[7px]"] { font-size: 9px !important; }
+        .sandbox-dynamic-fonts [class~="text-[8px]"] { font-size: 10px !important; }
+        .sandbox-dynamic-fonts [class~="text-[9px]"] { font-size: 11px !important; }
+        .sandbox-dynamic-fonts [class~="text-[10px]"] { font-size: 12px !important; }
+        .sandbox-dynamic-fonts [class~="text-[11px]"] { font-size: 13px !important; }
+        .sandbox-dynamic-fonts [class~="text-xs"] { font-size: 14px !important; }
+        .sandbox-dynamic-fonts [class~="text-sm"] { font-size: 16px !important; }
+        .sandbox-dynamic-fonts [class~="leading-3"] { line-height: 1.4 !important; }
+        .sandbox-dynamic-fonts [class~="leading-4"] { line-height: 1.45 !important; }
+        .sandbox-dynamic-fonts [class~="leading-5"] { line-height: 1.5 !important; }
+      `}</style>
       {/* ── Top bar ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-black/90 backdrop-blur border-b border-gray-800 px-2 py-1 flex items-center gap-2 text-[11px]">
-        <span className="font-bold text-gray-200 text-xs shrink-0">🌊 紫荆雅园</span>
-        <div className="flex bg-gray-800 rounded-lg p-0.5 shrink-0">
-          <button onClick={() => { setMode("static"); clearWaterMeshes(); }} className={"px-3 py-1.5 rounded-md font-semibold text-xs " + (mode === "static" ? "bg-cyan-700 text-white" : "text-gray-400 hover:text-white")}>静态沙盘</button>
-          <button onClick={() => { setMode("dynamic"); setSimMode("optimize"); setLandcover("green"); }} className={"px-3 py-1.5 rounded-md font-semibold text-xs " + (mode === "dynamic" ? "bg-cyan-700 text-white" : "text-gray-400 hover:text-white")}>动态推演</button>
+      {mode === "dynamic" ? <header className="relative z-30 flex h-16 shrink-0 items-center gap-1 border-b border-slate-200 bg-white px-2 text-[11px] shadow-sm sm:gap-2 sm:px-3 lg:gap-3 lg:px-4">
+        <div className="hidden min-w-0 shrink lg:block lg:w-[190px] 2xl:w-[220px]">
+          <div className="truncate text-sm font-bold text-slate-900">紫金雅园海绵城市沙盘</div>
+          <div className="mt-0.5 hidden truncate text-[9px] text-slate-500 sm:block">北京市 · 研究区 11.80 hm² · SWMM 模型</div>
         </div>
-        <div className="h-4 w-px bg-gray-600" />
+        <div className="flex shrink-0 rounded-lg bg-slate-100 p-0.5">
+          <button onClick={() => { if (selRef.current) resetHL(selRef.current); selRef.current = null; setSelected(null); setStaticOverviewOpen(true); setMode("static"); clearWaterMeshes(); }} className="rounded-md px-1.5 py-1.5 text-[10px] font-semibold text-slate-500 transition-colors hover:bg-white hover:text-slate-800 sm:px-2.5">静态概况</button>
+          <button onClick={() => { setMode("dynamic"); setSimMode("optimize"); setLandcover("green"); }} className="rounded-md bg-blue-600 px-1.5 py-1.5 text-[10px] font-semibold text-white shadow-sm sm:px-2.5">动态推演</button>
+        </div>
         {/* 视角 Popover */}
-        <div className="relative">
-          <button onClick={() => setOpenBar(openBar === "view" ? null : "view")} className={"px-2.5 py-1.5 min-h-[30px] rounded-md font-semibold text-xs " + (openBar === "view" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>视角 · {{ panorama: "鸟瞰", topdown: "俯视", underground: "地下" }[curView]} ▾</button>
+        <div className="relative hidden md:block">
+          <button onClick={() => setOpenBar(openBar === "view" ? null : "view")} className={"min-h-[32px] rounded-md border px-2.5 py-1.5 text-[10px] font-semibold transition-colors " + (openBar === "view" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700")}>视角 · {{ panorama: "鸟瞰", topdown: "俯视", underground: "地下" }[curView]} ▾</button>
           {openBar === "view" && (
-            <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-28 z-30">
+            <div className="absolute left-0 top-full z-40 mt-1 w-28 rounded-lg border border-slate-200 bg-white p-1 text-slate-700 shadow-lg">
               {([["panorama","鸟瞰"],["topdown","俯视"],["orbit","环绕"],["reset","复位"]] as const).map(([v, l]) => (
-                <button key={v} onClick={() => { if (v === "orbit") setOrbit(o => { orbitRef.current = !o; return !o; }); else if (v === "reset") { setOrbit(false); orbitRef.current = false; flyTo("panorama"); } else flyTo(v); setOpenBar(null); }} className={"block w-full text-left px-2 py-1.5 rounded text-[11px] hover:bg-gray-800 text-gray-300 " + (v === "orbit" && orbit ? "text-cyan-300 font-bold" : "")}>{l}</button>
+                <button key={v} onClick={() => { if (v === "orbit") setOrbit(o => { orbitRef.current = !o; return !o; }); else if (v === "reset") { setOrbit(false); orbitRef.current = false; flyTo("panorama"); } else flyTo(v); setOpenBar(null); }} className={"block w-full rounded px-2 py-1.5 text-left text-[10px] hover:bg-slate-50 " + (v === "orbit" && orbit ? "font-bold text-blue-600" : "")}>{l}</button>
               ))}
             </div>
           )}
         </div>
         {/* 组成 Popover */}
-        <div className="relative">
-          <button onClick={() => setOpenBar(openBar === "layer" ? null : "layer")} className={"px-2.5 py-1.5 min-h-[30px] rounded-md font-semibold text-xs " + (openBar === "layer" ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800")}>组成 ▾</button>
+        <div className="relative hidden lg:block">
+          <button onClick={() => setOpenBar(openBar === "layer" ? null : "layer")} className={"min-h-[32px] rounded-md border px-2.5 py-1.5 text-[10px] font-semibold transition-colors " + (openBar === "layer" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700")}>图层 ▾</button>
           {openBar === "layer" && (
-            <div className="absolute left-0 top-full mt-1 bg-gray-900/95 backdrop-blur rounded-lg border border-gray-700 shadow-xl p-1 w-32 z-30">
+            <div className="absolute left-0 top-full z-40 mt-1 w-32 rounded-lg border border-slate-200 bg-white p-1 text-slate-700 shadow-lg">
               {[{ id: "sc", l: "汇水区" },{ id: "pipes", l: "管道" },{ id: "nodes", l: "节点" }].map(({ id, l }) => (
-                <button key={id} onClick={() => toggleLayer(id)} className={"block w-full text-left px-2 py-1.5 rounded text-[11px] " + (layers[id] ? "text-gray-100 font-bold" : "text-gray-500")}>{layers[id] ? "☑ " : "☐ "}{l}</button>
+                <button key={id} onClick={() => toggleLayer(id)} className={"block w-full rounded px-2 py-1.5 text-left text-[10px] hover:bg-slate-50 " + (layers[id] ? "font-bold text-slate-800" : "text-slate-400")}>{layers[id] ? "☑ " : "☐ "}{l}</button>
               ))}
             </div>
           )}
         </div>
-        <span className="ml-auto text-[9px] text-gray-500 shrink-0">{stats.nodes}节点 · {stats.pipes}管 · {stats.scs}汇水区</span>
-      </div>
 
-      {/* ── 动态沙盘专属控制条：情景 → 降雨 → 同步计算基准与优化 → 自动播放 ── */}
+        <div className="ml-auto flex min-w-0 items-end gap-2">
+          <label className="hidden min-w-0 flex-col gap-0.5 text-[8px] text-slate-500 sm:flex">
+            <span>降雨条件</span>
+            <select value={scn} onChange={e => {
+              const nextScenario = e.target.value as RainfallScenarioKey;
+              if (nextScenario === scn && dynPhase === "config") return;
+              setScn(nextScenario); setRainPreview(null); setDynPlay(false); setDynStep(0); setDynRes(null); setDynPhase("config"); setLidRedistApplied(false);
+              setResultScenario({ mode: "optimize", lidStrategy, rainfall: null }); clearWaterMeshes();
+            }} className="h-8 min-w-[138px] rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-700 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+              {RAIN_SCENARIOS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </label>
+          <select value={lidStrategy} onChange={e => {
+            const nextStrategy = e.target.value as LidStrategyKey;
+            setLidStrategy(nextStrategy); setSimMode("optimize"); setLandcover("green"); setRainPreview(null);
+            setDynPlay(false); setDynStep(0); setDynRes(null); setDynPhase("config"); setLidRedistApplied(false);
+            setResultScenario({ mode: "optimize", lidStrategy: nextStrategy, rainfall: null }); clearWaterMeshes();
+          }} aria-label="优化情景" className="hidden h-8 min-w-0 max-w-[106px] rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-700 min-[360px]:block sm:hidden">
+            {(Object.keys(LID_STRATEGY_MAP) as LidStrategyKey[]).map(key => <option key={key} value={key}>{LID_STRATEGY_MAP[key].label}</option>)}
+          </select>
+          <button onClick={resetLayout} title="恢复面板默认尺寸" className="hidden h-8 shrink-0 rounded-md px-2 text-[9px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800 xl:block">恢复布局</button>
+          {dynPhase === "loading"
+            ? <span className="flex h-8 shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-3 text-[10px] font-bold text-blue-700">计算中…</span>
+            : <button onClick={() => loadSim()} className="flex h-8 shrink-0 items-center rounded-md bg-blue-600 px-3 text-[10px] font-bold text-white shadow-sm transition-colors hover:bg-blue-700">▶ 开始推演</button>}
+        </div>
+      </header> : <header className="relative z-30 flex h-16 shrink-0 items-center gap-1 border-b border-slate-200 bg-white px-2 text-[11px] shadow-sm sm:gap-2 sm:px-3 lg:gap-3 lg:px-4">
+        <div className="hidden min-w-0 shrink lg:block lg:w-[190px] 2xl:w-[220px]">
+          <div className="truncate text-sm font-bold text-slate-900">紫金雅园海绵城市沙盘</div>
+          <div className="mt-0.5 truncate text-[9px] text-slate-500">北京市 · 研究区 11.80 hm² · SWMM 模型</div>
+        </div>
+        <div className="flex shrink-0 rounded-lg bg-slate-100 p-0.5">
+          <button onClick={() => { if (selRef.current) resetHL(selRef.current); selRef.current = null; setSelected(null); setStaticOverviewOpen(true); setMode("static"); clearWaterMeshes(); }} className="rounded-md bg-blue-600 px-1.5 py-1.5 text-[10px] font-semibold text-white shadow-sm sm:px-2.5">静态概况</button>
+          <button onClick={() => { setMode("dynamic"); setSimMode("optimize"); setLandcover("green"); }} className="rounded-md px-1.5 py-1.5 text-[10px] font-semibold text-slate-500 transition-colors hover:bg-white hover:text-slate-800 sm:px-2.5">动态推演</button>
+        </div>
+        <div className="relative hidden md:block">
+          <button onClick={() => setOpenBar(openBar === "view" ? null : "view")} className={"min-h-[32px] rounded-md border px-2.5 py-1.5 text-[10px] font-semibold transition-colors " + (openBar === "view" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700")}>视角 · {{ panorama: "鸟瞰", topdown: "俯视", underground: "地下" }[curView]} ▾</button>
+          {openBar === "view" && <div className="absolute left-0 top-full z-40 mt-1 w-28 rounded-lg border border-slate-200 bg-white p-1 text-slate-700 shadow-lg">
+            {([["panorama","鸟瞰"],["topdown","俯视"],["orbit","环绕"],["reset","复位"]] as const).map(([v, l]) => <button key={v} onClick={() => { if (v === "orbit") setOrbit(o => { orbitRef.current = !o; return !o; }); else if (v === "reset") { setOrbit(false); orbitRef.current = false; flyTo("panorama"); } else flyTo(v); setOpenBar(null); }} className={"block w-full rounded px-2 py-1.5 text-left text-[10px] hover:bg-slate-50 " + (v === "orbit" && orbit ? "font-bold text-blue-600" : "")}>{l}</button>)}
+          </div>}
+        </div>
+        <div className="relative hidden lg:block">
+          <button onClick={() => setOpenBar(openBar === "layer" ? null : "layer")} className={"min-h-[32px] rounded-md border px-2.5 py-1.5 text-[10px] font-semibold transition-colors " + (openBar === "layer" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700")}>图层 ▾</button>
+          {openBar === "layer" && <div className="absolute left-0 top-full z-40 mt-1 w-32 rounded-lg border border-slate-200 bg-white p-1 text-slate-700 shadow-lg">
+            {[{ id: "sc", l: "汇水区" },{ id: "pipes", l: "管道" },{ id: "nodes", l: "节点" }].map(({ id, l }) => <button key={id} onClick={() => toggleLayer(id)} className={"block w-full rounded px-2 py-1.5 text-left text-[10px] hover:bg-slate-50 " + (layers[id] ? "font-bold text-slate-800" : "text-slate-400")}>{layers[id] ? "☑ " : "☐ "}{l}</button>)}
+          </div>}
+        </div>
+        <span className="ml-auto hidden shrink-0 text-[9px] text-slate-500 sm:block">{stats.scs} 汇水区 · {stats.nodes} 节点 · {stats.pipes} 管段</span>
+      </header>}
+
+      {/* ── 左侧情景栏：仅重排展示，点击副作用保持原样 ── */}
       {mode === "dynamic" && (
-        <div className="absolute left-0 right-0 top-[38px] z-20 flex flex-col gap-2 overflow-x-hidden border-b border-gray-800 bg-black/90 px-2.5 py-2 text-[11px] backdrop-blur lg:flex-row lg:items-stretch">
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] font-semibold text-gray-300">海绵优化情景</span>
-              <span className="text-[8px] text-gray-600">选择后将与现状基准同步计算</span>
-            </div>
-            <div className="grid grid-cols-2 gap-1 xl:grid-cols-4">
+        <aside style={{ bottom: sidePanelBottom }} className="absolute left-3 top-[76px] z-20 hidden w-[190px] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:flex">
+          <div className="mb-2">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-blue-600">优化目标</div>
+            <div className="mt-1 text-[8px] leading-3 text-slate-500">选择情景后，将与现状基准使用同一降雨条件计算。</div>
+          </div>
+          <div className="grid min-h-0 flex-1 grid-cols-1 content-start gap-1.5 overflow-y-auto">
               {(Object.keys(LID_STRATEGY_MAP) as LidStrategyKey[]).map(key => (
                 <button
                   key={key}
@@ -1544,51 +1635,39 @@ export default function SandboxPage() {
                     setDynPlay(false); setDynStep(0); setDynRes(null); setDynPhase("config"); setLidRedistApplied(false);
                     setResultScenario({ mode: "optimize", lidStrategy: key, rainfall: null }); clearWaterMeshes();
                   }}
-                  className={`min-w-0 rounded-lg border px-2 py-1.5 text-left transition-colors ${lidStrategy === key ? "border-cyan-500 bg-cyan-950/70 text-white" : "border-gray-700 bg-gray-900/70 text-gray-400 hover:border-gray-600 hover:bg-gray-800"}`}
+                  className={`min-w-0 rounded-lg border px-2.5 py-2 text-left transition-all ${lidStrategy === key ? "border-blue-200 bg-blue-50 text-blue-800 shadow-sm" : "border-transparent bg-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50"}`}
                 >
-                  <span className="block text-[10px] font-bold">{LID_STRATEGY_MAP[key].label}</span>
-                  <span className="mt-0.5 block min-h-6 text-[8px] leading-3 text-gray-500">{LID_STRATEGY_DESC[key]}</span>
+                  <span className="flex items-center gap-2 text-[10px] font-bold"><span className={`flex h-5 w-5 items-center justify-center rounded-md text-[8px] ${lidStrategy === key ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{(Object.keys(LID_STRATEGY_MAP) as LidStrategyKey[]).indexOf(key) + 1}</span>{LID_STRATEGY_MAP[key].label}</span>
+                  <span className="mt-1.5 block pl-7 text-[8px] leading-3 text-slate-500">{LID_STRATEGY_DESC[key]}</span>
                 </button>
               ))}
-            </div>
           </div>
-          <div className="flex min-w-0 flex-col justify-between gap-2 border-t border-gray-800 pt-2 lg:w-[420px] lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 text-[9px] font-semibold text-gray-400">降雨条件</span>
-              <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-0.5">
-                {RAIN_SCENARIOS.map(s => (
-                  <button key={s.key} type="button" onClick={() => {
-                    if (s.key === scn && dynPhase === "config") return;
-                    setScn(s.key); setRainPreview(null); setDynPlay(false); setDynStep(0); setDynRes(null); setDynPhase("config"); setLidRedistApplied(false);
-                    setResultScenario({ mode: "optimize", lidStrategy, rainfall: null }); clearWaterMeshes();
-                  }} title={s.desc} className={`shrink-0 rounded-md border px-2 py-1 text-[9px] font-bold ${scn === s.key ? "border-blue-500 bg-blue-900/70 text-white" : "border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800"}`}>{s.label.replace("一遇", "")}</button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1 text-[8px] leading-3 text-gray-500">
-                {scnOf(scn)?.label} · 总雨量 {scnOf(scn)?.totalRainfall.toFixed(1)} mm · 峰值 {scnOf(scn)?.peakIntensity.toFixed(1)} mm/h
-              </div>
-              <button onClick={resetLayout} title="恢复面板默认尺寸" className="shrink-0 rounded-md px-2 py-1.5 text-[9px] font-semibold text-gray-400 hover:bg-gray-800 hover:text-gray-200">恢复布局</button>
-              {dynPhase === "loading"
-                ? <span className="shrink-0 rounded-md border border-cyan-700 bg-cyan-950/80 px-3 py-1.5 text-[10px] font-bold text-cyan-200">计算中…</span>
-                : <button onClick={() => loadSim()} className="shrink-0 rounded-md bg-cyan-700 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-cyan-600">开始推演</button>}
-            </div>
+          <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 text-[8px] leading-3 text-slate-500">
+            <span className="block font-semibold text-slate-700">当前降雨 · {scnOf(scn)?.label}</span>
+            <span className="mt-0.5 block">总雨量 {scnOf(scn)?.totalRainfall.toFixed(1)} mm · 峰值 {scnOf(scn)?.peakIntensity.toFixed(1)} mm/h</span>
           </div>
-        </div>
+        </aside>
       )}
       {/* ── Three.js canvas ── */}
-      <div className="relative flex-1">
+      <div
+        style={mode === "dynamic" ? { marginBottom: sidePanelBottom } : undefined}
+        className={`relative min-h-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-[#edf3f9] shadow-sm ${mode === "dynamic" ? `mx-3 mt-3 sm:ml-[212px] ${rightCollapsed ? "xl:mr-[58px]" : "xl:mr-[308px]"}` : `m-3 ${staticOverviewVisible ? "md:ml-[388px]" : ""} ${staticObjectVisible ? "lg:mr-[248px]" : ""}`}`}
+      >
         <div ref={cr} className="absolute inset-0" />
+        <div className="pointer-events-none absolute left-3 top-3 z-[5] rounded-lg border border-slate-200 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
+          <div className="text-[10px] font-bold text-slate-800">{mode === "dynamic" ? "三维沙盘模型" : "研究区三维模型"}</div>
+          <div className="mt-0.5 text-[8px] text-slate-500">{stats.scs} 汇水区 · {stats.nodes} 节点 · {stats.pipes} 管段</div>
+          <div className="mt-0.5 text-[7px] text-slate-400">拖动旋转 · 滚轮缩放 · 点击对象查看响应</div>
+        </div>
         {/* 推演等待:轻量半透明层覆盖在 3D 之上,3D 保留可见;仅展示已等待时间,不伪造百分比进度 */}
         {dynPhase === "loading" && (
           <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center">
-            <div className="bg-black/35 backdrop-blur-sm rounded-xl border border-cyan-700/50 px-5 py-4 text-center shadow-2xl">
-              <div className="text-2xl mb-1.5 animate-spin text-cyan-300 inline-block">◉</div>
-              <div className="text-sm font-bold text-cyan-200">{runStage === "baseline" ? "正在计算现状基准" : "正在计算海绵优化情景"}</div>
-              <div className="mt-1 text-[11px] text-gray-300">{scnOf(scn)?.label ? `${scnOf(scn)!.label}降雨` : "降雨"} · {LID_STRATEGY_MAP[lidStrategy].label}</div>
-              <div className="mt-0.5 text-[9px] text-gray-400">{runStage === "baseline" ? "步骤 1/2 · 相同降雨与阀门条件" : "步骤 2/2 · LID 情景计算"}</div>
-              <div className="mt-2 text-[11px] text-gray-400 font-mono">已等待 {loadingSec.toFixed(1)} s</div>
+            <div className="rounded-xl border border-blue-100 bg-white/95 px-5 py-4 text-center shadow-xl shadow-slate-300/30 backdrop-blur-sm">
+              <div className="mb-1.5 inline-block animate-spin text-2xl text-blue-600">◉</div>
+              <div className="text-sm font-bold text-slate-900">{runStage === "baseline" ? "正在计算现状基准" : "正在计算海绵优化情景"}</div>
+              <div className="mt-1 text-[11px] text-slate-600">{scnOf(scn)?.label ? `${scnOf(scn)!.label}降雨` : "降雨"} · {LID_STRATEGY_MAP[lidStrategy].label}</div>
+              <div className="mt-0.5 text-[9px] text-slate-500">{runStage === "baseline" ? "步骤 1/2 · 相同降雨与阀门条件" : "步骤 2/2 · LID 情景计算"}</div>
+              <div className="mt-2 font-mono text-[11px] text-slate-500">已等待 {loadingSec.toFixed(1)} s</div>
             </div>
           </div>
         )}
@@ -1604,19 +1683,19 @@ export default function SandboxPage() {
         staticOverviewOpen && !selected ? (
           <aside
             aria-label="紫金雅园研究区概况"
-            className="absolute left-2 top-14 z-10 flex max-h-[52vh] w-[min(23rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border border-cyan-800/70 bg-[#101b24]/95 text-gray-100 shadow-md backdrop-blur-sm md:bottom-3 md:max-h-none"
+            className="absolute bottom-3 left-3 top-[76px] z-20 flex w-[min(360px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm"
           >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-700/80 px-4 py-3">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 bg-white px-4 py-3">
               <div className="min-w-0">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-400">Study Area</div>
-                <h2 className="mt-0.5 text-sm font-bold text-white">紫金雅园研究区概况</h2>
-                <p className="mt-1 text-[10px] leading-4 text-slate-400">北京市典型城市居住小区 · 城市雨洪与 LID 情景研究</p>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-600">Study Area</div>
+                <h2 className="mt-0.5 text-sm font-bold text-slate-900">紫金雅园研究区概况</h2>
+                <p className="mt-1 text-[10px] leading-4 text-slate-500">北京市典型城市居住小区 · 城市雨洪与 LID 情景研究</p>
               </div>
               <button
                 type="button"
                 onClick={() => setStaticOverviewOpen(false)}
                 aria-label="收起研究区概况"
-                className="shrink-0 rounded-md border border-slate-700 px-2 py-1 text-[10px] text-slate-400 transition-colors hover:border-cyan-700 hover:text-cyan-300"
+                className="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-500 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
               >
                 收起
               </button>
@@ -1625,25 +1704,25 @@ export default function SandboxPage() {
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-4 py-3">
               <section aria-labelledby="study-area-summary">
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="h-4 w-1 rounded-full bg-cyan-500" />
-                  <h3 id="study-area-summary" className="text-xs font-bold text-cyan-200">研究区概况</h3>
+                  <span className="h-4 w-1 rounded-full bg-blue-600" />
+                  <h3 id="study-area-summary" className="text-xs font-bold text-slate-800">研究区概况</h3>
                 </div>
-                <p className="text-[10px] leading-[1.65] text-slate-300">
+                <p className="text-[10px] leading-[1.65] text-slate-600">
                   研究区位于北京市，为一处典型城市居住小区，总面积约 11.80 hm²（118,000 m²）。地势总体较为平缓，平均坡度约 1.39%，局部区域存在一定地形起伏。北京市属温带季风气候，降水主要集中在夏季，短历时强降雨容易引发地表积水、雨水径流增加和面源污染等问题。
                 </p>
                 <div className="mt-2 grid grid-cols-2 gap-2">
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2">
-                    <div className="text-lg font-bold tabular-nums text-cyan-300">11.80 <span className="text-[10px] font-medium">hm²</span></div>
+                  <div className="rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2">
+                    <div className="text-lg font-bold tabular-nums text-blue-700">11.80 <span className="text-[10px] font-medium">hm²</span></div>
                     <div className="mt-0.5 text-[9px] text-slate-500">研究区总面积 · 118,000 m²</div>
                   </div>
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2">
-                    <div className="text-lg font-bold tabular-nums text-teal-300">1.39%</div>
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2">
+                    <div className="text-lg font-bold tabular-nums text-emerald-700">1.39%</div>
                     <div className="mt-0.5 text-[9px] text-slate-500">研究区平均坡度</div>
                   </div>
                 </div>
-                <div className="mt-2 rounded-lg border border-slate-700/90 bg-slate-900/40 px-3 py-2">
-                  <div className="text-[10px] font-semibold text-slate-200">下垫面与排水现状</div>
-                  <p className="mt-1 text-[9px] leading-[1.6] text-slate-400">
+                <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                  <div className="text-[10px] font-semibold text-slate-700">下垫面与排水现状</div>
+                  <p className="mt-1 text-[9px] leading-[1.6] text-slate-500">
                     下垫面主要包括建筑屋面、道路及其他硬化地面和绿地。现状不透水面积占比较高，部分绿地与道路基本齐平，雨水下渗和调蓄能力有限。
                   </p>
                 </div>
@@ -1651,10 +1730,10 @@ export default function SandboxPage() {
 
               <section aria-labelledby="swmm-summary">
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="h-4 w-1 rounded-full bg-teal-500" />
-                  <h3 id="swmm-summary" className="text-xs font-bold text-teal-200">模型概化</h3>
+                  <span className="h-4 w-1 rounded-full bg-cyan-500" />
+                  <h3 id="swmm-summary" className="text-xs font-bold text-slate-800">模型概化</h3>
                 </div>
-                <p className="mb-2 text-[9px] leading-[1.6] text-slate-400">采用 ArcGIS 和泰森多边形方法对研究区进行概化，并建立 SWMM 模型。</p>
+                <p className="mb-2 text-[9px] leading-[1.6] text-slate-500">采用 ArcGIS 和泰森多边形方法对研究区进行概化，并建立 SWMM 模型。</p>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     ["930", "个", "子汇水区"],
@@ -1662,8 +1741,8 @@ export default function SandboxPage() {
                     ["2.2", "km", "雨水管网"],
                     ["4", "个", "排水口"],
                   ].map(([value, unit, label]) => (
-                    <div key={label} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
-                      <div className="text-base font-bold tabular-nums text-cyan-200">{value} <span className="text-[9px] font-medium text-slate-400">{unit}</span></div>
+                    <div key={label} className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2">
+                      <div className="text-base font-bold tabular-nums text-blue-700">{value} <span className="text-[9px] font-medium text-slate-500">{unit}</span></div>
                       <div className="mt-0.5 text-[9px] text-slate-500">{label}</div>
                     </div>
                   ))}
@@ -1673,31 +1752,31 @@ export default function SandboxPage() {
               <section aria-labelledby="lid-summary">
                 <div className="mb-2 flex items-center gap-2">
                   <span className="h-4 w-1 rounded-full bg-emerald-500" />
-                  <h3 id="lid-summary" className="text-xs font-bold text-emerald-200">LID 设施</h3>
+                  <h3 id="lid-summary" className="text-xs font-bold text-slate-800">LID 设施</h3>
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-2.5">
-                    <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold text-slate-100">绿色屋顶</span><span className="rounded border border-cyan-800 bg-cyan-950/60 px-1.5 py-0.5 text-[9px] font-bold text-cyan-300">GR</span></div>
-                    <div className="mt-1 text-[9px] text-slate-400">建筑屋面</div>
-                    <div className="mt-1 text-[10px] font-semibold tabular-nums text-cyan-200">最大适建 7,055.46 m²</div>
+                  <div className="rounded-lg border border-slate-100 bg-white p-2.5 shadow-sm">
+                    <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold text-slate-800">绿色屋顶</span><span className="rounded border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">GR</span></div>
+                    <div className="mt-1 text-[9px] text-slate-500">建筑屋面</div>
+                    <div className="mt-1 text-[10px] font-semibold tabular-nums text-blue-700">最大适建 7,055.46 m²</div>
                   </div>
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-2.5">
-                    <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold text-slate-100">植草沟</span><span className="rounded border border-emerald-800 bg-emerald-950/60 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300">VS</span></div>
-                    <div className="mt-1 text-[9px] text-slate-400">绿地 · 与 RG 共用适建空间</div>
+                  <div className="rounded-lg border border-slate-100 bg-white p-2.5 shadow-sm">
+                    <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold text-slate-800">植草沟</span><span className="rounded border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">VS</span></div>
+                    <div className="mt-1 text-[9px] text-slate-500">绿地 · 与 RG 共用适建空间</div>
                   </div>
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-2.5">
-                    <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold text-slate-100">雨水花园</span><span className="rounded border border-lime-800 bg-lime-950/50 px-1.5 py-0.5 text-[9px] font-bold text-lime-300">RG</span></div>
-                    <div className="mt-1 text-[9px] text-slate-400">绿地 · 与 VS 共用适建空间</div>
+                  <div className="rounded-lg border border-slate-100 bg-white p-2.5 shadow-sm">
+                    <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold text-slate-800">雨水花园</span><span className="rounded border border-lime-100 bg-lime-50 px-1.5 py-0.5 text-[9px] font-bold text-lime-700">RG</span></div>
+                    <div className="mt-1 text-[9px] text-slate-500">绿地 · 与 VS 共用适建空间</div>
                   </div>
-                  <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-2.5">
-                    <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold text-slate-100">透水铺装</span><span className="rounded border border-sky-800 bg-sky-950/60 px-1.5 py-0.5 text-[9px] font-bold text-sky-300">PP</span></div>
-                    <div className="mt-1 text-[9px] text-slate-400">道路及其他硬化地面</div>
-                    <div className="mt-1 text-[10px] font-semibold tabular-nums text-cyan-200">最大适建 89,300.09 m²</div>
+                  <div className="rounded-lg border border-slate-100 bg-white p-2.5 shadow-sm">
+                    <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold text-slate-800">透水铺装</span><span className="rounded border border-sky-100 bg-sky-50 px-1.5 py-0.5 text-[9px] font-bold text-sky-700">PP</span></div>
+                    <div className="mt-1 text-[9px] text-slate-500">道路及其他硬化地面</div>
+                    <div className="mt-1 text-[10px] font-semibold tabular-nums text-blue-700">最大适建 89,300.09 m²</div>
                   </div>
                 </div>
-                <div className="mt-2 rounded-lg border border-emerald-800/80 bg-emerald-950/30 px-3 py-2">
-                  <div className="text-[10px] font-semibold text-emerald-200">VS 与 RG 共用绿地：最大适建面积约 13,336.22 m²</div>
-                  <p className="mt-1 text-[9px] leading-[1.55] text-slate-400">该数值是植草沟与雨水花园共同使用的同一片绿地上限，不是两类设施分别拥有的面积。</p>
+                <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+                  <div className="text-[10px] font-semibold text-emerald-800">VS 与 RG 共用绿地：最大适建面积约 13,336.22 m²</div>
+                  <p className="mt-1 text-[9px] leading-[1.55] text-emerald-700/80">该数值是植草沟与雨水花园共同使用的同一片绿地上限，不是两类设施分别拥有的面积。</p>
                 </div>
                 <p className="mt-2 text-[9px] leading-[1.6] text-slate-500">
                   上述适建条件为后续不同 LID 组合情景及其径流控制、水质改善和生态系统服务效益模拟提供基础。
@@ -1713,7 +1792,7 @@ export default function SandboxPage() {
               setStaticOverviewOpen(true);
             }}
             aria-label="展开紫金雅园研究区概况"
-            className="absolute left-2 top-14 z-10 rounded-lg border border-cyan-800/80 bg-[#101b24]/95 px-3 py-2 text-[11px] font-semibold text-cyan-200 shadow-sm transition-colors hover:border-cyan-600 hover:bg-[#142530]"
+            className="absolute left-3 top-[76px] z-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-blue-700 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50"
           >
             研究区概况
           </button>
@@ -1721,10 +1800,10 @@ export default function SandboxPage() {
       )}
 
       {mode === "static" && selected && (
-        <div className="absolute right-2 top-14 bg-black/90 backdrop-blur rounded-lg border border-gray-700 p-2.5 text-white text-[11px] z-10 w-52 max-h-[80vh] overflow-y-auto">
-          <div className="font-bold text-gray-300 mb-1.5 text-xs flex justify-between">
+        <aside className="absolute bottom-3 right-3 top-[76px] z-20 w-[min(224px,calc(100vw-24px))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 text-[11px] text-slate-700 shadow-sm">
+          <div className="mb-2 flex justify-between border-b border-slate-100 pb-2 text-xs font-bold text-slate-800">
             <span>{{ node: "🔹 节点", pipe: "▬ 管道", subcatchment: "▨ 汇水区" }[selected.type as string] || selected.type}</span>
-            <button onClick={() => { if (selRef.current) resetHL(selRef.current); selRef.current = null; setSelected(null); }} className="text-gray-500 hover:text-gray-300 text-[10px]">✕</button>
+            <button onClick={() => { if (selRef.current) resetHL(selRef.current); selRef.current = null; setSelected(null); }} className="text-[10px] text-slate-400 hover:text-blue-600">✕</button>
           </div>
           <div className="space-y-0.5">
             {selected.type === "pipe" && (
@@ -1739,54 +1818,54 @@ export default function SandboxPage() {
                   animate={false}
                   compact
                 />
-                <div className="text-[8px] leading-3 text-cyan-400/80 mt-0.5">静态示意 · 切「▶ 动态推演」看实时水量变化</div>
+                <div className="mt-1 text-[8px] leading-3 text-blue-600">静态示意 · 切换“动态推演”查看实时水量变化</div>
               </div>
             )}
             {Object.entries(selected.data).map(([k, v]: [string, any]) => (
-              <div key={k} className="flex justify-between">
-                <span className="text-gray-500">{chineseLabel(k)}</span>
-                <span className="text-gray-200 text-right ml-2">{k === "type" ? chineseType(String(v)) : formatVal(k, v)}</span>
+              <div key={k} className="flex min-w-0 justify-between gap-2">
+                <span className="shrink-0 text-slate-500">{chineseLabel(k)}</span>
+                <span className="min-w-0 break-all text-right text-slate-700">{k === "type" ? chineseType(String(v)) : formatVal(k, v)}</span>
               </div>
             ))}
           </div>
-        </div>
+        </aside>
       )}
 
-      {/* 左侧栏已移除:内容迁至 顶部情景控制条 / 右侧实时状态+对象详情 / 底部推演诊断区;中央3D 全宽无遮挡 */}
+      {/* 静态：左侧研究区概况 / 中央三维模型 / 右侧选中对象详情。 */}
 
       {/* ── Timeline (dynamic only) ── */}
       {/* 方案切换结果状态条 */}
       {schemeMsg && mode === "dynamic" && (
-        <div className={`absolute bottom-14 left-1/2 -translate-x-1/2 z-10 bg-black/85 border border-gray-700 rounded-lg px-3 py-1.5 text-[11px] font-bold whitespace-nowrap shadow-lg ${schemeMsg.color}`}>{schemeMsg.text}</div>
+        <div style={{ bottom: sidePanelBottom + 8 }} className={`absolute left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white/95 px-3 py-1.5 text-[10px] font-bold shadow-md backdrop-blur ${schemeMsg.color}`}>{schemeMsg.text}</div>
       )}
       {/* 3D 主窗口降雨曲线浮层(docx:主窗口展示降雨情景的降雨曲线,当前时刻标记同步) */}
       {/* 3D 主窗口降雨曲线浮层已删除:全页面仅保留左侧场景配置的主降雨曲线(推演时其上叠加当前时刻线) */}
 
       {/* 分步新手引导卡片 */}
       {guide > 0 && mode === "dynamic" && (
-        <div className="absolute left-2 bottom-28 z-20 bg-cyan-950/95 border border-cyan-600 rounded-lg px-3 py-2 text-[11px] text-cyan-100 max-w-[260px] shadow-xl">
+        <div style={{ bottom: sidePanelBottom + 12 }} className="absolute left-3 z-20 max-w-[260px] rounded-lg border border-blue-200 bg-white/95 px-3 py-2 text-[11px] text-slate-700 shadow-lg backdrop-blur sm:left-[212px]">
           <div className="flex items-center justify-between mb-1">
-            <span className="font-bold text-cyan-300">🎓 新手引导 {guide}/3</span>
-            <button onClick={finishGuide} className="text-[10px] text-cyan-300/70 hover:text-white">跳过 ✕</button>
+            <span className="font-bold text-blue-700">新手引导 {guide}/3</span>
+            <button onClick={finishGuide} className="text-[10px] text-slate-400 hover:text-slate-700">跳过 ✕</button>
           </div>
           <div className="leading-4">
             {guide === 1 && <>① <b>点击任意管道</b>,查看管网横截面水量</>}
-            {guide === 2 && <>② <b>切换下垫面方案</b>(🟢绿色海绵/🟠灰色),对比水量变化</>}
-            {guide === 3 && <>③ <b>选择降雨情景</b>(5/10/50/100 年一遇),观察推演结果</>}
+            {guide === 2 && <>② <b>切换左侧优化情景</b>，对比目标变化</>}
+            {guide === 3 && <>③ <b>选择顶部降雨条件</b>，观察推演结果</>}
           </div>
-          <div className="mt-1.5 text-[9px] text-cyan-300/60">{guide === 1 ? "试试点击场景中的管道 →" : guide === 2 ? "试试点右侧方案按钮 →" : "试试切换右侧降雨情景 →"}</div>
+          <div className="mt-1.5 text-[9px] text-blue-500">{guide === 1 ? "试试点击场景中的管道 →" : guide === 2 ? "试试点左侧情景卡片 →" : "试试切换顶部降雨条件 →"}</div>
         </div>
       )}
       {/* 下垫面方案示意图例:配置阶段显示于 3D 右下角,颜色=不透水率 */}
       {mode === "dynamic" && !dynRes && (
-        <div className="absolute bottom-4 left-3 z-10 rounded-lg border border-gray-700 bg-black/80 px-2.5 py-2 text-[8px] pointer-events-none">
-          <div className="font-bold text-gray-300 mb-1">{landcover === "green" ? "海绵优化" : "现状基准"} · 下垫面示意</div>
+        <div className="pointer-events-none absolute bottom-5 left-5 z-10 rounded-lg border border-slate-200 bg-white/90 px-2.5 py-2 text-[8px] shadow-sm backdrop-blur sm:left-[224px]">
+          <div className="mb-1 font-bold text-slate-700">{landcover === "green" ? "海绵优化" : "现状基准"} · 下垫面示意</div>
           <div className="flex items-center gap-1">
-            <span className="text-gray-500">不透水率低</span>
+            <span className="text-slate-500">不透水率低</span>
             <div className="w-24 h-1.5 rounded overflow-hidden" style={{ background: "linear-gradient(90deg,#8fa890,#b0a898,#c09088)" }} />
-            <span className="text-gray-500">不透水率高</span>
+            <span className="text-slate-500">不透水率高</span>
           </div>
-          <div className="text-gray-600 mt-0.5">地表颜色 = %Imperv 不透水率,非渗透性</div>
+          <div className="mt-0.5 text-slate-400">地表颜色 = %Imperv 不透水率，非渗透性</div>
         </div>
       )}
       {/* 悬停 tooltip(位置由原生 mousemove 直改 style,内容变化才重渲染) */}
@@ -1795,9 +1874,9 @@ export default function SandboxPage() {
       </div>
       {/* 首次进入引导气泡 */}
       {showTip && mode === "dynamic" && (
-        <div className="absolute left-2 top-[218px] z-10 max-w-xs rounded-lg border border-cyan-800 bg-cyan-950/90 px-3 py-2 text-[11px] text-cyan-100 shadow-lg lg:top-[138px]">
+        <div className="absolute left-3 top-[124px] z-20 max-w-xs rounded-lg border border-blue-200 bg-blue-50/95 px-3 py-2 text-[10px] text-blue-800 shadow-md sm:left-[212px]">
           <b>操作提示：</b>选择优化情景和降雨条件后开始推演；系统将自动计算现状基准并播放优化过程。
-          <button onClick={() => setShowTip(false)} className="absolute -top-1.5 -right-1.5 bg-gray-700 hover:bg-gray-600 rounded-full w-4 h-4 text-[9px] leading-4 text-center">✕</button>
+          <button onClick={() => setShowTip(false)} className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded-full border border-blue-200 bg-white text-center text-[9px] leading-4 text-blue-500 hover:text-blue-800">✕</button>
         </div>
       )}
       {/* 降雨卡已移至底部统一推演区(与24h时间轴/管道诊断同区),右上角不再驻留 */}
@@ -1819,7 +1898,6 @@ export default function SandboxPage() {
         }
         const pct = timeStepCount > 1 ? Math.round((dynStep / Math.max(1, timeStepCount - 1)) * 100) : (dynPhase === "done" ? 100 : 0);
         const hasPlayback = !!dynRes?.ok && dynPhase !== "loading" && dynPhase !== "config";
-        const curBH = hasPlayback ? (bottomCollapsed ? 40 : Math.max(150, Math.min(380, bottomH))) : 0;
         const formatMetric = (value: number | null, unit: string, decimals = 2) => value == null ? "待计算" : `${value.toFixed(decimals)} ${unit}`;
         const optimizationPending = dynRes?.ok && !lidRedistApplied ? "未生成" : "待计算";
         const metricRows = [
@@ -1832,214 +1910,212 @@ export default function SandboxPage() {
           ? (runStage === "baseline" ? "计算现状基准" : "计算海绵优化")
           : ({ config: "未开始", ready: "待播放", running: "推演中", paused: "已暂停", done: "推演完成" } as Record<string, string>)[dynPhase] || "未开始";
         if (rightCollapsed) return (
-          <div style={{ width: 38, bottom: curBH + 10, right: 12 }} className="absolute top-[218px] z-20 flex flex-col items-center overflow-hidden rounded-lg border border-gray-700 bg-black/70 pt-3 pointer-events-auto lg:top-[138px]">
-            <button onClick={() => setRightCollapsed(false)} title="展开右栏" className="text-gray-300 hover:text-white text-base leading-none">〉</button>
+          <div style={{ width: 38, bottom: sidePanelBottom, right: 12 }} className="pointer-events-auto absolute top-[76px] z-20 hidden flex-col items-center overflow-hidden rounded-lg border border-slate-200 bg-white pt-3 shadow-sm xl:flex">
+            <button onClick={() => setRightCollapsed(false)} title="展开右栏" className="text-base leading-none text-slate-400 hover:text-blue-600">〈</button>
           </div>
         );
         return (
-          <aside style={{ width: Math.max(250, Math.min(380, rightW)), bottom: curBH + 10, right: 12 }} className="absolute top-[218px] z-20 overflow-y-auto overflow-x-hidden overscroll-contain rounded-xl border border-slate-700 bg-[#0d1720]/94 px-3 py-2.5 text-[11px] pointer-events-auto lg:top-[138px]">
-            <div onPointerDown={(e) => { e.preventDefault(); dragRef.current = { axis: "v", orig: rightW, start: e.clientX }; }} className="absolute -left-[4px] top-0 bottom-0 w-[8px] cursor-ew-resize hover:bg-cyan-500/30 z-20" />
+          <aside style={{ width: Math.max(264, Math.min(380, rightW)), bottom: sidePanelBottom, right: 12 }} className="pointer-events-auto absolute top-[76px] z-20 hidden overflow-y-auto overflow-x-hidden overscroll-contain rounded-xl border border-slate-200 bg-white px-3 py-3 text-[11px] text-slate-700 shadow-sm xl:block">
+            <div onPointerDown={(e) => { e.preventDefault(); dragRef.current = { axis: "v", orig: rightW, start: e.clientX }; }} className="absolute -left-[4px] bottom-0 top-0 z-20 w-[8px] cursor-ew-resize hover:bg-blue-500/10" />
             <div className="mb-2 flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-cyan-500">Scenario comparison</div>
-                <div className="mt-0.5 truncate text-xs font-bold text-gray-100">现状基准 vs {LID_STRATEGY_MAP[lidStrategy].label}</div>
+                <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-blue-600">结果对比</div>
+                <div className="mt-0.5 truncate text-xs font-bold text-slate-900">现状基准 vs {LID_STRATEGY_MAP[lidStrategy].label}</div>
               </div>
               <span className="flex items-center gap-1 shrink-0">
-                <span className="rounded border border-cyan-900 bg-cyan-950/60 px-1.5 py-0.5 text-[8px] font-semibold text-cyan-300">{statusLabel}</span>
-                <button onClick={() => setRightCollapsed(true)} title="收起右栏" className="w-4 h-4 leading-[15px] text-center rounded bg-gray-700 hover:bg-gray-600 text-[10px] text-gray-300">〈</button>
+                <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-1 text-[8px] font-semibold text-blue-700">{statusLabel}</span>
+                <button onClick={() => setRightCollapsed(true)} title="收起右栏" className="h-5 w-5 rounded text-center text-[10px] leading-5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">〉</button>
               </span>
             </div>
-            <p className="mb-2 text-[9px] leading-4 text-slate-400">{LID_STRATEGY_DESC[lidStrategy]}</p>
+            <p className="mb-2 text-[9px] leading-4 text-slate-500">{LID_STRATEGY_DESC[lidStrategy]}</p>
 
-            <div className="mb-2 rounded-lg border border-slate-700 bg-slate-900/60 px-2.5 py-2">
-              <div className="flex items-center justify-between text-[9px]"><span className="text-slate-400">统一降雨条件</span><span className="font-semibold text-cyan-300">{scnOf(comparisonRainfallKey)?.label}</span></div>
-              <div className="mt-1 flex items-center justify-between text-[8px] text-slate-500"><span>现状基准：中性灰</span><span>海绵优化：蓝绿色</span></div>
+            <div className="mb-2 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+              <div className="flex items-center justify-between text-[9px]"><span className="text-slate-500">统一降雨条件</span><span className="font-semibold text-blue-700">{scnOf(comparisonRainfallKey)?.label}</span></div>
+              <div className="mt-1 flex items-center justify-between text-[8px] text-slate-400"><span>现状基准：中性灰</span><span>海绵优化：蓝色</span></div>
               {hasPlayback && (<>
-                <div className="mt-2 flex justify-between text-[9px]"><span className="text-slate-400">时间 {currentTimeLabel}</span><span className="text-slate-300">进度 {pct}%</span></div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-cyan-500" style={{ width: `${pct}%` }} /></div>
+                <div className="mt-2 flex justify-between text-[9px]"><span className="text-slate-500">时间 {currentTimeLabel}</span><span className="font-medium text-slate-700">进度 {pct}%</span></div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-blue-600" style={{ width: `${pct}%` }} /></div>
               </>)}
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-1 gap-1.5">
               {metricRows.map(metric => {
                 const change = reductionLabel(metric.baseline, metric.optimized);
                 return (
-                  <div key={metric.label} className="min-w-0 rounded-lg border border-slate-700 bg-slate-900/55 px-2 py-1.5">
-                    <div className="truncate text-[9px] font-semibold text-slate-200">{metric.label}</div>
-                    <div className="text-[7px] text-slate-600">{metric.note}</div>
-                    <div className="mt-1 space-y-0.5 text-[8px]">
-                      <div className="flex justify-between gap-1"><span className="text-slate-500">现状</span><span className="truncate font-mono text-slate-300">{formatMetric(metric.baseline, metric.unit, metric.decimals)}</span></div>
-                      <div className="flex justify-between gap-1"><span className="text-cyan-600">优化</span><span className="truncate font-mono text-cyan-300">{metric.optimized == null ? optimizationPending : formatMetric(metric.optimized, metric.unit, metric.decimals)}</span></div>
+                  <div key={metric.label} className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/80 px-2.5 py-2">
+                    <div className="flex items-center justify-between gap-2"><span className="truncate text-[9px] font-semibold text-slate-800">{metric.label}</span><span className="text-[7px] text-slate-400">{metric.note}</span></div>
+                    <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-1.5 text-[8px]">
+                      <div className="min-w-0"><span className="block text-[7px] text-slate-500">现状基准</span><span className="block truncate font-mono text-slate-600">{formatMetric(metric.baseline, metric.unit, metric.decimals)}</span></div>
+                      <span className="pb-0.5 text-slate-400">→</span>
+                      <div className="min-w-0 text-right"><span className="block text-[7px] text-blue-500">海绵优化</span><span className="block truncate font-mono font-semibold text-blue-700">{metric.optimized == null ? optimizationPending : formatMetric(metric.optimized, metric.unit, metric.decimals)}</span></div>
                     </div>
-                    <div className={`mt-1 text-[8px] font-semibold ${change.startsWith("↓") ? "text-emerald-400" : change.startsWith("↑") ? "text-amber-300" : "text-slate-500"}`}>{change}</div>
+                    <div className={`mt-1 text-[8px] font-semibold ${change.startsWith("↓") ? "text-emerald-600" : change.startsWith("↑") ? "text-amber-600" : "text-slate-400"}`}>改善比例：{change}</div>
                   </div>
                 );
               })}
             </div>
-            {!dynRes?.ok && <div className="mt-2 rounded-lg border border-slate-700 bg-slate-900/40 px-2.5 py-2 text-[9px] leading-4 text-slate-400">未开始：开始推演后将先计算现状基准，再计算所选优化情景，并自动播放过程。</div>}
-            {dynRes?.ok && !lidRedistApplied && resultScenario.mode === "optimize" && <div className="mt-2 rounded-lg border border-amber-800/70 bg-amber-950/30 px-2.5 py-2 text-[8px] leading-3 text-amber-200">当前模型未成功应用LID空间重分配，因此不将本次返回值标记为优化结果。现状数据保留，优化指标显示“未生成”。</div>}
 
-            {hasPlayback && <div className="mt-2 rounded-lg border border-slate-700 bg-slate-900/45 px-2.5 py-2">
-              <div className="mb-1 text-[9px] font-semibold text-slate-300">当前管网响应</div>
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <div className="flex items-start justify-between gap-2">
+                <div><div className="text-[9px] font-semibold text-slate-800">典型管段响应</div><div className="text-[7px] text-slate-400">代表性管段，不代表全部管网</div></div>
+                <span className="text-[9px] font-mono text-slate-600">{representativePipeId || "暂无"}</span>
+              </div>
+              {representativePipe && representativePipeResult ? <div className="mt-1.5 flex items-center gap-2">
+                <PipeCrossSection compact largeLabels diam={representativePipe.diam || 0.3} depth={representativePipeResult.depth?.[dynStep] ?? 0} depthFraction={representativePipeResult.depthFraction?.[dynStep] ?? 0} flow={representativePipeResult.flow?.[dynStep] ?? 0} flowDir={`${representativePipe.from ?? "?"} → ${representativePipe.to ?? "?"}`} landcover={landcover} animate={false} />
+                <div className="min-w-0 flex-1 space-y-1 text-[8px]">
+                  <div className="flex justify-between gap-2"><span className="text-slate-500">流量</span><span className="font-mono font-semibold text-blue-700">{(representativePipeResult.flow?.[dynStep] ?? 0).toFixed(3)} m³/s</span></div>
+                  <div className="flex justify-between gap-2"><span className="text-slate-500">流速</span><span className="font-mono text-slate-600">{(representativePipeResult.velocity?.[dynStep] ?? 0).toFixed(3)} m/s</span></div>
+                  <div className="flex justify-between gap-2"><span className="text-slate-500">充满度</span><span className="font-mono font-semibold text-blue-700">{((representativePipeResult.depthFraction?.[dynStep] ?? 0) * 100).toFixed(0)}%</span></div>
+                </div>
+              </div> : <div className="flex h-16 items-center justify-center text-[9px] text-slate-400">推演后显示管段时序</div>}
+            </div>
+            {!dynRes?.ok && <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/70 px-2.5 py-2 text-[9px] leading-4 text-slate-600">未开始：开始推演后将先计算现状基准，再计算所选优化情景，并自动播放过程。</div>}
+            {dynRes?.ok && !lidRedistApplied && resultScenario.mode === "optimize" && <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[8px] leading-3 text-amber-700">当前模型未成功应用LID空间重分配，因此不将本次返回值标记为优化结果。现状数据保留，优化指标显示“未生成”。</div>}
+
+            {hasPlayback && <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+              <div className="mb-1 text-[9px] font-semibold text-slate-700">当前管网响应</div>
               <div className="grid grid-cols-3 gap-1 text-center text-[8px]">
-                <div><div className="text-slate-500">高负荷</div><div className="font-semibold text-amber-300">{highLoad}</div></div>
-                <div><div className="text-slate-500">满管</div><div className="font-semibold text-orange-300">{fullCount}</div></div>
-                <div><div className="text-slate-500">积水节点</div><div className="font-semibold text-rose-300">{pondCount}</div></div>
+                <div><div className="text-slate-500">高负荷</div><div className="font-semibold text-amber-600">{highLoad}</div></div>
+                <div><div className="text-slate-500">满管</div><div className="font-semibold text-orange-600">{fullCount}</div></div>
+                <div><div className="text-slate-500">积水节点</div><div className="font-semibold text-rose-600">{pondCount}</div></div>
               </div>
             </div>
             }
             {(dynPhase === "running" || dynPhase === "paused") && (
-              <div className="mt-2 flex gap-1.5 border-t border-slate-800 pt-2">
+              <div className="mt-2 flex gap-1.5 border-t border-slate-100 pt-2">
                 {dynPhase === "running"
-                  ? <button onClick={() => { setDynPlay(false); setDynPhase("paused"); }} className="flex-1 rounded-md border border-amber-800 bg-amber-950/40 py-1 text-[9px] font-bold text-amber-200">暂停</button>
-                  : <button onClick={() => { setDynPlay(true); setDynPhase("running"); }} className="flex-1 rounded-md border border-emerald-800 bg-emerald-950/40 py-1 text-[9px] font-bold text-emerald-200">继续</button>}
-                <button onClick={() => { setDynPlay(false); setDynPhase("done"); }} className="flex-1 rounded-md border border-slate-700 bg-slate-900 py-1 text-[9px] font-bold text-slate-300">结束播放</button>
+                  ? <button onClick={() => { setDynPlay(false); setDynPhase("paused"); }} className="flex-1 rounded-md border border-amber-200 bg-amber-50 py-1 text-[9px] font-bold text-amber-700">暂停</button>
+                  : <button onClick={() => { setDynPlay(true); setDynPhase("running"); }} className="flex-1 rounded-md border border-emerald-200 bg-emerald-50 py-1 text-[9px] font-bold text-emerald-700">继续</button>}
+                <button onClick={() => { setDynPlay(false); setDynPhase("done"); }} className="flex-1 rounded-md border border-slate-200 bg-white py-1 text-[9px] font-bold text-slate-600">结束播放</button>
               </div>
             )}
 
-            {hasPlayback && <div className="mt-2 border-t border-slate-800 pt-2">
+            {hasPlayback && <div className="mt-2 border-t border-slate-100 pt-2">
               <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-[9px] text-slate-400">当前异常</span>
-                <span className="text-[8px] text-slate-600">{events.filter(e => e.idx <= dynStep).length} 条</span>
+                <span className="font-bold text-[9px] text-slate-600">当前异常</span>
+                <span className="text-[8px] text-slate-400">{events.filter(e => e.idx <= dynStep).length} 条</span>
               </div>
               <div className="max-h-[72px] space-y-0.5 overflow-y-auto text-[8px]">
                 {events.filter(e => e.idx <= dynStep).slice().reverse().slice(0, showEvents ? undefined : 3).map((e, idx) => (
                   <button key={e.type + e.id + idx} onClick={() => jumpToEvent(e)} title="跳转时间并定位三维对象"
-                    className={"flex items-center gap-1 w-full text-left px-1 py-0.5 rounded hover:bg-gray-800 " + (e.idx === dynStep ? "bg-gray-800/80 ring-1 ring-cyan-500/50" : "")}>
-                    <span className="text-gray-500 font-mono shrink-0">{fmtTime(dynRes.timestamps?.[e.idx] ?? 0)}</span>
+                    className={"flex items-center gap-1 w-full text-left px-1 py-0.5 rounded hover:bg-slate-50 " + (e.idx === dynStep ? "bg-blue-50 ring-1 ring-blue-200" : "")}>
+                    <span className="shrink-0 font-mono text-slate-400">{fmtTime(dynRes.timestamps?.[e.idx] ?? 0)}</span>
                     <span className="shrink-0 px-1 rounded text-[8px] text-white font-bold" style={{ background: e.type === "full" ? "#b45309" : e.type === "nearFull" ? "#ca8a04" : e.type === "high" ? "#f59e0b" : e.type === "medium" ? "#64748b" : e.type === "recover" ? "#6b7280" : e.type === "pond" ? "#be123c" : e.type === "drain" ? "#0e7490" : "#6b7280" }}>{e.label}</span>
-                    <span className="text-gray-300 truncate">{e.id}</span>
-                    <span className="ml-auto text-[8px] text-gray-600">{e.kind === "pipe" ? "▬" : "🔹"}</span>
+                    <span className="truncate text-slate-600">{e.id}</span>
+                    <span className="ml-auto text-[8px] text-slate-400">{e.kind === "pipe" ? "▬" : "◆"}</span>
                   </button>
                 ))}
-                {events.filter(e => e.idx <= dynStep).length === 0 && <div className="text-[8px] text-slate-600">当前无跨阈值异常</div>}
+                {events.filter(e => e.idx <= dynStep).length === 0 && <div className="text-[8px] text-slate-400">当前无跨阈值异常</div>}
               </div>
               {(!showEvents ? events.filter(e => e.idx <= dynStep).length > 3 : true) && events.filter(e => e.idx <= dynStep).length > 0 && (
-                <button onClick={() => setShowEvents(v => !v)} className="mt-0.5 text-[8px] text-cyan-400 hover:text-cyan-300">{showEvents ? "▲ 收起" : "查看全部事件 ▾"}</button>
+                <button onClick={() => setShowEvents(v => !v)} className="mt-0.5 text-[8px] text-blue-600 hover:text-blue-800">{showEvents ? "▲ 收起" : "查看全部事件 ▾"}</button>
               )}
             </div>}
 
             {selected && hasPlayback && (
-              <div className="mt-2 space-y-0.5 border-t border-slate-800 pt-2 text-[9px]">
-                <div className="mb-1 flex items-center justify-between font-bold text-slate-300">
+              <div className="mt-2 space-y-0.5 border-t border-slate-100 pt-2 text-[9px]">
+                <div className="mb-1 flex items-center justify-between font-bold text-slate-700">
                   <span>{selected.type === "node" ? "节点" : "管段"} · {selected.data.id}</span>
-                  <button onClick={() => { if (selRef.current) resetHL(selRef.current); selRef.current = null; setSelected(null); }} className="text-[8px] text-slate-500 hover:text-slate-300">清除选择</button>
+                  <button onClick={() => { if (selRef.current) resetHL(selRef.current); selRef.current = null; setSelected(null); }} className="text-[8px] text-slate-400 hover:text-blue-600">清除选择</button>
                 </div>
                 {selected.type === "node" && curNodeData && (<>
-                  <div className="flex justify-between"><span className="text-gray-500">当前水深</span><span className="text-gray-200">{(curNodeData.depth?.[dynStep]??0).toFixed(3)} m</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">总入流</span><span className="text-gray-200">{(curNodeData.totalInflow?.[dynStep]??0).toFixed(3)} m³/s</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">地表积水体积</span><span className={(curNodeData.pondedVolume?.[dynStep]??0)>0.01?"text-red-400":"text-gray-200"}>{(curNodeData.pondedVolume?.[dynStep]??0).toFixed(3)} m³</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">洪泛损失</span><span className={(curNodeData.floodingLosses?.[dynStep]??0)>0.01?"text-red-400":"text-gray-200"}>{(curNodeData.floodingLosses?.[dynStep]??0).toFixed(3)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">当前水深</span><span className="text-slate-700">{(curNodeData.depth?.[dynStep]??0).toFixed(3)} m</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">总入流</span><span className="text-slate-700">{(curNodeData.totalInflow?.[dynStep]??0).toFixed(3)} m³/s</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">地表积水体积</span><span className={(curNodeData.pondedVolume?.[dynStep]??0)>0.01?"text-red-600":"text-slate-700"}>{(curNodeData.pondedVolume?.[dynStep]??0).toFixed(3)} m³</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">洪泛损失</span><span className={(curNodeData.floodingLosses?.[dynStep]??0)>0.01?"text-red-600":"text-slate-700"}>{(curNodeData.floodingLosses?.[dynStep]??0).toFixed(3)}</span></div>
                 </>)}
                 {selected.type === "pipe" && curLinkData && (<>
-                  <div className="flex justify-between"><span className="text-gray-500">当前流量</span><span className="text-gray-200">{(curLinkData.flow?.[dynStep]??0).toFixed(3)} m³/s</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">当前流速</span><span className="text-gray-200">{(curLinkData.velocity?.[dynStep]??0).toFixed(3)} m/s</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">水深</span><span className="text-gray-200">{(curLinkData.depth?.[dynStep]??0).toFixed(3)} m</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">充满度</span><span className="text-gray-200">{((curLinkData.depthFraction?.[dynStep]??0)*100).toFixed(0)}%</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">运行负荷</span><span className="text-gray-200">{pipeLoadLabel(curLinkData.depthFraction?.[dynStep] ?? 0)}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">流向</span><span className="text-gray-200">{(curLinkData.flow?.[dynStep]??0)>=0 ? "→ "+selected.data.to : "← "+selected.data.from}</span></div>
-                  {(!selected.data.shape || String(selected.data.shape).toUpperCase() === "CIRCULAR") && <div className="mt-1.5 rounded bg-purple-950/40 border border-purple-900/60 p-1.5">
+                  <div className="flex justify-between"><span className="text-slate-500">当前流量</span><span className="text-slate-700">{(curLinkData.flow?.[dynStep]??0).toFixed(3)} m³/s</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">当前流速</span><span className="text-slate-700">{(curLinkData.velocity?.[dynStep]??0).toFixed(3)} m/s</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">水深</span><span className="text-slate-700">{(curLinkData.depth?.[dynStep]??0).toFixed(3)} m</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">充满度</span><span className="text-slate-700">{((curLinkData.depthFraction?.[dynStep]??0)*100).toFixed(0)}%</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">运行负荷</span><span className="text-slate-700">{pipeLoadLabel(curLinkData.depthFraction?.[dynStep] ?? 0)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">流向</span><span className="text-slate-700">{(curLinkData.flow?.[dynStep]??0)>=0 ? "→ "+selected.data.to : "← "+selected.data.from}</span></div>
+                  {(!selected.data.shape || String(selected.data.shape).toUpperCase() === "CIRCULAR") && <div className="mt-1.5 rounded border border-blue-100 bg-blue-50 p-1.5">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-bold text-purple-300">🚰 调节阀</span>
-                      {(valves[selected.data.id] != null || valveDraft[selected.data.id] != null) && <button onClick={() => resetValves(selected.data.id)} className="text-[9px] text-purple-400 hover:text-purple-200">重置</button>}
+                      <span className="text-[10px] font-bold text-blue-700">调节阀</span>
+                      {(valves[selected.data.id] != null || valveDraft[selected.data.id] != null) && <button onClick={() => resetValves(selected.data.id)} className="text-[9px] text-blue-500 hover:text-blue-800">重置</button>}
                     </div>
-                    <input type="range" min="0" max="100" step="5" value={Math.round((valveDraft[selected.data.id] ?? valves[selected.data.id] ?? 1) * 100)} onChange={e => onValveChange(selected.data.id, Number(e.target.value))} className="w-full accent-purple-500" />
-                    <div className="flex justify-between text-[9px] text-gray-500"><span>关闭</span><span className="text-purple-300 font-bold">{Math.round((valveDraft[selected.data.id] ?? valves[selected.data.id] ?? 1) * 100)}%</span><span>全开</span></div>
-                    {(valves[selected.data.id] != null && valveDraft[selected.data.id] == null) && <div className="text-[9px] leading-3 text-purple-400/80 mt-0.5">已生效,拖动调整后松手重新仿真</div>}
+                    <input type="range" min="0" max="100" step="5" value={Math.round((valveDraft[selected.data.id] ?? valves[selected.data.id] ?? 1) * 100)} onChange={e => onValveChange(selected.data.id, Number(e.target.value))} className="w-full accent-blue-600" />
+                    <div className="flex justify-between text-[9px] text-slate-500"><span>关闭</span><span className="font-bold text-blue-700">{Math.round((valveDraft[selected.data.id] ?? valves[selected.data.id] ?? 1) * 100)}%</span><span>全开</span></div>
+                    {(valves[selected.data.id] != null && valveDraft[selected.data.id] == null) && <div className="mt-0.5 text-[9px] leading-3 text-blue-500">已生效，拖动调整后松手重新仿真</div>}
                   </div>}
                 </>)}
-                <div className="pt-0.5 text-[8px] text-slate-600">代表性管段剖面统一显示在底部结果区。</div>
+                <div className="pt-0.5 text-[8px] text-slate-400">代表性管段剖面显示在右侧“典型管段响应”。</div>
               </div>
             )}
           </aside>
         );
       })()}
-      {mode === "dynamic" && dynRes?.ok && (dynPhase === "running" || dynPhase === "paused" || dynPhase === "done" || dynPhase === "ready") && timeStepCount > 0 && (
-        <section style={{ height: bottomCollapsed ? 40 : Math.max(170, Math.min(380, bottomH)) }} className="absolute bottom-0 left-0 right-0 z-10 overflow-y-auto overflow-x-hidden border-t border-slate-700 bg-[#0a121a]/95 px-3 py-2 text-slate-200 backdrop-blur overscroll-contain">
-          <div onPointerDown={(e) => { e.preventDefault(); dragRef.current = { axis: "h", orig: bottomH, start: e.clientY }; }} className="absolute left-0 right-0 top-0 z-20 h-[6px] cursor-ns-resize hover:bg-cyan-500/30" />
+      {dynamicResultsVisible && (
+        <section style={{ height: resultTrayHeight }} className={`absolute bottom-3 left-3 right-3 z-10 overflow-y-auto overflow-x-hidden overscroll-contain rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-700 shadow-sm sm:left-[212px] ${rightCollapsed ? "xl:right-[58px]" : "xl:right-[308px]"}`}>
+          <div onPointerDown={(e) => { e.preventDefault(); dragRef.current = { axis: "h", orig: bottomH, start: e.clientY }; }} className="absolute left-0 right-0 top-0 z-20 h-[6px] cursor-ns-resize hover:bg-blue-500/10" />
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <span className="text-xs font-bold text-slate-100">情景结果与过程曲线</span>
-              <span className="ml-2 text-[9px] text-slate-500">{LID_STRATEGY_MAP[lidStrategy].label} · {scnOf(comparisonRainfallKey)?.label} · 现状灰 / 优化蓝绿</span>
+              <span className="text-xs font-bold text-slate-900">情景结果与过程曲线</span>
+              <span className="ml-2 text-[9px] text-slate-500">{LID_STRATEGY_MAP[lidStrategy].label} · {scnOf(comparisonRainfallKey)?.label} · 现状灰 / 优化蓝</span>
             </div>
-            <button onClick={() => setBottomCollapsed(v => !v)} className="shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[9px] font-semibold text-slate-300 hover:bg-slate-800">{bottomCollapsed ? "展开结果" : "收起结果"}</button>
+            <button onClick={() => setBottomCollapsed(v => !v)} className="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[9px] font-semibold text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">{bottomCollapsed ? "展开结果" : "收起结果"}</button>
           </div>
 
-          {!bottomCollapsed && <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_250px]">
-            <div className="min-w-0 rounded-lg border border-slate-700 bg-slate-900/35 px-2 py-1.5">
+          {!bottomCollapsed && <div className="grid min-w-0 grid-cols-1 gap-3">
+            <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50/60 px-2 py-1.5">
               {lidStrategy === "runoff" && (<>
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[9px]">
-                  <span className="font-semibold text-cyan-300">降雨—径流过程对比</span>
+                  <span className="font-semibold text-blue-700">降雨—径流过程对比</span>
                   <span className="text-slate-500">峰现时间：现状 {baselineMetrics?.peakTime != null ? fmtTime(baselineMetrics.peakTime) : "待计算"} · 优化 {optimizedMetrics?.peakTime != null ? fmtTime(optimizedMetrics.peakTime) : "待计算"}</span>
                 </div>
                 <ReactEChartsCore echarts={echarts} option={runoffComparisonOption} style={{ height: 138, width: "100%" }} notMerge />
-                {!lidRedistApplied && <div className="mt-1 text-[8px] text-amber-300">海绵优化曲线将在模型成功应用LID空间重分配后显示。</div>}
+                {!lidRedistApplied && <div className="mt-1 text-[8px] text-amber-600">海绵优化曲线将在模型成功应用LID空间重分配后显示。</div>}
               </>)}
 
               {lidStrategy === "balanced" && (<>
-                <div className="mb-2 text-[9px] font-semibold text-cyan-300">综合目标摘要</div>
+                <div className="mb-2 text-[9px] font-semibold text-blue-700">综合目标摘要</div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {[
                     { label: "径流控制", value: reductionLabel(baselineMetrics?.cumulativeOutflow ?? null, optimizedMetrics?.cumulativeOutflow ?? null), state: "SWMM派生" },
                     { label: "峰值流量", value: reductionLabel(baselineMetrics?.peakOutflow ?? null, optimizedMetrics?.peakOutflow ?? null), state: "SWMM派生" },
                     { label: "污染负荷", value: "待接入", state: "接口未返回水质结果" },
                     { label: "生态服务效益", value: "待接入", state: "需生态效益模型" },
-                  ].map(item => <div key={item.label} className="rounded-lg border border-slate-700 bg-slate-950/55 px-2 py-2"><div className="text-[9px] text-slate-400">{item.label}</div><div className="mt-1 text-sm font-bold text-cyan-300">{item.value}</div><div className="mt-1 text-[7px] text-slate-600">{item.state}</div></div>)}
+                  ].map(item => <div key={item.label} className="rounded-lg border border-slate-100 bg-white px-2 py-2"><div className="text-[9px] text-slate-600">{item.label}</div><div className="mt-1 text-sm font-bold text-blue-700">{item.value}</div><div className="mt-1 text-[7px] text-slate-400">{item.state}</div></div>)}
                 </div>
                 <div className="mt-2 text-[8px] leading-3 text-slate-500">均衡型同时保留水动力、水质和生态目标；当前仅水动力指标具备真实结果。</div>
               </>)}
 
               {lidStrategy === "waterquality" && (<>
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-[9px] font-semibold text-cyan-300">污染物浓度与负荷对比</span>
-                  <div className="flex gap-1">{WATER_QUALITY_INDICATORS.map(pollutant => <button key={pollutant} onClick={() => setActivePollutant(pollutant)} className={`rounded border px-2 py-0.5 text-[8px] font-semibold ${activePollutant === pollutant ? "border-cyan-600 bg-cyan-950 text-cyan-200" : "border-slate-700 bg-slate-900 text-slate-500"}`}>{pollutant}</button>)}</div>
+                  <span className="text-[9px] font-semibold text-blue-700">污染物浓度与负荷对比</span>
+                  <div className="flex gap-1">{WATER_QUALITY_INDICATORS.map(pollutant => <button key={pollutant} onClick={() => setActivePollutant(pollutant)} className={`rounded border px-2 py-0.5 text-[8px] font-semibold ${activePollutant === pollutant ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-500"}`}>{pollutant}</button>)}</div>
                 </div>
-                <div className="relative flex h-[118px] items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-950/35">
-                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[7px] text-slate-600">时间</span>
-                  <span className="absolute left-1 top-1/2 -translate-y-1/2 -rotate-90 text-[7px] text-slate-600">浓度 / 负荷</span>
-                  <div className="text-center"><div className="text-[10px] font-semibold text-slate-400">{activePollutant} 暂无时序结果</div><div className="mt-1 text-[8px] text-slate-600">INP已配置该污染物，当前SWMM接口尚未返回浓度与负荷字段</div></div>
+                <div className="relative flex h-[118px] items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white">
+                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[7px] text-slate-400">时间</span>
+                  <span className="absolute left-1 top-1/2 -translate-y-1/2 -rotate-90 text-[7px] text-slate-400">浓度 / 负荷</span>
+                  <div className="text-center"><div className="text-[10px] font-semibold text-slate-600">{activePollutant} 暂无时序结果</div><div className="mt-1 text-[8px] text-slate-400">INP已配置该污染物，当前SWMM接口尚未返回浓度与负荷字段</div></div>
                 </div>
-                <div className="mt-1 flex items-center gap-3 text-[8px] text-slate-600"><span>现状基准：待接入</span><span>海绵优化：待接入</span><span>负荷削减率：待接入</span></div>
+                <div className="mt-1 flex items-center gap-3 text-[8px] text-slate-400"><span>现状基准：待接入</span><span>海绵优化：待接入</span><span>负荷削减率：待接入</span></div>
               </>)}
 
               {lidStrategy === "ecological" && (<>
-                <div className="mb-2 text-[9px] font-semibold text-cyan-300">生态系统服务指标</div>
+                <div className="mb-2 text-[9px] font-semibold text-blue-700">生态系统服务指标</div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {ECO_SERVICE_INDICATORS.map(item => <div key={item.label} className="rounded-lg border border-slate-700 bg-slate-950/55 px-2 py-2"><div className="text-[9px] text-slate-300">{item.label}</div><div className="mt-1 text-sm font-bold text-slate-500">待接入</div><div className="text-[7px] text-slate-600">单位 {item.unit}</div><div className="mt-1 text-[7px] text-slate-600">来源状态：{item.source}未接入</div></div>)}
+                  {ECO_SERVICE_INDICATORS.map(item => <div key={item.label} className="rounded-lg border border-slate-100 bg-white px-2 py-2"><div className="text-[9px] text-slate-700">{item.label}</div><div className="mt-1 text-sm font-bold text-slate-400">待接入</div><div className="text-[7px] text-slate-400">单位 {item.unit}</div><div className="mt-1 text-[7px] text-slate-400">来源状态：{item.source}未接入</div></div>)}
                 </div>
                 <div className="mt-2 text-[8px] leading-3 text-slate-500">当前SWMM响应不包含碳、热环境、雨水利用或生态价值结果，因此不生成估算值。</div>
               </>)}
             </div>
-
-            <div className="min-w-0 rounded-lg border border-slate-700 bg-slate-900/35 px-2 py-1.5">
-              <div className="flex items-start justify-between gap-2">
-                <div><div className="text-[9px] font-semibold text-cyan-300">典型管段响应</div><div className="text-[7px] text-slate-600">代表性管段，不代表全部管网</div></div>
-                <span className="text-[9px] font-mono text-slate-300">{representativePipeId || "暂无"}</span>
-              </div>
-              {representativePipe && representativePipeResult ? <div className="mt-1 flex items-center gap-2">
-                <PipeCrossSection compact diam={representativePipe.diam || 0.3} depth={representativePipeResult.depth?.[dynStep] ?? 0} depthFraction={representativePipeResult.depthFraction?.[dynStep] ?? 0} flow={representativePipeResult.flow?.[dynStep] ?? 0} flowDir={`${representativePipe.from ?? "?"} → ${representativePipe.to ?? "?"}`} landcover={landcover} animate={false} />
-                <div className="min-w-0 flex-1 space-y-1 text-[8px]">
-                  <div className="flex justify-between gap-2"><span className="text-slate-500">流量</span><span className="font-mono text-cyan-300">{(representativePipeResult.flow?.[dynStep] ?? 0).toFixed(3)} m³/s</span></div>
-                  <div className="flex justify-between gap-2"><span className="text-slate-500">流速</span><span className="font-mono text-slate-300">{(representativePipeResult.velocity?.[dynStep] ?? 0).toFixed(3)} m/s</span></div>
-                  <div className="flex justify-between gap-2"><span className="text-slate-500">水深</span><span className="font-mono text-slate-300">{(representativePipeResult.depth?.[dynStep] ?? 0).toFixed(3)} m</span></div>
-                  <div className="flex justify-between gap-2"><span className="text-slate-500">充满度</span><span className="font-mono text-cyan-300">{((representativePipeResult.depthFraction?.[dynStep] ?? 0) * 100).toFixed(0)}%</span></div>
-                  <div className="text-[7px] text-slate-600">随推演时间同步更新；点击地图管段可更换代表对象。</div>
-                </div>
-              </div> : <div className="flex h-[88px] items-center justify-center text-[9px] text-slate-600">暂无可用管段时序</div>}
-            </div>
           </div>}
 
-          {!bottomCollapsed && <div className="mt-2 flex min-w-0 items-center gap-2 border-t border-slate-800 pt-2">
-            <span className="w-12 shrink-0 text-right font-mono text-[10px] text-slate-300">{currentTimeLabel}</span>
-            <input type="range" min={0} max={timeStepCount - 1} value={dynStep} onChange={e => { setDynStep(+e.target.value); if (dynPlay) { setDynPlay(false); setDynPhase("paused"); } }} title="拖动查看任意时刻" className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-slate-800 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-cyan-500" />
-            <select value={dynSpd} onChange={e => setDynSpd(+e.target.value)} className="shrink-0 rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-[9px] text-slate-400"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={5}>5×</option></select>
-            {dynPhase === "running" ? <button onClick={() => { setDynPlay(false); setDynPhase("paused"); }} className="shrink-0 rounded-md border border-amber-800 px-2 py-1 text-[9px] font-semibold text-amber-200">暂停</button> : <button onClick={() => { if (dynStep >= timeStepCount - 1) setDynStep(0); setDynPlay(true); setDynPhase("running"); }} className="shrink-0 rounded-md border border-emerald-800 px-2 py-1 text-[9px] font-semibold text-emerald-200">播放</button>}
-            <span className="shrink-0 font-mono text-[8px] text-slate-600">{fmtTime(((dynRes.timestamps?.[dynRes.timestamps.length - 1]) as number) ?? 0)}</span>
+          {!bottomCollapsed && <div className="mt-2 flex min-w-0 items-center gap-2 border-t border-slate-100 pt-2">
+            <span className="w-12 shrink-0 text-right font-mono text-[10px] font-semibold text-slate-700">{currentTimeLabel}</span>
+            <input type="range" min={0} max={timeStepCount - 1} value={dynStep} onChange={e => { setDynStep(+e.target.value); if (dynPlay) { setDynPlay(false); setDynPhase("paused"); } }} title="拖动查看任意时刻" className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-slate-200 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-600" />
+            <select value={dynSpd} onChange={e => setDynSpd(+e.target.value)} className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-1 text-[9px] text-slate-600"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={5}>5×</option></select>
+            {dynPhase === "running" ? <button onClick={() => { setDynPlay(false); setDynPhase("paused"); }} className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-semibold text-amber-700">暂停</button> : <button onClick={() => { if (dynStep >= timeStepCount - 1) setDynStep(0); setDynPlay(true); setDynPhase("running"); }} className="shrink-0 rounded-md bg-blue-600 px-2 py-1 text-[9px] font-semibold text-white">播放</button>}
+            <span className="shrink-0 font-mono text-[8px] text-slate-400">{fmtTime(((dynRes.timestamps?.[dynRes.timestamps.length - 1]) as number) ?? 0)}</span>
           </div>}
         </section>
       )}
-      {!loaded && !error && <div className="absolute inset-0 flex items-center justify-center bg-gray-950 text-white z-20"><span className="animate-spin mr-2">⏳</span>加载 SWMM 模型…</div>}
-      {error && <div className="absolute inset-0 flex items-center justify-center bg-gray-950 text-white z-20"><div className="text-center bg-red-900/60 rounded-xl p-6 max-w-md"><div className="text-2xl mb-2">⚠️</div><div className="text-sm mb-1">{error}</div><button onClick={()=>window.location.reload()} className="mt-3 px-4 py-1.5 bg-red-800 rounded text-xs hover:bg-red-700">刷新页面</button></div></div>}
+      {!loaded && !error && <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-50 text-slate-700"><span className="mr-2 animate-spin">⏳</span>加载 SWMM 模型…</div>}
+      {error && <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-50 text-slate-800"><div className="max-w-md rounded-xl border border-red-200 bg-white p-6 text-center shadow-lg"><div className="mb-2 text-2xl">⚠️</div><div className="mb-1 text-sm">{error}</div><button onClick={()=>window.location.reload()} className="mt-3 rounded bg-red-600 px-4 py-1.5 text-xs text-white hover:bg-red-700">刷新页面</button></div></div>}
     </div>
   );
 }
