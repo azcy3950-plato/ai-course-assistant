@@ -168,12 +168,20 @@ export async function deliverCode(type: IdentifierType, target: string, code: st
     : (process.env.SMS_PROVIDER || "mock");
   const channel = type === "EMAIL" ? "邮件" : "短信";
 
-  // 真实服务分支（当前环境未配置，保持诚实失败；密钥一律走 ENV）
+  // 真实服务分支：配置齐全时真实发送（不发回显），失败时诚实报错
   if (provider === "smtp" && type === "EMAIL") {
-    return { ok: false, error: "SMTP 服务不可用", provider };
+    const { sendEmailCode } = await import("./mailer");
+    const sent = await sendEmailCode(target, code);
+    return sent.ok
+      ? { ok: true, provider: "smtp" }
+      : { ok: false, error: "邮件发送失败，请稍后重试", provider: "smtp" };
   }
   if (provider === "aliyun" && type === "PHONE") {
-    return { ok: false, error: "阿里云短信服务不可用", provider };
+    const { sendSmsCode } = await import("./aliyun-sms");
+    const sent = await sendSmsCode(target, code);
+    return sent.ok
+      ? { ok: true, provider: "aliyun" }
+      : { ok: false, error: "短信发送失败，请稍后重试", provider: "aliyun" };
   }
 
   // 回显模式：必须显式开启
