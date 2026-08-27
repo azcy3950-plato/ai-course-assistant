@@ -9,6 +9,7 @@
  * 测试产生的临时账号会在结束时自动清理。
  */
 import { Pool } from "pg";
+import readline from "node:readline/promises";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:3000";
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -39,9 +40,16 @@ async function post(path, body) {
   return { status: res.status, data };
 }
 
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
 async function sendCode(identifier, purpose) {
   const r = await post("/api/auth/verification/send", { identifier, purpose });
-  if (!r.data?.echoCode) throw new Error(`未返回验证码（echoCode）。请确认服务端 VERIFICATION_CODE_ECHO=true，响应: ${JSON.stringify(r.data)}`);
+  // 真实通道（已接入 SMTP/阿里云短信）：验证码发到邮箱/手机，需操作者查收后输入
+  if (r.status === 200 && !r.data?.echoCode) {
+    const typed = await rl.question(`  请输入发送至 ${r.data?.masked} 的验证码（查收邮件/短信后输入）：`);
+    return { ...r, data: { ...r.data, echoCode: typed.trim() } };
+  }
+  if (!r.data?.echoCode) throw new Error(`验证码发送失败，响应: ${JSON.stringify(r.data)}`);
   return r;
 }
 
