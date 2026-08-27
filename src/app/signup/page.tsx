@@ -1,24 +1,35 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useApp } from "@/contexts/AppContext";
-import type { UserRole } from "@/types";
+
+type SignupType = "PHONE" | "EMAIL";
 
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams?.get("redirect") ?? "/";
-  const { state, signup } = useApp();
+  const { state, signup, sendVerificationCode } = useApp();
 
+  const [signupType, setSignupType] = useState<SignupType>("PHONE");
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
+  const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [selectedRole, setSelectedRole] = useState<UserRole>("student");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // 验证码发送状态
+  const [sending, setSending] = useState(false);
+  const [sentMasked, setSentMasked] = useState<string | null>(null);
+  const [echoCode, setEchoCode] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
   // Already logged in → go home
   useEffect(() => {
@@ -27,11 +38,41 @@ function SignupForm() {
     }
   }, [state.authLoading, state.role, router]);
 
+  const handleSendCode = async () => {
+    setError(null);
+    const v = identifier.trim();
+    const invalid = signupType === "EMAIL" ? !/\S+@\S+\.\S+/.test(v) : !/^(\+?86)?1[3-9]\d{9}$/.test(v.replace(/[\s-]/g, ""));
+    if (!v || invalid) {
+      setError(signupType === "EMAIL" ? "请输入有效的邮箱地址" : "请输入有效的 11 位手机号");
+      return;
+    }
+    setSending(true);
+    const result = await sendVerificationCode(v, "REGISTER");
+    setSending(false);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setSentMasked(result.masked || "");
+      setEchoCode(result.echoCode || null);
+      setCountdown(result.retryAfter || 60);
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) { if (timerRef.current) clearInterval(timerRef.current); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+  };
+
   const validate = (): string | null => {
     if (!name.trim()) return "请输入姓名";
-    if (!email.trim() || !/\S+@\S+\.\S+/.test(email))
-      return "请输入有效的邮箱地址";
-    if (password.length < 6) return "密码至少 6 位";
+    const v = identifier.trim();
+    if (signupType === "EMAIL" && !/\S+@\S+\.\S+/.test(v)) return "请输入有效的邮箱地址";
+    if (signupType === "PHONE" && !/^(\+?86)?1[3-9]\d{9}$/.test(v.replace(/[\s-]/g, ""))) return "请输入有效的 11 位手机号";
+    if (!/^\d{6}$/.test(code.trim())) return "请输入 6 位验证码";
+    if (password.length < 8) return "密码至少 8 位";
+    if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) return "密码需同时包含字母和数字";
     if (password !== confirmPassword) return "两次密码不一致";
     return null;
   };
@@ -45,7 +86,7 @@ function SignupForm() {
       return;
     }
     setLoading(true);
-    const result = await signup(email, password, name.trim(), selectedRole);
+    const result = await signup(identifier.trim(), signupType, code.trim(), password, name.trim());
     setLoading(false);
     if (result.error) {
       setError(result.error);
@@ -62,12 +103,30 @@ function SignupForm() {
     );
   }
 
+  const inputCls = "w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all";
+
   return (
     <div className="max-w-md mx-auto mt-8 px-4">
       <div className="bg-white rounded-2xl border border-[var(--color-border)] p-8 shadow-sm">
         <h1 className="text-2xl font-bold text-[var(--color-text)] mb-6 text-center">
           注册
         </h1>
+
+        {/* 注册方式切换 */}
+        <div className="flex bg-gray-100 rounded-lg p-0.5 mb-5">
+          {([["PHONE", "📱 手机号注册"], ["EMAIL", "✉️ 邮箱注册"]] as [SignupType, string][]).map(([k, l]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => { setSignupType(k); setIdentifier(""); setCode(""); setSentMasked(null); setEchoCode(null); setError(null); }}
+              className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                signupType === k ? "bg-white text-[var(--color-primary)] shadow-sm" : "text-[var(--color-text-secondary)]"
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
 
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
@@ -87,23 +146,60 @@ function SignupForm() {
               onChange={(e) => setName(e.target.value)}
               placeholder="请输入姓名"
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
+              className={inputCls}
             />
           </div>
 
-          {/* Email */}
+          {/* Identifier */}
           <div>
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-              邮箱
+              {signupType === "PHONE" ? "手机号" : "邮箱"}
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your@email.com"
+              type={signupType === "PHONE" ? "tel" : "email"}
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder={signupType === "PHONE" ? "11 位手机号" : "your@email.com"}
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
+              className={inputCls}
             />
+          </div>
+
+          {/* Verification code */}
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+              验证码
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="6 位数字验证码"
+                required
+                className={inputCls}
+              />
+              <button
+                type="button"
+                onClick={handleSendCode}
+                disabled={sending || countdown > 0}
+                className="shrink-0 px-4 rounded-lg border border-[var(--color-primary)] text-[var(--color-primary)] text-sm font-medium hover:bg-[var(--color-primary-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {sending ? "发送中..." : countdown > 0 ? `${countdown}s 后重发` : "获取验证码"}
+              </button>
+            </div>
+            {sentMasked && (
+              <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
+                验证码已发送至 {sentMasked}（5 分钟内有效）
+              </p>
+            )}
+            {echoCode && (
+              <p className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 mt-1.5">
+                ⚠️ 开发测试模式（未配置真实短信/邮件服务）：本次验证码为 <b>{echoCode}</b>
+              </p>
+            )}
           </div>
 
           {/* Password */}
@@ -115,9 +211,9 @@ function SignupForm() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="至少 6 位"
+              placeholder="至少 8 位，需包含字母和数字"
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
+              className={inputCls}
             />
           </div>
 
@@ -132,41 +228,21 @@ function SignupForm() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="再次输入密码"
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
+              className={inputCls}
             />
           </div>
 
-          {/* Role Selector */}
-          <div>
-            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-              身份
-            </label>
-            <div className="flex bg-gray-100 rounded-lg p-0.5">
-              <button
-                type="button"
-                onClick={() => setSelectedRole("student")}
-                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  selectedRole === "student"
-                    ? "bg-white text-[var(--color-primary)] shadow-sm"
-                    : "text-[var(--color-text-secondary)]"
-                }`}
-              >
-                🧑‍🎓 学生
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedRole("teacher")}
-                disabled
-                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors opacity-50 cursor-not-allowed ${
-                  selectedRole === "teacher"
-                    ? "bg-white text-[var(--color-primary)] shadow-sm"
-                    : "text-[var(--color-text-secondary)]"
-                }`}
-                title="教师账号由管理员开通"
-              >
-                👨‍🏫 教师（管理员开通）
-              </button>
-            </div>
+          {/* Role note */}
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
+            <span className="flex-1 px-4 py-2 rounded-md text-sm font-medium bg-white text-[var(--color-primary)] shadow-sm text-center">
+              🧑‍🎓 学生
+            </span>
+            <span
+              className="flex-1 px-4 py-2 rounded-md text-sm font-medium opacity-50 cursor-not-allowed text-center"
+              title="教师账号由管理员开通"
+            >
+              👨‍🏫 教师（管理员开通）
+            </span>
           </div>
 
           <button

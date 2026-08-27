@@ -18,8 +18,11 @@ interface AppContextValue {
   state: AppState;
   darkMode: boolean;
   toggleDarkMode: () => void;
-  login: (email: string, password: string) => Promise<{ error: string | null }>;
-  signup: (email: string, password: string, name: string, role: UserRole) => Promise<{ error: string | null }>;
+  login: (identifier: string, password: string) => Promise<{ error: string | null }>;
+  signup: (identifier: string, identifierType: 'EMAIL' | 'PHONE', code: string, password: string, name: string, role?: UserRole) => Promise<{ error: string | null }>;
+  sendVerificationCode: (identifier: string, purpose: 'REGISTER' | 'RESET_PASSWORD') => Promise<{ error: string | null; masked?: string; echoCode?: string; retryAfter?: number }>;
+  verifyCode: (identifier: string, purpose: 'REGISTER' | 'RESET_PASSWORD', code: string) => Promise<{ error: string | null; resetToken?: string }>;
+  resetPassword: (identifier: string, resetToken: string, newPassword: string) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
 }
 
@@ -67,12 +70,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string) => {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       });
       const data = await res.json();
       if (!res.ok) return { error: data.error || "登录失败" };
@@ -86,12 +89,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const signup = useCallback(async (email: string, password: string, name: string, role: UserRole) => {
+  const sendVerificationCode = useCallback(async (identifier: string, purpose: 'REGISTER' | 'RESET_PASSWORD') => {
+    try {
+      const res = await fetch('/api/auth/verification/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, purpose }) });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || '验证码发送失败', retryAfter: data.retryAfter };
+      return { error: null, masked: data.masked, echoCode: data.echoCode, retryAfter: data.retryAfter || 60 };
+    } catch { return { error: '网络错误，请重试' }; }
+  }, []);
+
+  const signup = useCallback(async (identifier: string, identifierType: 'EMAIL' | 'PHONE', code: string, password: string, name: string, role: UserRole = 'student') => {
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name, role }),
+        body: JSON.stringify({ identifier, identifierType, code, password, name, role }),
       });
       const data = await res.json();
       if (!res.ok) return { error: data.error || "注册失败" };
@@ -100,7 +112,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const loginRes = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       });
       const loginData = await loginRes.json();
       if (loginRes.ok) {
@@ -114,6 +126,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const verifyCode = useCallback(async (identifier: string, purpose: 'REGISTER' | 'RESET_PASSWORD', code: string) => {
+    try {
+      const res = await fetch('/api/auth/verification/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, purpose, code }) });
+      const data = await res.json();
+      return res.ok ? { error: null, resetToken: data.resetToken } : { error: data.error || '验证码错误或已失效' };
+    } catch { return { error: '网络错误，请重试' }; }
+  }, []);
+
+  const resetPassword = useCallback(async (identifier: string, resetToken: string, newPassword: string) => {
+    try {
+      const res = await fetch('/api/auth/password/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, resetToken, newPassword }) });
+      const data = await res.json();
+      return res.ok ? { error: null } : { error: data.error || '密码重置失败' };
+    } catch { return { error: '网络错误，请重试' }; }
+  }, []);
+
   const logout = useCallback(async () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -121,7 +149,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AppContext.Provider value={{ state, darkMode, toggleDarkMode, login, signup, logout }}>
+    <AppContext.Provider value={{ state, darkMode, toggleDarkMode, login, signup, sendVerificationCode, verifyCode, resetPassword, logout }}>
       {children}
     </AppContext.Provider>
   );
