@@ -160,37 +160,41 @@ export interface DeliveryResult {
 
 export async function deliverCode(type: IdentifierType, target: string, code: string): Promise<DeliveryResult> {
   const isProd = process.env.NODE_ENV === "production";
-  const echo = process.env.VERIFICATION_CODE_ECHO === "true";
+  // 验证码回显只有显式设置 VERIFICATION_CODE_ECHO=true 才会启用（页面会标注开发测试模式）
+  const echoEnabled = process.env.VERIFICATION_CODE_ECHO === "true";
   const masked = maskIdentifier(target, type);
-  if (type === "EMAIL") {
-    const provider = process.env.EMAIL_PROVIDER || "mock";
-    if (isProd && provider === "mock") {
-      return { ok: false, error: "邮件服务未配置，请联系管理员", provider };
-    }
-    if (provider === "smtp" && process.env.SMTP_URL) {
-      // TODO: 接入真实 SMTP（nodemailer）。当前环境未配置，保持诚实失败。
-      return { ok: false, error: "SMTP 服务不可用", provider };
-    }
-    if (provider === "echo" || echo) {
-      console.log(`[auth][dev] EMAIL code for ${masked}`);
-      return { ok: true, echoCode: code, provider: provider + "+echo" };
-    }
-    console.log(`[auth][dev] EMAIL code for ${masked}: ${code} (开发测试模式)`);
-    return { ok: true, provider };
+  const provider = type === "EMAIL"
+    ? (process.env.EMAIL_PROVIDER || "mock")
+    : (process.env.SMS_PROVIDER || "mock");
+  const channel = type === "EMAIL" ? "邮件" : "短信";
+
+  // 真实服务分支（当前环境未配置，保持诚实失败；密钥一律走 ENV）
+  if (provider === "smtp" && type === "EMAIL") {
+    return { ok: false, error: "SMTP 服务不可用", provider };
   }
-  const provider = process.env.SMS_PROVIDER || "mock";
-  if (isProd && provider === "mock") {
-    return { ok: false, error: "短信服务未配置，请联系管理员", provider };
-  }
-  if (provider === "aliyun" && process.env.ALIYUN_SMS_ACCESS_KEY_ID) {
-    // TODO: 接入阿里云短信（签名+模板）。当前环境未配置，保持诚实失败。
+  if (provider === "aliyun" && type === "PHONE") {
     return { ok: false, error: "阿里云短信服务不可用", provider };
   }
-  if (provider === "echo" || echo) {
-    console.log(`[auth][dev] SMS code for ${masked}`);
+
+  // 回显模式：必须显式开启
+  if (provider === "echo" && echoEnabled) {
+    console.log(`[auth][dev] ${channel} code requested for ${masked}`);
     return { ok: true, echoCode: code, provider: provider + "+echo" };
   }
-  console.log(`[auth][dev] SMS code for ${masked}: ${code} (开发测试模式)`);
+  // provider 拼写为 echo 但未开全局开关：按未配置处理，绝不泄露
+  if (provider === "echo") {
+    return { ok: false, error: `${channel}服务未配置，请联系管理员`, provider };
+  }
+
+  // mock / console：仅开发环境可用；生产环境（除显式回显外）一律失败
+  if (isProd && !echoEnabled) {
+    return { ok: false, error: `${channel}服务未配置，请联系管理员`, provider };
+  }
+  if (echoEnabled) {
+    console.log(`[auth][dev] ${channel} code requested for ${masked}`);
+    return { ok: true, echoCode: code, provider: provider + "+echo" };
+  }
+  console.log(`[auth][dev] ${channel} code for ${masked}: ${code} (开发测试模式)`);
   return { ok: true, provider };
 }
 
