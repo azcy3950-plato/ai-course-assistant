@@ -8,10 +8,12 @@ import { useApp, getAuthToken } from "@/contexts/AppContext";
 const navLinks = {
   student: [
     { href: "/", label: "首页", icon: "🏠" },
+    { href: "/tasks", label: "我的任务", icon: "📋" },
     { href: "/knowledge", label: "知识问答", icon: "📚" },
     { href: "/guided", label: "引导学习", icon: "💡" },
     { href: "/sandbox", label: "电子沙盘", icon: "🗺️" },
-    { href: "/records", label: "学习记录", icon: "📋" },
+    { href: "/history", label: "学习档案", icon: "📖" },
+    { href: "/records", label: "学习记录", icon: "🕐" },
   ],
   teacher: [
     { href: "/", label: "首页", icon: "🏠" },

@@ -77,6 +77,8 @@ export default function KnowledgePage() {
         const em = s.session?.user?.email || '';
         if (em) {
           await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: (lastRefs?.length || 0) > 0 }) });
+          // 问答存档（供 AI 历史页与教师内容审核使用）
+          await fetch('/api/qa-messages', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer: fullAnswer, references: lastRefs || [] }) });
           const qr = await fetch('/api/quiz?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
           const qd = await qr.json();
           if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }

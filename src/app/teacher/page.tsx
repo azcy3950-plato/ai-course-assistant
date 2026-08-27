@@ -4,9 +4,10 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, getAuthToken } from "@/contexts/AppContext";
 import { supabase } from "@/lib/supabase";
-import { StudentStats } from "@/types";
-
-const mockStudents: StudentStats[] = []; // 已弃用:学生统计改为 /api/students 真实数据(users 表)
+import ClassesTab from "./ClassesTab";
+import TasksTab from "./TasksTab";
+import AnalysisTab from "./AnalysisTab";
+import ReviewTab from "./ReviewTab";
 
 interface OssFile {
   name: string;
@@ -16,7 +17,7 @@ interface OssFile {
   lastModified: string;
 }
 
-type TabKey = "upload" | "knowledge" | "students" | "accounts" | "announcements";
+type TabKey = "classes" | "tasks" | "analysis" | "review" | "upload" | "knowledge" | "students" | "accounts" | "announcements";
 
 function mapType(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() || "";
@@ -50,7 +51,7 @@ export default function TeacherPage() {
     else setAuthorized(true);
   }, [state.authLoading, state.role, router]);
 
-  const [activeTab, setActiveTab] = useState<TabKey>("upload");
+  const [activeTab, setActiveTab] = useState<TabKey>("classes");
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<OssFile[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -210,14 +211,19 @@ export default function TeacherPage() {
         <p className="text-sm text-[var(--color-text-secondary)]">管理课程资料、知识库内容和学生使用数据</p>
       </div>
 
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
-        {[{ k: "upload" as TabKey, l: "资料上传", i: "📤" }, { k: "knowledge" as TabKey, l: "知识库管理", i: "📚" }, { k: "students" as TabKey, l: "学生统计", i: "📊" }, { k: "accounts" as TabKey, l: "教师账号", i: "🔑" }, { k: "announcements" as TabKey, l: "课程公告", i: "📣" }].map(t => (
+      <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
+        {[{ k: "classes" as TabKey, l: "班级与学生", i: "🏫" }, { k: "tasks" as TabKey, l: "学习任务", i: "📝" }, { k: "analysis" as TabKey, l: "学情分析", i: "📊" }, { k: "review" as TabKey, l: "内容审核", i: "🛡️" }, { k: "students" as TabKey, l: "学生统计", i: "👥" }, { k: "announcements" as TabKey, l: "课程公告", i: "📣" }, { k: "upload" as TabKey, l: "资料上传", i: "📤" }, { k: "knowledge" as TabKey, l: "知识库管理", i: "📚" }, { k: "accounts" as TabKey, l: "教师账号", i: "🔑" }].map(t => (
           <button key={t.k} onClick={() => setActiveTab(t.k)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === t.k ? "bg-white text-[var(--color-text)] shadow-sm" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}>
             {t.i} {t.l}
           </button>
         ))}
       </div>
+
+      {activeTab === "classes" && <ClassesTab />}
+      {activeTab === "tasks" && <TasksTab />}
+      {activeTab === "analysis" && <AnalysisTab />}
+      {activeTab === "review" && <ReviewTab />}
 
       {activeTab === "upload" && (
         <div>
