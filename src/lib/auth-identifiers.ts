@@ -183,6 +183,13 @@ export async function deliverCode(type: IdentifierType, target: string, code: st
       ? { ok: true, provider: "aliyun" }
       : { ok: false, error: "短信发送失败，请稍后重试", provider: "aliyun" };
   }
+  if (provider === "yunpian" && type === "PHONE") {
+    const { sendSmsCode } = await import("./yunpian-sms");
+    const sent = await sendSmsCode(target, code);
+    return sent.ok
+      ? { ok: true, provider: "yunpian" }
+      : { ok: false, error: "短信发送失败，请稍后重试", provider: "yunpian" };
+  }
 
   // 回显模式：必须显式开启
   if (provider === "echo" && echoEnabled) {
