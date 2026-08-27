@@ -258,6 +258,30 @@ async function main() {
     nodeIds: pick(2), deadline: daysFromNow(4), createdAt: daysAgo(1),
   });
 
+  // ── 排水232班任务（让第二个班级演示时同样有数据） ──
+  const class232 = students.slice(8, 12);
+  const tk6 = await insertTask({
+    title: "雨水管网规划基础", type: "KNOWLEDGE", classId: c2, targets: class232,
+    description: "围绕雨水管渠系统布置、汇水区划分与设计流量计算，在知识问答中提问学习。",
+    nodeIds: pick(4), deadline: daysFromNow(6), createdAt: daysAgo(5),
+  });
+  const tk7 = await insertTask({
+    title: "重现期情景对比", type: "SIMULATION", classId: c2, targets: class232,
+    description: "在电子沙盘中分别用 2 年与 50 年重现期对应的降雨强度运行模拟，对比内涝响应差异。",
+    observe: ["最大水深", "峰值流量"],
+    prompt: ["两种情景下最大水深和峰值流量相差多少？", "重现期提高意味着什么设计代价？"],
+    deadline: daysFromNow(5), createdAt: daysAgo(3),
+  });
+  const tk8 = await insertTask({
+    title: "汇流计算小练习", type: "PRACTICE", classId: c2, targets: class232,
+    description: "完成以下关于汇水区与设计流量的专项练习。",
+    questions: [
+      { q: "雨水管渠设计流量计算中，径流系数反映的是（　）", options: ["降雨转化为径流的比例", "管道粗糙程度", "管渠坡度", "降雨历时"], answer: "降雨转化为径流的比例", explanation: "径流系数为径流量与降雨量之比，反映产流特性。" },
+      { q: "汇水区划分的基本原则是（　）", options: ["按地形分水线就近排入管渠", "面积越大越好", "跨排水片区随意划分", "只考虑道路走向"], answer: "按地形分水线就近排入管渠", explanation: "汇水区按地形分水线划分，使雨水就近进入管渠。" },
+    ],
+    deadline: daysFromNow(3), createdAt: daysAgo(2),
+  });
+
   // ── 5. 任务状态 ──
   for (let i = 0; i < 5; i++) await setStatus(tk1, students[i], "COMPLETED", 6, 5 - i);
   await setStatus(tk1, students[5], "IN_PROGRESS", 3, null);
@@ -279,6 +303,19 @@ async function main() {
 
   await setStatus(tk5, students[2], "COMPLETED", 1, 0);
   await setStatus(tk5, students[6], "IN_PROGRESS", 0, null);
+
+  // 232 班任务状态
+  await setStatus(tk6, students[8], "COMPLETED", 4, 3);
+  await setStatus(tk6, students[9], "IN_PROGRESS", 2, null);
+  await setStatus(tk6, students[10], "TODO", null, null);
+  await setStatus(tk6, students[11], "TODO", null, null);
+
+  await setStatus(tk7, students[8], "SUBMITTED", 2, null);
+  await setStatus(tk7, students[9], "REVISION_REQUIRED", 2, null);
+  await setStatus(tk7, students[10], "IN_PROGRESS", 1, null);
+
+  await setStatus(tk8, students[8], "COMPLETED", 2, 1);
+  await setStatus(tk8, students[9], "SUBMITTED", 1, null);
 
   // ── 6. 提交与教师批阅 ──
   const insertSubmission = async (taskId, email, version, fields, submittedHoursAgo, status) => {
@@ -323,6 +360,33 @@ async function main() {
     explanation: "降雨强度增大使管道流量增加，超过设计能力后满管。",
     reflection: "提高设计重现期可以缓解，但成本更高。",
   }, 10, "pending");
+
+  // 232 班仿真任务 tk7 提交与批阅
+  const s5 = await insertSubmission(tk7, students[8], 1, {
+    judgment: "50 年重现期情景下最大水深约 2.1m，2 年情景约 1.5m，峰值流量相差约 30%。",
+    explanation: "重现期提高对应更强的设计暴雨，管渠超载更严重。",
+    reflection: "提高设计标准能缓解内涝，但工程造价会明显上升，需要在安全与经济之间权衡。",
+  }, 40, "pending");
+
+  const s6 = await insertSubmission(tk7, students[9], 1, {
+    judgment: "重现期越大水深越大。",
+    explanation: "雨变大了。",
+    reflection: "无。",
+  }, 25, "revision_required");
+  await insertFeedback(s6, "结论太简略：需要给出两个情景的量化对比（最大水深、峰值流量的差值），并说明重现期提高的设计代价。", "revision_required", 20);
+
+  // 232 班练习任务 tk8（服务端判分结果）
+  const qs8 = [
+    { q: "雨水管渠设计流量计算中，径流系数反映的是（　）", correct: "降雨转化为径流的比例" },
+    { q: "汇水区划分的基本原则是（　）", correct: "按地形分水线就近排入管渠" },
+  ];
+  const mkAnswers8 = (rows) => rows.map((row, i) => ({
+    index: i, question: qs8[i].q, studentAnswer: row[0], correctAnswer: qs8[i].correct,
+    isCorrect: row[0] === qs8[i].correct,
+  }));
+  await insertSubmission(tk8, students[8], 1, { answers: mkAnswers8(["降雨转化为径流的比例", "按地形分水线就近排入管渠"]) }, 30, "passed");
+  const p4 = await insertSubmission(tk8, students[9], 1, { answers: mkAnswers8(["管道粗糙程度", "按地形分水线就近排入管渠"]) }, 15, "pending");
+  await insertFeedback(p4, "第 1 题错误：径流系数是降雨转化为径流的比例，不是管道粗糙程度。订正后重做。", "revision_required", 12);
 
   // 练习任务 tk4（服务端判分结果）
   const qs = [
@@ -369,6 +433,17 @@ async function main() {
   await insertEvent(students[4], "SIMULATION_SUBMITTED", "提交任务：下垫面方案比较", "第 1 次提交", 10, "submission", String(s4));
   await insertEvent(students[5], "TASK_STARTED", "开始任务：下垫面方案比较", "下垫面方案比较", 26);
 
+  // 232 班学习事件
+  await insertEvent(students[8], "KNOWLEDGE_COMPLETED", "完成任务：雨水管网规划基础", "雨水管网规划基础", 72);
+  await insertEvent(students[8], "SIMULATION_SUBMITTED", "提交任务：重现期情景对比", "第 1 次提交", 40, "submission", String(s5));
+  await insertEvent(students[8], "PRACTICE_COMPLETED", "提交任务：汇流计算小练习", "第 1 次提交", 30);
+  await insertEvent(students[8], "TASK_COMPLETED", "完成任务：汇流计算小练习", "汇流计算小练习", 29);
+  await insertEvent(students[9], "TASK_STARTED", "开始任务：重现期情景对比", "重现期情景对比", 30);
+  await insertEvent(students[9], "SIMULATION_SUBMITTED", "提交任务：重现期情景对比", "第 1 次提交", 25, "submission", String(s6));
+  await insertEvent(students[9], "TEACHER_FEEDBACK_RECEIVED", "教师反馈：需要修改", "结论太简略……", 20, "submission", String(s6));
+  await insertEvent(students[9], "TEACHER_FEEDBACK_RECEIVED", "教师反馈：需要修改", "第 1 题错误……", 12, "submission", String(p4));
+  await insertEvent(students[10], "TASK_STARTED", "开始任务：重现期情景对比", "重现期情景对比", 6);
+
   // ── 8. 错题数据（quiz_results） ──
   const insertQuiz = async (email, question, correct, studentAns, topic, isCorrect, hoursAgoVal) => {
     await pool.query(
@@ -386,6 +461,11 @@ async function main() {
   await insertQuiz(students[2], "雨水口的主要作用是？", "汇集地面径流", "汇集地面径流", topicB, true, 6);
   await insertQuiz(students[0], "设计暴雨重现期越大，暴雨强度（　）", "越大", "越大", topicC, true, 30);
   await insertQuiz(students[1], "绿色屋顶属于哪类措施？", "源头削减", "源头削减", topicC, true, 12);
+  await insertQuiz(students[9], "径流系数反映的是？", "降雨转化为径流的比例", "管道粗糙程度", topicB, false, 14);
+  await insertQuiz(students[9], "汇水区按什么划分？", "地形分水线", "道路中线", topicB, false, 10);
+  await insertQuiz(students[10], "重现期提高意味着？", "设计暴雨更强", "管径变小", topicC, false, 7);
+  await insertQuiz(students[8], "雨水口的作用是？", "汇集地面径流", "汇集地面径流", topicB, true, 18);
+  await insertQuiz(students[11], "LID 设施属于哪类控制？", "源头控制", "源头控制", topicC, true, 16);
 
   // ── 9. AI 问答存档 + 一条待审核反馈 ──
   const qa1 = (await pool.query(
@@ -415,8 +495,37 @@ async function main() {
     [qa3, students[2], "课本上 Horton 公式的衰减系数记作 kh，这里写成了 k。", hoursAgo(18)],
   );
 
+  // 232 班 AI 问答存档 + 一条待审核反馈
+  const qa4 = (await pool.query(
+    `INSERT INTO ai_qa_messages (user_email, question, answer, references_data, created_at)
+     VALUES ($1,$2,$3,'[]',$4) RETURNING id`,
+    [students[9], "径流系数和径流量的关系是什么？",
+      "径流量 = 径流系数 × 降雨量 × 汇水面积。径流系数反映降雨转化为径流的比例，透水面越多径流系数越低。",
+      hoursAgo(13)],
+  )).rows[0].id;
+  await pool.query(
+    `INSERT INTO ai_content_feedback (message_id, user_email, reason, note, status, created_at)
+     VALUES ($1,$2,'解释不清',$3,'pending',$4)`,
+    [qa4, students[9], "公式看懂了，但不知道各变量单位怎么统一。", hoursAgo(11)],
+  );
+  await pool.query(
+    `INSERT INTO ai_qa_messages (user_email, question, answer, references_data, created_at)
+     VALUES ($1,$2,$3,'[]',$4)`,
+    [students[8], "合流制溢流（CSO）是怎么产生的？",
+      "雨天合流制管网中雨水混入污水使流量超过截流倍数，超量混合污水经溢流口直排受纳水体，造成 CSO 污染。",
+      hoursAgo(17)],
+  );
+  await pool.query(
+    `INSERT INTO ai_qa_messages (user_email, question, answer, references_data, created_at)
+     VALUES ($1,$2,$3,'[]',$4)`,
+    [students[4], "透水铺装的适用条件是什么？",
+      "透水铺装适用于人行道、停车场等荷载较小的区域，需保证路基渗透能力并定期维护防止堵塞。",
+      hoursAgo(28)],
+  );
+
   // ── 10. 汇总 ──
   const cnt = async (sql, params = []) => (await pool.query(sql, params)).rows[0].count;
+  const pendingFeedback = await cnt("SELECT count(*)::int AS count FROM ai_content_feedback WHERE status = 'pending'");
   console.log("演示数据导入完成：");
   console.log(`  用户：1 教师 + ${students.length} 学生（密码 ${DEMO_PASSWORD}）`);
   console.log(`  班级：2（排水231班 ${class231.length} 人 / 排水232班 4 人）`);
@@ -424,7 +533,7 @@ async function main() {
   console.log(`  提交：${await cnt("SELECT count(*)::int AS count FROM task_submissions")}`);
   console.log(`  学习事件：${await cnt("SELECT count(*)::int AS count FROM learning_events WHERE user_email = ANY($1)", [demoEmails])}`);
   console.log(`  错题记录：${await cnt("SELECT count(*)::int AS count FROM quiz_results WHERE user_email = ANY($1)", [demoEmails])}`);
-  console.log(`  AI 问答存档：${await cnt("SELECT count(*)::int AS count FROM ai_qa_messages WHERE user_email = ANY($1)", [demoEmails])}（含 1 条待审核反馈）`);
+  console.log(`  AI 问答存档：${await cnt("SELECT count(*)::int AS count FROM ai_qa_messages WHERE user_email = ANY($1)", [demoEmails])}（含 ${pendingFeedback} 条待审核反馈）`);
   console.log(`知识点关联：${nodes.length > 0 ? `使用真实图谱节点（如 ${nodes[0].name}）` : "知识图谱暂无节点，任务未关联知识点"}`);
   console.log(`\n教师登录：${teacher} / ${DEMO_PASSWORD}`);
   console.log(`学生登录：student01@demo.edu.cn / ${DEMO_PASSWORD}（01-12 均可）`);
