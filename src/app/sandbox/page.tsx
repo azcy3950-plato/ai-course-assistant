@@ -191,6 +191,23 @@ function reductionLabel(baseline: number | null, optimized: number | null): stri
   return value > 0 ? `↓${Math.abs(value).toFixed(1)}%` : `↑${Math.abs(value).toFixed(1)}%`;
 }
 
+// ── 水质指标派生(全部来自 SWMM 真实输出:冲刷/去除/外排质量平衡 + 管网浓度时序) ──
+function deriveQualityMetrics(result: any, pollutant: string) {
+  if (!result?.summary?.quality) return null;
+  const q = result.summary.quality;
+  const washoff = q.washoffKg?.[pollutant];
+  const removal = q.lidRemovalKg?.[pollutant];
+  const outflow = q.networkOutflowKg?.[pollutant];
+  const peak = q.peakPipeConc?.[pollutant];
+  let series: number[] = [];
+  let seriesLinkId: string | null = null;
+  if (peak?.linkId && result.links?.[peak.linkId]?.quality?.[pollutant]) {
+    series = result.links[peak.linkId].quality[pollutant];
+    seriesLinkId = peak.linkId;
+  }
+  return { washoff, removal, outflow, peak, series, seriesLinkId };
+}
+
 // 共享几何:推演/热力图每步不再 new Geometry(长推演不掉帧)
 const SHARED = {
   waterCyl: new THREE.CylinderGeometry(1, 1, 1, 12),
@@ -1563,6 +1580,10 @@ export default function SandboxPage() {
   const optimizedResult = resultScenario.mode === "optimize" && resultScenario.rainfall === comparisonRainfallKey ? dynRes : null;
   const baselineMetrics = useMemo(() => deriveHydroMetrics(baselineResult, dataRef.current), [baselineResult]);
   const optimizedMetrics = useMemo(() => lidRedistApplied ? deriveHydroMetrics(optimizedResult, dataRef.current) : null, [optimizedResult, lidRedistApplied]);
+  // 水质(污染物浓度与负荷):真实 SWMM 结果派生
+  const baselineQuality = useMemo(() => deriveQualityMetrics(baselineResult, activePollutant), [baselineResult, activePollutant]);
+  const optimizedQuality = useMemo(() => lidRedistApplied ? deriveQualityMetrics(optimizedResult, activePollutant) : null, [optimizedResult, lidRedistApplied, activePollutant]);
+  const hasQualitySeries = !!(baselineQuality?.series?.length && (!lidRedistApplied || optimizedQuality?.series?.length));
   const keyMoments = useMemo(() => {
     const count = dynRes?.timestamps?.length || 0;
     if (!count) return [] as Array<{ key: string; label: string; idx: number; color: string }>;
@@ -1626,6 +1647,23 @@ export default function SandboxPage() {
       ],
     };
   }, [comparisonRainfallKey, baselineResult, optimizedResult, baselineMetrics, optimizedMetrics, currentTimeLabel]);
+
+  // 污染物浓度对比曲线:取峰值管道(真实 SWMM 输出)的浓度时序
+  const qualityComparisonOption = useMemo(() => {
+    const timeValues = baselineResult?.timestamps || optimizedResult?.timestamps || [];
+    const timeLabels = timeValues.map((h: number) => fmtTime(h));
+    return {
+      grid: { left: 36, right: 8, top: 18, bottom: 18 },
+      legend: { show: true, top: 0, right: 4, textStyle: { fontSize: 8 }, itemWidth: 10, itemHeight: 6, data: ["现状基准", "海绵优化"] },
+      tooltip: { trigger: "axis", confine: true, textStyle: { fontSize: 9 } },
+      xAxis: { type: "category", data: timeLabels, boundaryGap: false, axisLabel: { fontSize: 7, interval: Math.max(0, Math.floor(timeLabels.length / 5) - 1) } },
+      yAxis: { type: "value", name: "mg/L", nameTextStyle: { fontSize: 8 }, axisLabel: { fontSize: 7 } },
+      series: [
+        { name: "现状基准", type: "line", data: baselineQuality?.series || [], smooth: false, showSymbol: false, lineStyle: { color: "#94a3b8", width: 1.6 } },
+        { name: "海绵优化", type: "line", data: optimizedQuality?.series || [], smooth: false, showSymbol: false, lineStyle: { color: "#2563eb", width: 2 } },
+      ],
+    };
+  }, [baselineResult, optimizedResult, baselineQuality, optimizedQuality]);
   const representativePipeId = selected?.type === "pipe" && dynRes?.links?.[selected.data.id]
     ? selected.data.id
     : (representativeSystemPipe?.id || autoPipeId);
@@ -2311,11 +2349,11 @@ export default function SandboxPage() {
                   {[
                     { label: "径流控制", value: reductionLabel(baselineMetrics?.cumulativeOutflow ?? null, optimizedMetrics?.cumulativeOutflow ?? null), state: "SWMM派生" },
                     { label: "峰值流量", value: reductionLabel(baselineMetrics?.peakOutflow ?? null, optimizedMetrics?.peakOutflow ?? null), state: "SWMM派生" },
-                    { label: "污染负荷", value: "待接入", state: "接口未返回水质结果" },
+                    { label: "污染负荷", value: reductionLabel(baselineQuality?.washoff ?? null, optimizedQuality?.washoff ?? null), state: baselineQuality ? `COD冲刷 ${baselineQuality.washoff?.toFixed(1) ?? "—"} kg` : "接口未返回水质结果" },
                     { label: "生态服务效益", value: "待接入", state: "需生态效益模型" },
                   ].map(item => <div key={item.label} className="rounded-lg border border-slate-100 bg-white px-2 py-2"><div className="text-[9px] text-slate-600">{item.label}</div><div className="mt-1 text-sm font-bold text-blue-700">{item.value}</div><div className="mt-1 text-[7px] text-slate-400">{item.state}</div></div>)}
                 </div>
-                <div className="mt-2 text-[8px] leading-3 text-slate-500">均衡型同时保留水动力、水质和生态目标；当前仅水动力指标具备真实结果。</div>
+                <div className="mt-2 text-[8px] leading-3 text-slate-500">水动力与污染负荷均来自真实 SWMM 输出；生态服务效益需生态效益模型，不生成估算值。</div>
               </>)}
 
               {lidStrategy === "waterquality" && (<>
@@ -2323,12 +2361,19 @@ export default function SandboxPage() {
                   <span className="text-[9px] font-semibold text-blue-700">污染物浓度与负荷对比</span>
                   <div className="flex gap-1">{WATER_QUALITY_INDICATORS.map(pollutant => <button key={pollutant} onClick={() => setActivePollutant(pollutant)} className={`rounded border px-2 py-0.5 text-[8px] font-semibold ${activePollutant === pollutant ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-500"}`}>{pollutant}</button>)}</div>
                 </div>
-                <div className="relative flex h-[118px] items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white">
-                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[7px] text-slate-400">时间</span>
-                  <span className="absolute left-1 top-1/2 -translate-y-1/2 -rotate-90 text-[7px] text-slate-400">浓度 / 负荷</span>
-                  <div className="text-center"><div className="text-[10px] font-semibold text-slate-600">{activePollutant} 暂无时序结果</div><div className="mt-1 text-[8px] text-slate-400">INP已配置该污染物，当前SWMM接口尚未返回浓度与负荷字段</div></div>
+                <div className="relative flex h-[118px] items-center justify-center rounded-lg border border-slate-200 bg-white">
+                  {hasQualitySeries ? (
+                    <ReactEChartsCore echarts={echarts} option={qualityComparisonOption} style={{ height: 118, width: "100%" }} notMerge />
+                  ) : (
+                    <div className="text-center"><div className="text-[10px] font-semibold text-slate-600">{activePollutant} 暂无时序结果</div><div className="mt-1 text-[8px] text-slate-400">开始推演后展示 SWMM 真实浓度时序（峰值管道）</div></div>
+                  )}
                 </div>
-                <div className="mt-1 flex items-center gap-3 text-[8px] text-slate-400"><span>现状基准：待接入</span><span>海绵优化：待接入</span><span>负荷削减率：待接入</span></div>
+                <div className="mt-1 flex items-center gap-3 text-[8px] text-slate-400">
+                  <span>现状基准：{baselineQuality?.peak ? `峰值 ${baselineQuality.peak.value} mg/L · 冲刷 ${baselineQuality.washoff?.toFixed(1) ?? "—"} kg` : "待计算"}</span>
+                  <span>海绵优化：{optimizedQuality?.peak ? `峰值 ${optimizedQuality.peak.value} mg/L · 冲刷 ${optimizedQuality.washoff?.toFixed(1) ?? "—"} kg` : "待计算"}</span>
+                  <span>负荷削减率：{baselineQuality?.washoff != null && optimizedQuality?.washoff != null ? reductionLabel(baselineQuality.washoff, optimizedQuality.washoff) : "待计算"}</span>
+                </div>
+                {hasQualitySeries && baselineQuality?.seriesLinkId && <div className="mt-0.5 text-[7px] text-slate-400">浓度曲线取自峰值管道 {baselineQuality.seriesLinkId}（SWMM 真实输出）</div>}
               </>)}
 
               {lidStrategy === "ecological" && (<>
