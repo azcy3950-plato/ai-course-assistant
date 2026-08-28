@@ -235,7 +235,7 @@ export default function SandboxPage(){
   // ═══════════════════════════════════════════════════════════
   // DYNAMIC
   // ═══════════════════════════════════════════════════════════
-  const loadSim=useCallback(async()=>{setDynPhase("loading");setDynStep(0);try{const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),90000);const res=await fetch("/api/swmm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({intensity:dynI}),signal:ctrl.signal});clearTimeout(tid);const d=await res.json();if(!d.ok)throw new Error(d.error||"API error");setDynRes(d);setDynPhase("ready");setSimId(d.simulationId||"")}catch(e:any){setDynPhase("config");if(e.name!=="AbortError")alert("仿真失败:"+e.message)}},[dynI]);
+  const loadSim=useCallback(async()=>{setDynPhase("loading");setDynStep(0);try{const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),90000);const token=(typeof window!=="undefined"?localStorage.getItem("aicourse-token")||"":"");const res=await fetch("/api/swmm",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},body:JSON.stringify({intensity:dynI}),signal:ctrl.signal});clearTimeout(tid);const d=await res.json();if(!d.ok)throw new Error(d.error||"API error");setDynRes(d);setDynPhase("ready");setSimId(d.simulationId||"")}catch(e:any){setDynPhase("config");if(e.name!=="AbortError")alert("仿真失败:"+e.message)}},[dynI]);
   useEffect(()=>{if(!dynPlay||dynPhase!=="running"||tsc===0)return;const t=setInterval(()=>{setDynStep(p=>{const n=p+1;if(n>=tsc-1){setDynPlay(false);setDynPhase("done");return tsc-1}return n})},140/dynSpd);return()=>clearInterval(t)},[dynPlay,dynSpd,dynPhase,tsc]);
 
   // Water columns
