@@ -64,6 +64,16 @@ function fmtTime(hoursDecimal: number): string {
 // ═══════════════════════════════════════════════════════════
 // 降雨情景:真实设计暴雨重现期(3/5/10/20/50 年),数据取自 INP [TIMESERIES]
 import { RAIN_SCENARIOS, type RainfallScenarioKey } from "./rainfall-scenarios";
+import {
+  VISUAL_PROFILES,
+  deriveDynamicVisualStats,
+  mapDepthSurfaceVisual,
+  mapPondingSurfaceVisual,
+  mapWaterVisual,
+  sampleSeries,
+  type DynamicVisualStats,
+  type VisualStrength,
+} from "./dynamic-visuals";
 // 选中情景 → 对象(按 key)
 function scnOf(key?: string) {
   return RAIN_SCENARIOS.find(s => s.key === key);
@@ -96,8 +106,16 @@ const ECO_SERVICE_INDICATORS = [
 // 统一运行负荷分级阈值与状态判定(展示分级,非工程风险评级):供 3D 着色、右侧统计、横截面标签、异常事件共用同一套。
 // 五档:normal 正常 <0.50 / medium 中等负荷 0.50–0.80 / high 高负荷 0.80–0.95 / nearFull 接近满管 0.95–1.00 / full 满管 ≥1.00。
 const RUN_LOAD = { medium: 0.5, high: 0.8, nearFull: 0.95, full: 1.0 } as const;
+type PipeLoadState = "normal" | "medium" | "high" | "nearFull" | "full";
+const PIPE_VISUAL: Record<PipeLoadState, { color: string; emissive: string; glow: string; glowOpacity: number }> = {
+  normal:   { color: "#2684ff", emissive: "#062b57", glow: "#4aa3ff", glowOpacity: 0 },
+  medium:   { color: "#16b8c4", emissive: "#063f45", glow: "#35e0e8", glowOpacity: 0 },
+  high:     { color: "#f3c623", emissive: "#5a4300", glow: "#ffe66d", glowOpacity: 0.22 },
+  nearFull: { color: "#f28c28", emissive: "#612d00", glow: "#ffb04d", glowOpacity: 0.34 },
+  full:     { color: "#e33b32", emissive: "#650b08", glow: "#ff6258", glowOpacity: 0.48 },
+};
 // 唯一负荷状态判定入口(其余模块不得各自判断阈值)
-function getPipeLoadState(depthFraction: number): "normal" | "medium" | "high" | "nearFull" | "full" {
+function getPipeLoadState(depthFraction: number): PipeLoadState {
   const v = depthFraction ?? 0;
   if (v >= RUN_LOAD.full) return "full";
   if (v >= RUN_LOAD.nearFull) return "nearFull";
@@ -175,12 +193,29 @@ function reductionLabel(baseline: number | null, optimized: number | null): stri
 
 // 共享几何:推演/热力图每步不再 new Geometry(长推演不掉帧)
 const SHARED = {
-  waterCyl: new THREE.CylinderGeometry(0.18, 0.18, 1, 8),
-  heatDisc: new THREE.CircleGeometry(0.42, 16),
-  overflowRing: new THREE.TorusGeometry(0.28, 0.05, 8, 10),
+  waterCyl: new THREE.CylinderGeometry(1, 1, 1, 12),
+  heatDisc: new THREE.CircleGeometry(1, 24),
+  overflowRing: new THREE.TorusGeometry(1, 0.08, 8, 24),
+  rippleRing: new THREE.RingGeometry(0.76, 1, 24),
   flowParticle: new THREE.SphereGeometry(0.14, 6, 6),
-  flowParticleMat: new THREE.MeshBasicMaterial({ color: "#7fd4ff", transparent: true, opacity: 0.85 }),
   overflowDisc: new THREE.CircleGeometry(1, 20), // 单位圆,半径用 scale 缩放(积水圆盘共享几何)
+};
+
+type NodeDynamicMeshes = {
+  water: THREE.Mesh;
+  heat: THREE.Mesh;
+  ponding: THREE.Mesh;
+  alertInner: THREE.Mesh;
+  alertOuter: THREE.Mesh;
+  ripple: THREE.Mesh;
+};
+
+type TimeChangeLabel = {
+  key: string;
+  id: string;
+  kind: "node" | "pipe";
+  text: string;
+  color: string;
 };
 
 function PipeCrossSection({ diam, depth, depthFraction, flow, flowDir, landcover, previewRatio = 1, animate = true, compact = false, largeLabels = false, size = "md", onCanvas }: {
@@ -332,8 +367,13 @@ export default function SandboxPage() {
   const nodeGeomMap = useRef<Map<string, { group: THREE.Group; invertY: number; groundY: number }>>(new Map());
   const pipeMeshMap = useRef<Map<string, THREE.Mesh>>(new Map());
   const pipeEndsMap = useRef<Map<string, { fx: number; fy: number; fz: number; tx: number; ty: number; tz: number }>>(new Map());
-  const flowParticleMap = useRef<Map<string, THREE.Mesh>>(new Map());
+  const pipeCurveMap = useRef<Map<string, THREE.CatmullRomCurve3>>(new Map());
+  const pipeGlowMap = useRef<Map<string, THREE.Mesh>>(new Map());
+  const flowParticleMap = useRef<Map<string, THREE.Mesh[]>>(new Map());
   const waterMeshMap = useRef<Map<string, THREE.Mesh>>(new Map());
+  const nodeDynamicMap = useRef<Map<string, NodeDynamicMeshes>>(new Map());
+  const pipeTransitionUntilRef = useRef<Map<string, number>>(new Map());
+  const nodeRippleUntilRef = useRef<Map<string, { until: number; kind: "pond" | "drain" }>>(new Map());
   const spanRef = useRef(300);
   const simSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -399,6 +439,16 @@ export default function SandboxPage() {
   const [dynStep, setDynStep] = useState(0);
   const [dynPlay, setDynPlay] = useState(false);
   const [dynSpd, setDynSpd] = useState(1);
+  const playheadRef = useRef(0);
+  const [visualStrength, setVisualStrength] = useState<VisualStrength>("standard");
+  const visualStrengthRef = useRef<VisualStrength>("standard");
+  visualStrengthRef.current = visualStrength;
+  const visualStatsRef = useRef<DynamicVisualStats>({ depthReference: 0.05, pondingReference: 0.05, flowReference: 0.01, velocityReference: 0.05 });
+  const [timeChangeLabels, setTimeChangeLabels] = useState<TimeChangeLabel[]>([]);
+  const timeChangeLabelDataRef = useRef<TimeChangeLabel[]>([]);
+  timeChangeLabelDataRef.current = timeChangeLabels;
+  const timeChangeLabelsRef = useRef<Array<{ key: string; el: HTMLDivElement | null }>>([]);
+  const timeChangeLabelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dynPhase, setDynPhase] = useState<"config"|"loading"|"ready"|"running"|"paused"|"done">("config");
   const [runStage, setRunStage] = useState<"idle"|"baseline"|"optimize">("idle");
   // 推演等待计时(秒,loading 阶段递增;仅展示已等待时间,非伪造进度)
@@ -449,6 +499,7 @@ export default function SandboxPage() {
   const timeStepCount = dynRes?.timeStepCount || 0;
   const timestamps: number[] = dynRes?.timestamps || [];
   const currentTimeLabel = timestamps[dynStep] !== undefined ? fmtTime(timestamps[dynStep]) : "--:--";
+  visualStatsRef.current = useMemo(() => deriveDynamicVisualStats(dynRes), [dynRes]);
 
   // ═══════════════════════════════════════════════════════════
   // SCENE INITIALIZATION
@@ -669,11 +720,16 @@ export default function SandboxPage() {
       renderer.domElement.addEventListener("mousedown", e => { if (e.button <= 1) { dragging = true; last = { x: e.clientX, y: e.clientY }; clickStart = { x: e.clientX, y: e.clientY }; focusAnim = null; } });
 
       let rafId = 0;
+      let lastFrameAt = performance.now();
       const animate = () => {
         rafId = requestAnimationFrame(animate);
+        const now = performance.now();
+        const frameMs = Math.min(80, Math.max(1, now - lastFrameAt));
+        lastFrameAt = now;
+        const smooth = 1 - Math.exp(-frameMs / 360); // 约 360ms 的连续过渡
         // 点击聚焦:0.6s easeOutCubic 插值相机位置/距离
         if (focusAnim) {
-          const p = Math.min(1, (performance.now() - focusAnim.t0) / 600);
+          const p = Math.min(1, (now - focusAnim.t0) / 600);
           const e = 1 - Math.pow(1 - p, 3);
           const f = focusAnim.from, t = focusAnim.to;
           camState.current.tx = f.tx + (t.tx - f.tx) * e;
@@ -684,50 +740,163 @@ export default function SandboxPage() {
         }
         // 环绕模式:相机绕场景中心缓慢自动旋转
         if (orbitRef.current) { camState.current.theta += 0.0022; updateCam(); }
-        // 默认横截面管道呼吸高亮(未选中时,蓝色光圈)
+
+        const km = kbState.current;
+        const pt = now / 1000;
+        const hasDynamicResult = km.mode === "dynamic" && !!km.dynRes?.nodes && !!km.dynRes?.links;
+        const head = hasDynamicResult ? Math.max(0, Math.min((km.timeStepCount || 1) - 1, playheadRef.current)) : 0;
+        const stats = visualStatsRef.current;
+        const strength = visualStrengthRef.current;
+        const profile = VISUAL_PROFILES[strength];
+        const previewRatio = km.rainPreview != null ? Math.max(0.05, km.rainPreview / simIBaseRef.current) : 1;
+
+        // 节点水柱、热力面、地面积水与状态环全部复用既有 Mesh，仅改变显示属性。
+        nodeDynamicMap.current.forEach((visual, nid) => {
+          const geom = nodeGeomMap.current.get(nid);
+          const nd = hasDynamicResult ? (km.dynRes as any).nodes?.[nid] : null;
+          const depth = sampleSeries(nd?.depth, head);
+          const ponding = sampleSeries(nd?.pondedVolume, head);
+          const shownDepth = depth * previewRatio;
+          const waterTarget = mapWaterVisual(shownDepth, stats.depthReference, strength, km.vertEx);
+          const depthSurface = mapDepthSurfaceVisual(shownDepth, stats.depthReference, strength);
+          const pondSurface = mapPondingSurfaceVisual(ponding, stats.pondingReference, strength);
+          const maxDepth = Number((geom?.group as any)?.userData?.data?.maxDepth) || 99;
+          const overflow = ponding > 0.001 || depth > maxDepth;
+
+          const water = visual.water;
+          water.scale.x += (waterTarget.radius - water.scale.x) * smooth;
+          water.scale.z += (waterTarget.radius - water.scale.z) * smooth;
+          water.scale.y += (waterTarget.height - water.scale.y) * smooth;
+          const targetY = (geom?.invertY || 0) + waterTarget.height / 2;
+          water.position.y += (targetY - water.position.y) * smooth;
+          water.visible = hasDynamicResult && (waterTarget.height > 0 || water.scale.y > 0.02);
+          const waterMat = water.material as THREE.MeshStandardMaterial;
+          waterMat.opacity += ((waterTarget.height > 0 ? 0.8 : 0) - waterMat.opacity) * smooth;
+          if (overflow) {
+            waterMat.color.set("#e5473f"); waterMat.emissive.set("#5b0d09"); waterMat.emissiveIntensity = 0.48;
+          } else {
+            waterMat.color.setHSL(0.57 - waterTarget.ratio * 0.13, 0.82, 0.43 + waterTarget.ratio * 0.13);
+            waterMat.emissive.set("#05284a"); waterMat.emissiveIntensity = 0.2 + waterTarget.ratio * 0.28;
+          }
+
+          const heat = visual.heat;
+          const heatMat = heat.material as THREE.MeshBasicMaterial;
+          heat.scale.x += (depthSurface.radius - heat.scale.x) * smooth;
+          heat.scale.y += (depthSurface.radius - heat.scale.y) * smooth;
+          heatMat.opacity += ((hasDynamicResult ? depthSurface.opacity : 0) - heatMat.opacity) * smooth;
+          heatMat.color.setHSL(Math.max(0, 0.6 - depthSurface.ratio * 0.6), 0.88, 0.54);
+          heat.visible = hasDynamicResult && (depthSurface.radius > 0 || heat.scale.x > 0.03);
+
+          const pond = visual.ponding;
+          const pondMat = pond.material as THREE.MeshBasicMaterial;
+          pond.scale.x += (pondSurface.radius - pond.scale.x) * smooth;
+          pond.scale.y += (pondSurface.radius - pond.scale.y) * smooth;
+          pondMat.opacity += ((hasDynamicResult ? pondSurface.opacity : 0) - pondMat.opacity) * smooth;
+          pondMat.color.setHSL(Math.max(0, 0.58 - pondSurface.ratio * 0.55), 0.92, 0.53);
+          pond.visible = hasDynamicResult && (pondSurface.radius > 0 || pond.scale.x > 0.03);
+
+          const pulse = 1 + Math.sin(now * 0.008) * 0.12;
+          const severe = overflow && (pondSurface.ratio >= 0.55 || depth >= maxDepth);
+          const alertBase = Math.max(0.9, pondSurface.radius || depthSurface.radius) * pulse;
+          for (const [ring, multiplier, phase] of [[visual.alertInner, 1, 0], [visual.alertOuter, 1.24, Math.PI]] as Array<[THREE.Mesh, number, number]>) {
+            const showRing = hasDynamicResult && overflow && (ring === visual.alertInner || severe);
+            const ringMat = ring.material as THREE.MeshBasicMaterial;
+            const ringPulse = 1 + Math.sin(now * 0.008 + phase) * 0.12;
+            ring.visible = showRing;
+            ring.scale.setScalar(showRing ? alertBase * multiplier * ringPulse : 0);
+            ringMat.color.set(severe ? "#ff3d32" : "#ff8a34");
+            ringMat.opacity = showRing ? (ring === visual.alertOuter ? 0.64 : 0.82) : 0;
+          }
+
+          const rippleState = nodeRippleUntilRef.current.get(nid);
+          const rippleMat = visual.ripple.material as THREE.MeshBasicMaterial;
+          if (hasDynamicResult && rippleState && rippleState.until > now) {
+            const progress = 1 - (rippleState.until - now) / 1200;
+            const radius = Math.max(1, pondSurface.radius || depthSurface.radius) * (0.45 + progress * 1.55);
+            visual.ripple.visible = true;
+            visual.ripple.scale.set(radius, radius, 1);
+            rippleMat.color.set(rippleState.kind === "pond" ? "#ff603f" : "#1fb8c8");
+            rippleMat.opacity = Math.max(0, 0.78 * (1 - progress));
+          } else {
+            visual.ripple.visible = false; rippleMat.opacity = 0;
+          }
+        });
+
+        // 管道负荷由 depthFraction 分级；粒子速度由 velocity 决定，方向由 flow 符号决定。
+        pipeMeshMap.current.forEach((mesh, pid) => {
+          const ld = hasDynamicResult ? (km.dynRes as any).links?.[pid] : null;
+          const flow = sampleSeries(ld?.flow, head);
+          const velocity = Math.abs(sampleSeries(ld?.velocity, head));
+          const depthFraction = sampleSeries(ld?.depthFraction, head);
+          const state = getPipeLoadState(depthFraction);
+          const style = PIPE_VISUAL[state];
+          const mat = mesh.material as THREE.MeshStandardMaterial;
+          if (hasDynamicResult) {
+            mat.color.set(style.color); mat.emissive.set(style.emissive);
+            mat.emissiveIntensity = 0.16 + Math.min(1, depthFraction) * 0.34;
+          } else {
+            mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08;
+          }
+
+          const hl = highlightRef.current;
+          if (hasDynamicResult && hl && Date.now() < hl.until) {
+            const hit = hl.top.find(([id]) => id === pid);
+            if (hit) { mat.color.set(hit[1] < 0 ? "#2e7d32" : "#e65100"); mat.emissive.set(hit[1] < 0 ? "#0f3d13" : "#5a2500"); mat.emissiveIntensity = 0.65; }
+          }
+          const tr = traceRef.current;
+          if (hasDynamicResult && tr && km.selected?.type === "pipe") {
+            if (tr.up.includes(pid)) { mat.color.set("#1e5bbf"); mat.emissive.set("#0c2a66"); mat.emissiveIntensity = 0.55; }
+            else if (tr.down.includes(pid)) { mat.color.set("#1f8a8a"); mat.emissive.set("#0c3d3d"); mat.emissiveIntensity = 0.55; }
+            else if (pid === km.selected.data.id) { mat.color.set("#ffffff"); mat.emissive.set("#666666"); mat.emissiveIntensity = 0.3; }
+            else { mat.color.set("#2a2f38"); mat.emissive.set("#000000"); mat.emissiveIntensity = 0; }
+          }
+          const valve = km.valveDraft[pid] ?? km.valves[pid];
+          if (valve != null) {
+            const v = Math.max(0, Math.min(1, valve));
+            mat.color.setHSL(0.75, 0.65, 0.2 + v * 0.35); mat.emissive.setHSL(0.75, 0.8, 0.06 + v * 0.16); mat.emissiveIntensity = 0.55;
+          }
+
+          const transition = (pipeTransitionUntilRef.current.get(pid) || 0) > now;
+          const glow = pipeGlowMap.current.get(pid);
+          if (glow) {
+            const glowMat = glow.material as THREE.MeshBasicMaterial;
+            const showGlow = hasDynamicResult && (style.glowOpacity > 0 || transition);
+            glow.visible = showGlow;
+            glowMat.color.set(style.glow);
+            glowMat.opacity = showGlow ? Math.min(0.88, (style.glowOpacity + (transition ? 0.34 : 0)) * profile.glow * (0.88 + Math.sin(now * 0.01) * 0.12)) : 0;
+          }
+
+          const particles = flowParticleMap.current.get(pid) || [];
+          const curve = pipeCurveMap.current.get(pid);
+          const active = hasDynamicResult && Math.abs(flow) > 0.0005 && !!curve;
+          const velocityRatio = Math.min(1, velocity / Math.max(0.05, stats.velocityReference));
+          const flowRatio = Math.min(1, Math.abs(flow) / Math.max(0.01, stats.flowReference));
+          const speed = 0.07 + Math.sqrt(velocityRatio) * 0.48;
+          const direction = flow >= 0 ? 1 : -1;
+          const particleMat = particles[0]?.material as THREE.MeshBasicMaterial | undefined;
+          if (particleMat) {
+            particleMat.opacity = active ? 0.48 + Math.max(flowRatio, depthFraction) * 0.48 : (km.mode === "static" ? 0.35 : 0);
+            particleMat.color.set(state === "full" ? "#fff1dd" : state === "nearFull" ? "#ffe0a3" : "#9ee9ff");
+          }
+          particles.forEach((particle, index) => {
+            const show = active || (km.mode === "static" && index === 0);
+            particle.visible = show;
+            if (!show || !curve) return;
+            let progress = (direction * pt * (active ? speed : 0.07) + index / 3) % 1;
+            if (progress < 0) progress += 1;
+            curve.getPointAt(progress, particle.position);
+            const particleScale = (0.82 + Math.max(flowRatio, depthFraction) * 0.88) * profile.radius;
+            particle.scale.setScalar(particleScale);
+          });
+        });
+
+        // 默认代表管段只增加轻微呼吸，不覆盖高负荷状态色。
         const ap = autoPipeRef.current;
         if (ap && selRef.current?.userData?.type !== "pipe") {
           const m = pipeMeshMap.current.get(ap);
-          if (m) {
-            const mat = m.material as THREE.MeshStandardMaterial;
-            const pulse = 0.28 + 0.22 * Math.sin(performance.now() * 0.004);
-            mat.emissive.set("#1a3f8f");
-            mat.emissiveIntensity = pulse;
-          }
+          if (m) (m.material as THREE.MeshStandardMaterial).emissiveIntensity += 0.08 + 0.08 * Math.sin(now * 0.004);
         }
-        // 水流粒子:动态模式沿管道流动(方向=流向,速度∝流速);静态模式慢速示意默认流向
-        const km = kbState.current;
-        const pt = performance.now() / 1000;
-        flowParticleMap.current.forEach((pm, pid) => {
-          const ends = pipeEndsMap.current.get(pid);
-          if (!ends) { pm.visible = false; return; }
-          const ld = (km.dynRes as any)?.links?.[pid];
-          const f = ld?.flow?.[km.dynStep] ?? 0;
-          let speed: number, dir: number, show: boolean;
-          if (km.mode === "dynamic") {
-            show = Math.abs(f) > 0.0005;
-            speed = Math.min(1.1, 0.06 + Math.abs(f) * 0.05);
-            dir = f >= 0 ? 1 : -1;
-            SHARED.flowParticleMat.opacity = 0.9;
-          } else {
-            show = true;
-            speed = 0.07;
-            dir = 1; // 静态模式:from → to 示意默认流向
-            SHARED.flowParticleMat.opacity = 0.35;
-          }
-          pm.visible = show;
-          if (!show) return;
-          let prog = (dir * pt * speed) % 1;
-          if (prog < 0) prog += 1;
-          pm.position.set(ends.fx + (ends.tx - ends.fx) * prog, ends.fy + (ends.ty - ends.fy) * prog, ends.fz + (ends.tz - ends.fz) * prog);
-        });
-        // 水柱平滑过渡(切方案/雨强预览:指数趋近目标,~0.5s 到位)
-        waterMeshMap.current.forEach((wm) => {
-          const ud = (wm as any).userData;
-          if (ud.targetScaleY == null) return;
-          wm.scale.y += (ud.targetScaleY - wm.scale.y) * 0.08;
-          wm.position.y += (ud.targetY - wm.position.y) * 0.08;
-        });
+
         // 3D 变化百分比标签:Top5 管道上方投影跟随
         for (const dl of deltaLabelsRef.current) {
           const el = dl.el;
@@ -743,9 +912,28 @@ export default function SandboxPage() {
             el.style.display = "block";
           } else el.style.display = "none";
         }
-        // 溢流红环闪烁(积水圆盘为 MeshBasicMaterial 无 emissive,自动跳过)
-        const flick = 0.35 + 0.45 * Math.sin(performance.now() * 0.008);
-        scene.traverse(o => { const m = o as any; if (m?.userData?.overflowRing && m.isMesh && m.material?.emissiveIntensity != null) m.material.emissiveIntensity = flick; });
+        // 当前时间步 Top 变化标签：节点投影到地表上方，管道投影到中点。
+        for (const tl of timeChangeLabelsRef.current) {
+          const el = tl.el;
+          const meta = timeChangeLabelDataRef.current.find(label => label.key === tl.key);
+          if (!el || !meta) continue;
+          let point: THREE.Vector3 | null = null;
+          if (meta.kind === "pipe") {
+            const ends = pipeEndsMap.current.get(meta.id);
+            if (ends) point = new THREE.Vector3((ends.fx + ends.tx) / 2, (ends.fy + ends.ty) / 2 + 1.2, (ends.fz + ends.tz) / 2);
+          } else {
+            const node = nodeGeomMap.current.get(meta.id);
+            if (node) point = new THREE.Vector3(node.group.position.x, node.groundY + 1.5, node.group.position.z);
+          }
+          const rect = cr.current?.getBoundingClientRect();
+          if (!point || !rect) { el.style.display = "none"; continue; }
+          point.project(camera);
+          if (point.z < 1) {
+            el.style.left = ((point.x * 0.5 + 0.5) * rect.width) + "px";
+            el.style.top = ((-point.y * 0.5 + 0.5) * rect.height) + "px";
+            el.style.display = "block";
+          } else el.style.display = "none";
+        }
         renderer.render(scene, camera);
       };
       animate();
@@ -819,8 +1007,8 @@ export default function SandboxPage() {
     const grp: Record<string, THREE.Group> = { ground: new THREE.Group(), sc: new THREE.Group(), pipes: new THREE.Group(), nodes: new THREE.Group() };
     Object.values(grp).forEach(g => scene.add(g));
     groupsRef.current = grp;
-    nodeGeomMap.current.clear(); pipeMeshMap.current.clear(); waterMeshMap.current.clear();
-    pipeEndsMap.current.clear(); flowParticleMap.current.clear();
+    nodeGeomMap.current.clear(); pipeMeshMap.current.clear(); waterMeshMap.current.clear(); nodeDynamicMap.current.clear();
+    pipeEndsMap.current.clear(); pipeCurveMap.current.clear(); pipeGlowMap.current.clear(); flowParticleMap.current.clear();
 
     // Extents
     let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity;
@@ -901,10 +1089,39 @@ export default function SandboxPage() {
       top.position.y = groundY; top.rotation.x = Math.PI / 2;
       g.add(top);
 
+      // 动态对象在建场时一次性创建，时间线推演只更新变换/颜色/透明度，避免逐步分配 Geometry/Material。
+      const waterMat = new THREE.MeshStandardMaterial({ color: "#3388cc", roughness: 0.08, metalness: 0.04, emissive: "#05284a", emissiveIntensity: 0.28, transparent: true, opacity: 0.78, depthWrite: true });
+      (waterMat as any)._isWater = true;
+      const water = new THREE.Mesh(SHARED.waterCyl, waterMat);
+      water.visible = false; water.position.set(0, invertY, 0); water.scale.set(0, 0, 0); water.userData = { water: true };
+      g.add(water);
+
+      const heat = new THREE.Mesh(SHARED.heatDisc, new THREE.MeshBasicMaterial({ color: "#2684ff", transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      heat.visible = false; heat.position.y = groundY + 0.012; heat.rotation.x = -Math.PI / 2; heat.scale.set(0, 0, 1); heat.userData = { water: true };
+      g.add(heat);
+
+      const ponding = new THREE.Mesh(SHARED.overflowDisc, new THREE.MeshBasicMaterial({ color: "#3aa0ff", transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      ponding.visible = false; ponding.position.y = groundY + 0.02; ponding.rotation.x = -Math.PI / 2; ponding.scale.set(0, 0, 1); ponding.userData = { water: true };
+      g.add(ponding);
+
+      const makeAlertRing = (offset: number) => {
+        const ring = new THREE.Mesh(SHARED.overflowRing, new THREE.MeshBasicMaterial({ color: "#ff493d", transparent: true, opacity: 0, depthWrite: false }));
+        ring.visible = false; ring.position.y = groundY + offset; ring.rotation.x = Math.PI / 2; ring.scale.set(0, 0, 0); ring.userData = { water: true };
+        g.add(ring);
+        return ring;
+      };
+      const alertInner = makeAlertRing(0.035);
+      const alertOuter = makeAlertRing(0.05);
+      const ripple = new THREE.Mesh(SHARED.rippleRing, new THREE.MeshBasicMaterial({ color: "#ff6b45", transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      ripple.visible = false; ripple.position.y = groundY + 0.065; ripple.rotation.x = -Math.PI / 2; ripple.scale.set(0, 0, 1); ripple.userData = { water: true };
+      g.add(ripple);
+
       g.position.set(n.x, 0, n.z);
       g.userData = { type: "node", data: { id: n.id, type: n.type, invert: n.invert, ground: n.ground, maxDepth: n.maxD, initDepth: n.initD } };
       grp.nodes.add(g);
       nodeGeomMap.current.set(n.id, { group: g, invertY, groundY });
+      waterMeshMap.current.set(n.id, water);
+      nodeDynamicMap.current.set(n.id, { water, heat, ponding, alertInner, alertOuter, ripple });
     });
 
     // ── Pipes — real diameter → visual radius, blue-gray ──
@@ -927,14 +1144,25 @@ export default function SandboxPage() {
       tube.userData = { type: "pipe", data: { id: p.id, from: p.from, to: p.to, diam: p.diam, length: p.length, roughness: p.roughness, shape: p.shape, inOffset: p.inOffset, outOffset: p.outOffset, vertCount: p.verts.length } };
       grp.pipes.add(tube);
       pipeMeshMap.current.set(p.id, tube);
-      // 水流粒子(共享几何+材质):动态模式流动,静态模式慢速示意流向
+      pipeCurveMap.current.set(p.id, curve);
+      // 高负荷覆盖层：只改变显示，不改变原管径或 SWMM 结果。
+      const glowGeom = new THREE.TubeGeometry(curve, Math.max(6, path.length * 3), visualR * 1.85, 8, false);
+      const glow = new THREE.Mesh(glowGeom, new THREE.MeshBasicMaterial({ color: "#ffe66d", transparent: true, opacity: 0, depthWrite: false, side: THREE.BackSide }));
+      glow.visible = false; glow.renderOrder = 3; glow.userData = { particle: true };
+      grp.pipes.add(glow);
+      pipeGlowMap.current.set(p.id, glow);
+      // 每条管道独立材质、3 个错位粒子，避免共享透明度导致全网同步变亮/变暗。
       pipeEndsMap.current.set(p.id, { fx: fn.x, fy: fromY, fz: fn.z, tx: tn.x, ty: toY, tz: tn.z });
-      const particle = new THREE.Mesh(SHARED.flowParticle, SHARED.flowParticleMat);
-      particle.visible = false;
-      particle.userData = { particle: true }; // 拾取时过滤(不参与选中/悬停)
-      particle.position.set(fn.x, fromY, fn.z);
-      grp.pipes.add(particle);
-      flowParticleMap.current.set(p.id, particle);
+      const particleMat = new THREE.MeshBasicMaterial({ color: "#8addff", transparent: true, opacity: 0.85, depthWrite: false });
+      const particles = [0, 1, 2].map(index => {
+        const particle = new THREE.Mesh(SHARED.flowParticle, particleMat);
+        particle.visible = false;
+        particle.userData = { particle: true, offset: index / 3 }; // 拾取时过滤(不参与选中/悬停)
+        particle.position.set(fn.x, fromY, fn.z);
+        grp.pipes.add(particle);
+        return particle;
+      });
+      flowParticleMap.current.set(p.id, particles);
     });
   }
 
@@ -984,7 +1212,8 @@ export default function SandboxPage() {
     // 取消待执行的雨强/绿色强度防抖重跑(避免旧闭包竞态覆盖新方案状态)
     if (rainTimer.current) { clearTimeout(rainTimer.current); rainTimer.current = null; }
     setRainPreview(null);
-    setDynPhase("loading"); setDynStep(0);
+    playheadRef.current = 0;
+    setDynPlay(false); setDynPhase("loading"); setDynStep(0);
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -1089,26 +1318,6 @@ export default function SandboxPage() {
             highlightRef.current = null;
             highlightTimerRef.current = null;
             setDeltaLabels([]);
-            const s = kbState.current;
-            const maxF = s.dynRes?.summary?.maxFlow?.value || 0.1;
-            top.forEach(([id]) => {
-              const m = pipeMeshMap.current.get(id); if (!m) return;
-              const mat = m.material as THREE.MeshStandardMaterial;
-              const ld = (s.dynRes as any)?.links?.[id];
-              const flows = ld?.flow;
-              const caps = ld?.capacity;
-              const flow = (flows && s.dynStep < flows.length) ? flows[s.dynStep] : 0;
-              const capacity = (caps && s.dynStep < caps.length) ? caps[s.dynStep] : 0;
-              if (Math.abs(flow) < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
-              else {
-                // 与着色 effect 同款公式(含满管/接近满管橙分支),恢复不覆盖 effect 语义
-                const _st = getPipeLoadState(capacity); const isFull = _st === "nearFull" || _st === "full";
-                const ratio = Math.min(1, Math.abs(flow) / maxF);
-                mat.color.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.4 + ratio * 0.25));
-                mat.emissive.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
-                mat.emissiveIntensity = isFull ? 0.5 : 0.08 + ratio * 0.4;
-              }
-            });
           }, 5200);
           const down = top.filter(([, v]) => v < 0).length, up = top.filter(([, v]) => v > 0).length;
           const msg = simLandcover === "green" ? `🟢 海绵优化方案:${down} 条管道水量下降` : `⚪ 现状基准`;
@@ -1123,122 +1332,60 @@ export default function SandboxPage() {
 
 
   const clearWaterMeshes = useCallback(() => {
-    waterMeshMap.current.forEach(m => { if (m.parent) m.parent.remove(m); if (m.geometry !== SHARED.waterCyl) m.geometry?.dispose(); (m.material as THREE.Material)?.dispose(); });
-    waterMeshMap.current.clear();
+    nodeDynamicMap.current.forEach(visual => {
+      Object.values(visual).forEach(mesh => {
+        mesh.visible = false;
+        mesh.scale.set(0, 0, 0);
+        const mat = mesh.material as THREE.Material & { opacity?: number };
+        if (typeof mat.opacity === "number") mat.opacity = 0;
+      });
+    });
+    pipeGlowMap.current.forEach(mesh => { mesh.visible = false; (mesh.material as THREE.MeshBasicMaterial).opacity = 0; });
+    flowParticleMap.current.forEach(particles => particles.forEach((mesh, index) => { mesh.visible = index === 0; }));
     pipeMeshMap.current.forEach(m => { if (m.material) { const mat = m.material as THREE.MeshStandardMaterial; mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; } });
   }, []);
 
-  useEffect(() => { if (!dynPlay || dynPhase !== "running" || timeStepCount === 0) return; const t = setInterval(() => { setDynStep(p => { const n = p + 1; if (n >= timeStepCount - 1) { setDynPlay(false); setDynPhase("done"); return timeStepCount - 1; } return n; }); }, 140 / dynSpd); return () => clearInterval(t); }, [dynPlay, dynSpd, dynPhase, timeStepCount]);
+  const seekToStep = useCallback((step: number) => {
+    const next = Math.max(0, Math.min(Math.max(0, timeStepCount - 1), Math.round(step)));
+    playheadRef.current = next;
+    setDynStep(next);
+  }, [timeStepCount]);
 
+  // 连续播放游标：相邻 SWMM 报告时间步之间由 Three.js 渲染循环插值，React 只在跨整数步时更新 UI。
   useEffect(() => {
-    if (!dynRes?.nodes || !dataRef.current) return;
-    const ts = dynRes, nodeData = ts.nodes, linkData = ts.links;
-    const ve = vertEx;
-    let minElev = Infinity; dataRef.current.nodes.forEach((n: Node3D) => { if (n.invert < minElev) minElev = n.invert; });
-    const elevY = (e: number) => (e - minElev) * ve;
-
-    nodeGeomMap.current.forEach(({ group, invertY, groundY }, nid) => {
-      const nd = nodeData[nid];
-      const depths = nd?.depth; const depth = (depths && dynStep < depths.length) ? depths[dynStep] : 0;
-      const ponding = nd?.pondedVolume?.[dynStep] ?? 0;
-      const nodeInfo = dataRef.current.nodes.find((n: Node3D) => n.id === nid);
-      const isOverflow = nodeInfo && depth > (nodeInfo.maxD || 99);
-
-      let wm = waterMeshMap.current.get(nid);
-      // 先清理热力图/溢流环(含 early-return 路径,防止水深回落后圆盘残留)
-      const childrenToRemove = group.children.filter(c => (c as any).userData?.overflowRing);
-      childrenToRemove.forEach(c => { group.remove(c); const m = c as THREE.Mesh; if (m.geometry && m.geometry !== SHARED.heatDisc && m.geometry !== SHARED.overflowRing && m.geometry !== SHARED.overflowDisc) m.geometry.dispose(); const mat = m.material as THREE.Material | undefined; if (mat) mat.dispose(); });
-      if (depth < 0.003) { if (wm) wm.visible = false; return; }
-      if (!wm) {
-        const wGeom = SHARED.waterCyl; // 共享几何(性能:推演不再每步 new Geometry)
-        const wMat = new THREE.MeshStandardMaterial({ color: "#3388cc", roughness: 0.1, metalness: 0.05, emissive: "#001122", emissiveIntensity: 0.2, transparent: true, opacity: 0.7, depthWrite: true });
-        (wMat as any)._isWater = true;
-        wm = new THREE.Mesh(wGeom, wMat); wm.position.set(0, invertY, 0); wm.scale.y = 0; (wm as any).userData = { water: true };
-        group.add(wm); waterMeshMap.current.set(nid, wm);
-      }
-      wm.visible = true;
-      // 雨强预览:拖动滑条时按比例缩放目标高度;否则真实仿真值(过渡由 animate 插值实现)
-      const previewRatio = rainPreview != null ? Math.max(0.05, rainPreview / simIBaseRef.current) : 1;
-      const wh = Math.max(0.03, depth * ve) * previewRatio;
-      (wm as any).userData.targetScaleY = wh;
-      (wm as any).userData.targetY = invertY + wh / 2;
-      const m = wm.material as THREE.MeshStandardMaterial;
-      if (ponding > 0.01 || isOverflow) { m.color.set("#e04040"); m.emissive.set("#300000"); m.emissiveIntensity = 0.4; }
-      else { const ratio = Math.min(1, depth / (ts.summary?.maxDepth?.value || 1)); m.color.set(new THREE.Color().setHSL(0.57 - ratio * 0.12, 0.7, 0.35 + ratio * 0.2)); m.emissive.set("#001122"); m.emissiveIntensity = 0.15 + ratio * 0.2; }
-
-      // 积水热力圆盘:推演有结果后自动显示(蓝→红随水深),无需用户选模式
-      if (showingResults && depth > 0.02) {
-        const maxD = ts.summary?.maxDepth?.value || 1;
-        const ratio = Math.min(1, depth / Math.max(0.05, maxD));
-        const ringGeom = SHARED.heatDisc; // 共享几何
-        const hue = 0.62 - ratio * 0.62; // 蓝→红
-        const sat = 0.85;
-        const ring = new THREE.Mesh(ringGeom, new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(Math.max(0, hue), sat, 0.55), transparent: true, opacity: 0.28 + ratio * 0.3, depthWrite: false }));
-        ring.position.y = groundY + 0.01; ring.rotation.x = -Math.PI / 2; (ring as any).userData = { overflowRing: true };
-        group.add(ring);
-      }
-      if (ponding > 0.01) {
-        // 溢流积水圆盘:半径/透明度随地表积水体积实时涨(共享几何+scale 缩放,避免每步 new Geometry 的 GC 抖动)
-        const pDisc = new THREE.Mesh(SHARED.overflowDisc, new THREE.MeshBasicMaterial({ color: "#3aa0ff", transparent: true, opacity: Math.min(0.45, 0.15 + ponding * 0.02), depthWrite: false }));
-        pDisc.position.y = groundY + 0.015; pDisc.rotation.x = -Math.PI / 2;
-        const r = Math.min(1.6, 0.35 + ponding * 0.08);
-        pDisc.scale.set(r, r, 1);
-        (pDisc as any).userData = { overflowRing: true };
-        group.add(pDisc);
-        // 溢流节点红环(静态环 + 闪烁由 animate 统一驱动)
-        const ringGeom = SHARED.overflowRing; // 共享几何
-        const ring = new THREE.Mesh(ringGeom, new THREE.MeshStandardMaterial({ color: "#e04040", emissive: "#300000", emissiveIntensity: 0.6, roughness: 0.1 }));
-        ring.position.y = groundY; ring.rotation.x = Math.PI / 2; (ring as any).userData = { overflowRing: true };
-        group.add(ring);
-      }
-    });
-
-    pipeMeshMap.current.forEach((mesh, pid) => {
-      const ld = linkData[pid]; const flows = ld?.flow; const flow = (flows && dynStep < flows.length) ? flows[dynStep] : 0;
-      const cap = ld?.capacity; const capacity = (cap && dynStep < cap.length) ? cap[dynStep] : 0;
-      const absFlow = Math.abs(flow); const mat = mesh.material as THREE.MeshStandardMaterial;
-      // 推演后管道自动按流量着色(随水流变化);静态/配置阶段统一低饱和蓝灰
-      if (!showingResults || absFlow < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
-      else {
-        const maxF = ts.summary?.maxFlow?.value || 0.1; const ratio = Math.min(1, absFlow / maxF);
-        const _st = getPipeLoadState(capacity); const isFull = _st === "nearFull" || _st === "full";
-        mat.color.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.4 + ratio * 0.25));
-        mat.emissive.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
-        mat.emissiveIntensity = isFull ? 0.5 : 0.08 + ratio * 0.4;
-      }
-      // 水流溯源高亮:上游蓝/下游青(选中管道本身保持白亮),优先级高于 Δ 高亮
-      const tr = traceRef.current;
-      if (tr && selected?.type === "pipe") {
-        if (tr.up.includes(pid)) { mat.color.set("#1e5bbf"); mat.emissive.set("#0c2a66"); mat.emissiveIntensity = 0.55; }
-        else if (tr.down.includes(pid)) { mat.color.set("#1f8a8a"); mat.emissive.set("#0c3d3d"); mat.emissiveIntensity = 0.55; }
-        else if (pid === selected.data.id) { mat.color.set("#ffffff"); mat.emissive.set("#666666"); mat.emissiveIntensity = 0.3; }
-        else { mat.color.set("#2a2f38"); mat.emissive.set("#000000"); mat.emissiveIntensity = 0; }
+    if (!dynPlay || dynPhase !== "running" || timeStepCount <= 0) return;
+    let raf = 0;
+    let last = performance.now();
+    const stepDurationMs = 340; // 1×：每个 5min 报告步约 340ms，便于观察状态变化。
+    const tick = (now: number) => {
+      const elapsed = Math.min(120, Math.max(0, now - last));
+      last = now;
+      const end = timeStepCount - 1;
+      playheadRef.current = Math.min(end, playheadRef.current + (elapsed * dynSpd) / stepDurationMs);
+      const integerStep = Math.floor(playheadRef.current);
+      setDynStep(previous => previous === integerStep ? previous : integerStep);
+      if (playheadRef.current >= end) {
+        playheadRef.current = end;
+        setDynStep(end);
+        setDynPlay(false);
+        setDynPhase("done");
         return;
       }
-      // 切方案 Δ 高亮:effect 统一应用(未被重着色覆盖),until 后自然过期
-      const hl = highlightRef.current;
-      if (hl && Date.now() < hl.until) {
-        const hit = hl.top.find(([id]) => id === pid);
-        if (hit) {
-          const dv = hit[1];
-          mat.color.set(dv < 0 ? "#2e7d32" : "#e65100");
-          mat.emissive.set(dv < 0 ? "#0f3d13" : "#5a2500");
-          mat.emissiveIntensity = 0.65;
-        }
-      }
-      // 阀门状态着色:紫色(开度越小越深紫),优先级最高
-      const vk = valveDraft[pid] ?? valves[pid];
-      if (vk != null) {
-        const v = Math.max(0, Math.min(1, vk));
-        mat.color.set(new THREE.Color().setHSL(0.75, 0.65, 0.2 + v * 0.35));
-        mat.emissive.set(new THREE.Color().setHSL(0.75, 0.8, 0.06 + v * 0.16));
-        mat.emissiveIntensity = 0.55;
-      }
-    });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [dynPlay, dynSpd, dynPhase, timeStepCount]);
 
-    // 选中白亮
-    // (蓄水设施已按 docx 意见移除)
-  }, [dynStep, dynRes, vertEx, showingResults, selected, rainPreview, valves, valveDraft]);
+  useEffect(() => {
+    playheadRef.current = 0;
+    setDynStep(0);
+  }, [dynRes?.simulationId]);
+
+  // 暂停时吸附到当前报告步，确保右侧真实数值与三维画面完全对应。
+  useEffect(() => {
+    if (!dynPlay && (dynPhase === "paused" || dynPhase === "done")) playheadRef.current = dynStep;
+  }, [dynPlay, dynPhase, dynStep]);
 
   useEffect(() => { if (mode !== "dynamic") clearWaterMeshes(); }, [mode, clearWaterMeshes]);
 
@@ -1317,6 +1464,7 @@ export default function SandboxPage() {
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
     if (traceTimerRef.current) clearTimeout(traceTimerRef.current);
     if (valveTimerRef.current) clearTimeout(valveTimerRef.current);
+    if (timeChangeLabelTimerRef.current) clearTimeout(timeChangeLabelTimerRef.current);
   }, []);
 
   // 默认横截面管道:当前时间步充满度最大的管道(用户未选中管道时展示,互动性增强)
@@ -1363,33 +1511,16 @@ export default function SandboxPage() {
       return [...seen];
     };
     traceRef.current = { up: reach(selected.data.from, "up"), down: reach(selected.data.to, "down") };
-    // 5s 后清除溯源并手动恢复全部管道材质(按当前流量色,effect 同款公式;trace 分支曾把非溯源管道涂暗,必须全量恢复)
+    // 5s 后清除溯源；主渲染循环会在下一帧恢复 depthFraction 对应的状态色。
     traceTimerRef.current = setTimeout(() => {
       traceRef.current = null; traceTimerRef.current = null;
-      const s = kbState.current;
-      const maxF = s.dynRes?.summary?.maxFlow?.value || 0.1;
-      pipeMeshMap.current.forEach((m, pid) => {
-        const mat = m.material as THREE.MeshStandardMaterial;
-        const ld = (s.dynRes as any)?.links?.[pid];
-        const flows = ld?.flow; const caps = ld?.capacity;
-        const flow = (flows && s.dynStep < flows.length) ? flows[s.dynStep] : 0;
-        const capacity = (caps && s.dynStep < caps.length) ? caps[s.dynStep] : 0;
-        if (Math.abs(flow) < 0.0005) { mat.color.set(PIPE_COLOR); mat.emissive.set(PIPE_EMISSIVE); mat.emissiveIntensity = 0.08; }
-        else {
-          const _st = getPipeLoadState(capacity); const isFull = _st === "nearFull" || _st === "full";
-          const ratio = Math.min(1, Math.abs(flow) / maxF);
-          mat.color.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.4 + ratio * 0.25));
-          mat.emissive.set(new THREE.Color().setHSL(isFull ? 0.05 : 0.55 - ratio * 0.35, 0.7, 0.08 + ratio * 0.12));
-          mat.emissiveIntensity = isFull ? 0.5 : 0.08 + ratio * 0.4;
-        }
-      });
     }, 5000);
   }, [selected]);
 
   // 键盘快捷键:空格 = 播放/暂停,←/→ = 步进(仅动态模式且有结果,且焦点不在输入控件)
   // 用 ref 保存最新状态,监听器只绑定一次,避免推演播放时每步重建
-  const kbState = useRef({ mode, dynRes, timeStepCount, dynPhase, dynPlay, dynStep });
-  kbState.current = { mode, dynRes, timeStepCount, dynPhase, dynPlay, dynStep };
+  const kbState = useRef({ mode, dynRes, timeStepCount, dynPhase, dynPlay, dynStep, vertEx, rainPreview, selected, valves, valveDraft });
+  kbState.current = { mode, dynRes, timeStepCount, dynPhase, dynPlay, dynStep, vertEx, rainPreview, selected, valves, valveDraft };
   // 悬停 tooltip 读取最新仿真结果(初始化 effect 闭包需 ref 而非 state)
   const dynResRef = useRef<any>(null);
   dynResRef.current = dynRes;
@@ -1399,9 +1530,9 @@ export default function SandboxPage() {
       if (t && t instanceof Element && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable || !!t.closest("button, [role=button], a, [tabindex]"))) return;
       const s = kbState.current;
       if (s.mode !== "dynamic" || !s.dynRes?.ok || s.timeStepCount <= 0) return;
-      if (e.code === "Space") { e.preventDefault(); if (s.dynPhase === "running") { setDynPlay(false); setDynPhase("paused"); } else if (s.dynPhase === "paused" || s.dynPhase === "ready" || s.dynPhase === "done") { if (s.dynPhase === "done" && s.dynStep >= s.timeStepCount - 1) setDynStep(0); setDynPlay(true); setDynPhase("running"); } }
-      else if (e.key === "ArrowLeft") { e.preventDefault(); setDynStep(v => Math.max(0, v - 1)); if (s.dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
-      else if (e.key === "ArrowRight") { e.preventDefault(); setDynStep(v => Math.min(s.timeStepCount - 1, v + 1)); if (s.dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
+      if (e.code === "Space") { e.preventDefault(); if (s.dynPhase === "running") { setDynPlay(false); setDynPhase("paused"); } else if (s.dynPhase === "paused" || s.dynPhase === "ready" || s.dynPhase === "done") { if (s.dynPhase === "done" && s.dynStep >= s.timeStepCount - 1) { playheadRef.current = 0; setDynStep(0); } setDynPlay(true); setDynPhase("running"); } }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); const next = Math.max(0, s.dynStep - 1); playheadRef.current = next; setDynStep(next); if (s.dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
+      else if (e.key === "ArrowRight") { e.preventDefault(); const next = Math.min(s.timeStepCount - 1, s.dynStep + 1); playheadRef.current = next; setDynStep(next); if (s.dynPlay) { setDynPlay(false); setDynPhase("paused"); } }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1432,6 +1563,41 @@ export default function SandboxPage() {
   const optimizedResult = resultScenario.mode === "optimize" && resultScenario.rainfall === comparisonRainfallKey ? dynRes : null;
   const baselineMetrics = useMemo(() => deriveHydroMetrics(baselineResult, dataRef.current), [baselineResult]);
   const optimizedMetrics = useMemo(() => lidRedistApplied ? deriveHydroMetrics(optimizedResult, dataRef.current) : null, [optimizedResult, lidRedistApplied]);
+  const keyMoments = useMemo(() => {
+    const count = dynRes?.timestamps?.length || 0;
+    if (!count) return [] as Array<{ key: string; label: string; idx: number; color: string }>;
+    const moments: Array<{ key: string; label: string; idx: number; color: string }> = [];
+    const scenario = scnOf(comparisonRainfallKey);
+    const mapRainIndex = (idx: number) => Math.round((idx / Math.max(1, (scenario?.ts?.length || 1) - 1)) * (count - 1));
+    if (scenario?.ts?.length) {
+      const peak = scenario.ts.reduce((best, value, index, all) => value > all[best] ? index : best, 0);
+      moments.push({ key: "rain-peak", label: "降雨峰值", idx: mapRainIndex(peak), color: "#0d9488" });
+    }
+    let firstPond = Infinity, firstFull = Infinity, maxDepthStep = 0, maxDepthValue = -Infinity, firstActive = Infinity;
+    for (const node of Object.values(dynRes.nodes || {}) as any[]) {
+      const depths = node?.depth || [], ponded = node?.pondedVolume || [];
+      for (let i = 0; i < Math.max(depths.length, ponded.length); i++) {
+        const depth = Number(depths[i]) || 0;
+        const pond = Number(ponded[i]) || 0;
+        if (depth > 0.003) firstActive = Math.min(firstActive, i);
+        if (pond > 0.001) firstPond = Math.min(firstPond, i);
+        if (depth > maxDepthValue) { maxDepthValue = depth; maxDepthStep = i; }
+      }
+    }
+    for (const link of Object.values(dynRes.links || {}) as any[]) {
+      const fractions = link?.depthFraction || [];
+      for (let i = 0; i < fractions.length; i++) if ((Number(fractions[i]) || 0) >= RUN_LOAD.full) { firstFull = Math.min(firstFull, i); break; }
+    }
+    if (Number.isFinite(firstPond)) moments.push({ key: "first-pond", label: "首次积水", idx: firstPond, color: "#e11d48" });
+    if (Number.isFinite(firstFull)) moments.push({ key: "first-full", label: "首次满管", idx: firstFull, color: "#ea580c" });
+    if (maxDepthValue > 0) moments.push({ key: "max-depth", label: "最大水深", idx: maxDepthStep, color: "#7c3aed" });
+    const firstRain = scenario?.ts?.findIndex(value => value >= 1) ?? -1;
+    const mappedRain = firstRain >= 0 ? mapRainIndex(firstRain) : Infinity;
+    const start = Math.max(0, Math.min(mappedRain, firstActive, firstPond) - 3);
+    moments.push({ key: "key-start", label: "关键过程起点", idx: Number.isFinite(start) ? start : 0, color: "#2563eb" });
+    return moments.sort((a, b) => a.idx - b.idx);
+  }, [dynRes, comparisonRainfallKey]);
+  const keyStartStep = keyMoments.find(moment => moment.key === "key-start")?.idx ?? 0;
   const runoffComparisonOption = useMemo(() => {
     const scenario = scnOf(comparisonRainfallKey);
     const timeValues: number[] = baselineResult?.timestamps || optimizedResult?.timestamps || [];
@@ -1455,11 +1621,11 @@ export default function SandboxPage() {
       ],
       series: [
         { name: "降雨过程", type: "bar", yAxisIndex: 1, data: rainfall, barMaxWidth: 5, itemStyle: { color: "#14b8a6", opacity: 0.34 } },
-        { name: "现状基准", type: "line", data: baselineMetrics?.runoffSeries || [], smooth: false, showSymbol: false, lineStyle: { color: "#94a3b8", width: 1.8 } },
+        { name: "现状基准", type: "line", data: baselineMetrics?.runoffSeries || [], smooth: false, showSymbol: false, lineStyle: { color: "#94a3b8", width: 1.8 }, markLine: { silent: true, symbol: ["none", "none"], label: { show: true, formatter: "当前", color: "#1d4ed8", fontSize: 9 }, lineStyle: { color: "#2563eb", width: 1.5 }, data: categories.includes(currentTimeLabel) ? [{ xAxis: currentTimeLabel }] : [] } },
         { name: "海绵优化", type: "line", data: optimizedMetrics?.runoffSeries || emptyOptimized, smooth: false, showSymbol: false, connectNulls: false, lineStyle: { color: "#2563eb", width: 2.2 } },
       ],
     };
-  }, [comparisonRainfallKey, baselineResult, optimizedResult, baselineMetrics, optimizedMetrics]);
+  }, [comparisonRainfallKey, baselineResult, optimizedResult, baselineMetrics, optimizedMetrics, currentTimeLabel]);
   const representativePipeId = selected?.type === "pipe" && dynRes?.links?.[selected.data.id]
     ? selected.data.id
     : (representativeSystemPipe?.id || autoPipeId);
@@ -1502,8 +1668,53 @@ export default function SandboxPage() {
     ev.sort((a, b) => a.idx - b.idx);
     setEvents(ev);
   }, [dynRes]);
+  // 当前步与前一步的真实数据差值：只显示显著变化 Top5，标签 1.8s 后淡出/被下一步替换。
+  useEffect(() => {
+    if (!dynRes?.links || !dynRes?.nodes || dynStep <= 0) { setTimeChangeLabels([]); return; }
+    const now = performance.now();
+    const previous = dynStep - 1;
+    const candidates: Array<TimeChangeLabel & { score: number }> = [];
+    for (const [id, node] of Object.entries(dynRes.nodes as Record<string, any>)) {
+      const depthNow = Number(node?.depth?.[dynStep]) || 0;
+      const depthBefore = Number(node?.depth?.[previous]) || 0;
+      const pondNow = Number(node?.pondedVolume?.[dynStep]) || 0;
+      const pondBefore = Number(node?.pondedVolume?.[previous]) || 0;
+      const startedPonding = pondNow > 0.001 && pondBefore <= 0.001;
+      const drained = pondNow <= 0.001 && pondBefore > 0.001;
+      if (startedPonding || drained) {
+        nodeRippleUntilRef.current.set(id, { until: now + 1200, kind: startedPonding ? "pond" : "drain" });
+        candidates.push({ key: `${dynStep}-node-${id}`, id, kind: "node", text: startedPonding ? "开始积水" : "积水消退", color: startedPonding ? "#ff5a3d" : "#0ea5b7", score: 20 });
+        continue;
+      }
+      const pondDelta = pondNow - pondBefore;
+      const depthDelta = depthNow - depthBefore;
+      if (Math.abs(pondDelta) >= Math.max(0.01, visualStatsRef.current.pondingReference * 0.025)) {
+        candidates.push({ key: `${dynStep}-node-${id}`, id, kind: "node", text: `积水 ${pondDelta >= 0 ? "↑" : "↓"}${Math.abs(pondDelta).toFixed(2)} m³`, color: pondDelta >= 0 ? "#f97316" : "#0ea5b7", score: 5 + Math.abs(pondDelta) / visualStatsRef.current.pondingReference });
+      } else if (Math.abs(depthDelta) >= Math.max(0.008, visualStatsRef.current.depthReference * 0.012)) {
+        candidates.push({ key: `${dynStep}-node-${id}`, id, kind: "node", text: `水深 ${depthDelta >= 0 ? "↑" : "↓"}${Math.abs(depthDelta).toFixed(2)} m`, color: depthDelta >= 0 ? "#2563eb" : "#0ea5b7", score: Math.abs(depthDelta) / visualStatsRef.current.depthReference });
+      }
+    }
+    for (const [id, link] of Object.entries(dynRes.links as Record<string, any>)) {
+      const fractionNow = Number(link?.depthFraction?.[dynStep]) || 0;
+      const fractionBefore = Number(link?.depthFraction?.[previous]) || 0;
+      const stateNow = getPipeLoadState(fractionNow);
+      const stateBefore = getPipeLoadState(fractionBefore);
+      if (stateNow !== stateBefore) {
+        pipeTransitionUntilRef.current.set(id, now + 1800);
+        candidates.push({ key: `${dynStep}-pipe-${id}`, id, kind: "pipe", text: stateNow === "normal" ? "恢复正常" : `进入${pipeLoadLabel(fractionNow)}`, color: PIPE_VISUAL[stateNow].glow, score: 15 + Math.abs(fractionNow - fractionBefore) });
+      } else if (Math.abs(fractionNow - fractionBefore) >= 0.035) {
+        const delta = (fractionNow - fractionBefore) * 100;
+        candidates.push({ key: `${dynStep}-pipe-${id}`, id, kind: "pipe", text: `充满度 ${delta >= 0 ? "↑" : "↓"}${Math.abs(delta).toFixed(0)}%`, color: delta >= 0 ? "#f59e0b" : "#0ea5b7", score: Math.abs(delta) / 100 });
+      }
+    }
+    const labels = candidates.sort((a, b) => b.score - a.score).slice(0, 5).map(({ score: _score, ...label }) => label);
+    setTimeChangeLabels(labels);
+    if (timeChangeLabelTimerRef.current) clearTimeout(timeChangeLabelTimerRef.current);
+    if (labels.length) timeChangeLabelTimerRef.current = setTimeout(() => setTimeChangeLabels([]), 1800);
+  }, [dynRes, dynStep]);
+
   const jumpToEvent = (e: { idx: number; id: string; kind: "node" | "pipe" }) => {
-    setDynStep(e.idx); setDynPlay(false);
+    seekToStep(e.idx); setDynPlay(false); setDynPhase("paused");
     if (e.kind === "pipe") { jumpToObject(e.id, "pipe"); const m = pipeMeshMap.current.get(e.id); if (m && selRef.current !== m) { if (selRef.current) resetHL(selRef.current); selRef.current = m; hlObj(m); } setSelected({ type: "pipe", data: { ...((pipeMeshMap.current.get(e.id) as any)?.userData?.data || {}), id: e.id } }); }
     else { jumpToObject(e.id, "node"); const ng = nodeGeomMap.current.get(e.id); if (ng && selRef.current !== ng.group) { if (selRef.current) resetHL(selRef.current); selRef.current = ng.group; hlObj(ng.group); } setSelected({ type: "node", data: { ...((nodeGeomMap.current.get(e.id) as any)?.group?.userData?.data || {}), id: e.id } }); }
   };
@@ -1534,6 +1745,8 @@ export default function SandboxPage() {
         .sandbox-dynamic-fonts [class~="leading-3"] { line-height: 1.4 !important; }
         .sandbox-dynamic-fonts [class~="leading-4"] { line-height: 1.45 !important; }
         .sandbox-dynamic-fonts [class~="leading-5"] { line-height: 1.5 !important; }
+        @keyframes sandbox-change-label { 0% { opacity: 0; transform: translateY(4px) scale(.96); } 12% { opacity: 1; transform: translateY(0) scale(1); } 78% { opacity: 1; } 100% { opacity: 0; transform: translateY(-5px) scale(.98); } }
+        .sandbox-change-label { animation: sandbox-change-label 1.8s ease-out forwards; }
       `}</style>
       {/* ── Top bar ── */}
       {mode === "dynamic" ? <header className="relative z-30 flex h-16 shrink-0 items-center gap-1 border-b border-slate-200 bg-white px-2 text-[11px] shadow-sm sm:gap-2 sm:px-3 lg:gap-3 lg:px-4">
@@ -1659,6 +1872,24 @@ export default function SandboxPage() {
           <div className="mt-0.5 text-[8px] text-slate-500">{stats.scs} 汇水区 · {stats.nodes} 节点 · {stats.pipes} 管段</div>
           <div className="mt-0.5 text-[7px] text-slate-400">拖动旋转 · 滚轮缩放 · 点击对象查看响应</div>
         </div>
+        {mode === "dynamic" && !!dynRes?.ok && (
+          <div className="pointer-events-auto absolute right-3 top-3 z-[6] w-[210px] rounded-lg border border-slate-200 bg-white/94 px-3 py-2 text-[8px] shadow-sm backdrop-blur">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-slate-800">动态响应图例</span>
+              <div className="flex rounded border border-slate-200 bg-slate-50 p-0.5" aria-label="视觉增强强度">
+                {(["weak", "standard", "strong"] as VisualStrength[]).map(level => <button key={level} onClick={() => setVisualStrength(level)} className={`rounded px-1.5 py-0.5 ${visualStrength === level ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-white"}`}>{level === "weak" ? "弱" : level === "standard" ? "标准" : "强"}</button>)}
+              </div>
+            </div>
+            <div className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-1 text-slate-600">
+              {([
+                ["normal", "▬ 正常"], ["medium", "▬ 中等"], ["high", "▰ 高负荷"], ["nearFull", "▰ 接近满管"], ["full", "▰ 满管"],
+              ] as Array<[PipeLoadState, string]>).map(([state, label]) => <span key={state} className="flex items-center gap-1"><i className="h-1.5 w-4 rounded" style={{ backgroundColor: PIPE_VISUAL[state].color, boxShadow: state === "high" || state === "nearFull" || state === "full" ? `0 0 5px ${PIPE_VISUAL[state].glow}` : undefined }} />{label}</span>)}
+              <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-blue-500" />水柱</span>
+              <span className="flex items-center gap-1"><i className="h-3 w-3 rounded-full border-2 border-red-500" />积水/溢流</span>
+            </div>
+            <div className="mt-1.5 border-t border-slate-100 pt-1 text-[7px] leading-3 text-slate-400">3D 高度、半径和光效已视觉增强；面板数值与图表仍为真实 SWMM 结果。</div>
+          </div>
+        )}
         {/* 推演等待:轻量半透明层覆盖在 3D 之上,3D 保留可见;仅展示已等待时间,不伪造百分比进度 */}
         {dynPhase === "loading" && (
           <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center">
@@ -1674,6 +1905,11 @@ export default function SandboxPage() {
         {deltaLabels.map(l => (
           <div key={l.id} ref={el => { if (!el) return; let it = deltaLabelsRef.current.find(x => x.id === l.id); if (!it) { it = { id: l.id, el: null }; deltaLabelsRef.current.push(it); } it.el = el; }} className="absolute hidden z-30 pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: 0, top: 0 }}>
             <div className="bg-black/80 border border-gray-600 rounded px-1 py-0.5 text-[10px] font-bold shadow" style={{ color: l.color }}>{l.text}</div>
+          </div>
+        ))}
+        {timeChangeLabels.map(label => (
+          <div key={label.key} ref={el => { if (!el) return; let item = timeChangeLabelsRef.current.find(x => x.key === label.key); if (!item) { item = { key: label.key, el: null }; timeChangeLabelsRef.current.push(item); } item.el = el; }} className="absolute hidden z-30 pointer-events-none -translate-x-1/2 -translate-y-full" style={{ left: 0, top: 0 }}>
+            <div className="sandbox-change-label rounded-md border border-white/70 bg-slate-950/90 px-2 py-1 text-[10px] font-bold shadow-lg" style={{ color: label.color }}>{label.kind === "pipe" ? "▬ " : "◆ "}{label.text}</div>
           </div>
         ))}
       </div>
@@ -2041,7 +2277,7 @@ export default function SandboxPage() {
                     {(valves[selected.data.id] != null && valveDraft[selected.data.id] == null) && <div className="mt-0.5 text-[9px] leading-3 text-blue-500">已生效，拖动调整后松手重新仿真</div>}
                   </div>}
                 </>)}
-                <div className="pt-0.5 text-[8px] text-slate-400">代表性管段剖面显示在右侧“典型管段响应”。</div>
+                <div className="pt-1 text-[8px] leading-3 text-slate-400">面板数值为真实 SWMM 结果；3D 水柱高度、积水半径与光效经过视觉增强。代表性管段剖面显示在“典型管段响应”。</div>
               </div>
             )}
           </aside>
@@ -2105,12 +2341,22 @@ export default function SandboxPage() {
             </div>
           </div>}
 
-          {!bottomCollapsed && <div className="mt-2 flex min-w-0 items-center gap-2 border-t border-slate-100 pt-2">
-            <span className="w-12 shrink-0 text-right font-mono text-[10px] font-semibold text-slate-700">{currentTimeLabel}</span>
-            <input type="range" min={0} max={timeStepCount - 1} value={dynStep} onChange={e => { setDynStep(+e.target.value); if (dynPlay) { setDynPlay(false); setDynPhase("paused"); } }} title="拖动查看任意时刻" className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-slate-200 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-600" />
-            <select value={dynSpd} onChange={e => setDynSpd(+e.target.value)} className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-1 text-[9px] text-slate-600"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={5}>5×</option></select>
-            {dynPhase === "running" ? <button onClick={() => { setDynPlay(false); setDynPhase("paused"); }} className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-semibold text-amber-700">暂停</button> : <button onClick={() => { if (dynStep >= timeStepCount - 1) setDynStep(0); setDynPlay(true); setDynPhase("running"); }} className="shrink-0 rounded-md bg-blue-600 px-2 py-1 text-[9px] font-semibold text-white">播放</button>}
-            <span className="shrink-0 font-mono text-[8px] text-slate-400">{fmtTime(((dynRes.timestamps?.[dynRes.timestamps.length - 1]) as number) ?? 0)}</span>
+          {!bottomCollapsed && <div className="mt-2 border-t border-slate-100 pt-2">
+            <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[8px]">
+              <button onClick={() => { seekToStep(keyStartStep); setDynPlay(false); setDynPhase("paused"); }} className="rounded border border-blue-200 bg-blue-50 px-2 py-0.5 font-semibold text-blue-700 hover:bg-blue-100">跳到关键时段</button>
+              {keyMoments.filter(moment => moment.key !== "key-start").map(moment => <button key={moment.key} onClick={() => { seekToStep(moment.idx); setDynPlay(false); setDynPhase("paused"); }} title={`${moment.label} · ${fmtTime(dynRes.timestamps?.[moment.idx] ?? 0)}`} className="flex items-center gap-1 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-slate-600 hover:border-blue-200 hover:text-blue-700"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: moment.color }} />{moment.label}</button>)}
+              <span className="ml-auto text-slate-400">◆ 标记均由真实时序自动识别</span>
+            </div>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="w-12 shrink-0 text-right font-mono text-[10px] font-semibold text-slate-700">{currentTimeLabel}</span>
+              <div className="relative min-w-0 flex-1 pt-2">
+                {keyMoments.filter(moment => moment.key !== "key-start").map(moment => <button key={moment.key} onClick={() => { seekToStep(moment.idx); setDynPlay(false); setDynPhase("paused"); }} title={`${moment.label} · ${fmtTime(dynRes.timestamps?.[moment.idx] ?? 0)}`} className="absolute top-0 z-10 h-3 w-1 -translate-x-1/2 rounded-full ring-1 ring-white" style={{ left: `${(moment.idx / Math.max(1, timeStepCount - 1)) * 100}%`, backgroundColor: moment.color }} />)}
+                <input type="range" min={0} max={timeStepCount - 1} value={dynStep} onChange={e => { seekToStep(+e.target.value); if (dynPlay) { setDynPlay(false); setDynPhase("paused"); } }} title="拖动查看任意时刻" className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-200 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-600" />
+              </div>
+              <select value={dynSpd} onChange={e => setDynSpd(+e.target.value)} className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-1 text-[9px] text-slate-600"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={2}>2×</option><option value={5}>5×</option></select>
+              {dynPhase === "running" ? <button onClick={() => { setDynPlay(false); setDynPhase("paused"); }} className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-semibold text-amber-700">暂停</button> : <button onClick={() => { if (dynStep >= timeStepCount - 1) seekToStep(0); setDynPlay(true); setDynPhase("running"); }} className="shrink-0 rounded-md bg-blue-600 px-2 py-1 text-[9px] font-semibold text-white">播放</button>}
+              <span className="shrink-0 font-mono text-[8px] text-slate-400">{fmtTime(((dynRes.timestamps?.[dynRes.timestamps.length - 1]) as number) ?? 0)}</span>
+            </div>
           </div>}
         </section>
       )}
