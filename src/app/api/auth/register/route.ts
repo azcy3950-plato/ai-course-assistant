@@ -53,8 +53,8 @@ export async function POST(req: NextRequest) {
     const safeRole = "student";
     const passwordHash = await hash(password, 10);
     const { rows: newUser } = await pool.query(
-      "INSERT INTO users (email, phone, password_hash, name, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, phone, name, role",
-      [type === "EMAIL" ? identifier : null, type === "PHONE" ? identifier : null, passwordHash, name, safeRole],
+      "INSERT INTO users (email, phone, password_hash, name, role) VALUES ($1, NULL, $2, $3, $4) RETURNING id, email, phone, name, role",
+      [identifier, passwordHash, name, safeRole],
     );
 
     await auditEvent("REGISTER_SUCCESS", maskIdentifier(identifier, type));

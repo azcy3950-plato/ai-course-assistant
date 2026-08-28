@@ -59,7 +59,9 @@
     "postcss": "^8.5.19",
     "tailwindcss": "^4.3.3",
     "typescript": "5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "@playwright/test": "^1.62.1",
+    "playwright": "^1.62.1"
   },
   "overrides": {
     "postcss": "$postcss",
