@@ -7,9 +7,8 @@ import { ensureAuthSchema, normalizeIdentifier, maskIdentifier, auditEvent } fro
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 /**
- * 统一登录：identifier 支持手机号或邮箱（兼容旧前端传 email 字段）。
- * 手机号注册的用户没有 email，JWT 中 email 字段回退为手机号作为账户标识，
- * 保证学习记录等按 email 关联的既有模块无需改动。
+ * 邮箱登录（兼容旧前端传 email 字段）。
+ * 短信/手机号通道已于 2026-08 停用：账号体系收敛为邮箱唯一标识。
  */
 export async function POST(req: NextRequest) {
   try {
@@ -22,8 +21,8 @@ export async function POST(req: NextRequest) {
     const password = typeof body.password === "string" ? body.password : "";
 
     const normalized = normalizeIdentifier(raw);
-    if (!normalized || !password) {
-      return NextResponse.json({ error: "请输入正确的手机号或邮箱" }, { status: 400 });
+    if (!normalized || normalized.type !== "EMAIL" || !password) {
+      return NextResponse.json({ error: "请输入正确的邮箱地址" }, { status: 400 });
     }
     const { identifier, type } = normalized;
 

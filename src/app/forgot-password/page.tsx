@@ -31,7 +31,7 @@ export default function ForgotPasswordPage() {
   const handleSend = async () => {
     setError(null);
     const v = identifier.trim();
-    if (!v) { setError("请输入手机号或邮箱"); return; }
+    if (!v) { setError("请输入邮箱地址"); return; }
     setSending(true);
     const result = await sendVerificationCode(v, "RESET_PASSWORD");
     setSending(false);
@@ -119,13 +119,13 @@ export default function ForgotPasswordPage() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-                手机号 / 邮箱
+                邮箱
               </label>
               <input
-                type="text"
+                type="email"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="请输入注册时使用的手机号或邮箱"
+                placeholder="请输入注册时使用的邮箱"
                 className={inputCls}
               />
             </div>

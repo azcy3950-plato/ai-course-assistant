@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
 
     const normalized = normalizeIdentifier(body.identifier);
-    if (!normalized || !resetToken) {
+    if (!normalized || normalized.type !== "EMAIL" || !resetToken) {
       return NextResponse.json({ error: "参数不完整" }, { status: 400 });
     }
     if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/\d/.test(newPassword)) {

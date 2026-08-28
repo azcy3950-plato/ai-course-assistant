@@ -20,8 +20,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "无效的验证码用途" }, { status: 400 });
     }
     const normalized = normalizeIdentifier(body.identifier);
-    if (!normalized) {
-      return NextResponse.json({ error: "请输入正确的手机号或邮箱" }, { status: 400 });
+    if (!normalized || normalized.type !== "EMAIL") {
+      // 短信通道已停用：仅支持邮箱验证码
+      return NextResponse.json({ error: "请输入正确的邮箱地址" }, { status: 400 });
     }
 
     const result = await sendVerificationCode({

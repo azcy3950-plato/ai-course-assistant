@@ -21,8 +21,8 @@ export async function POST(req: NextRequest) {
     const name = typeof body.name === "string" ? body.name.trim() : "";
 
     const normalized = normalizeIdentifier(raw);
-    if (!normalized) {
-      return NextResponse.json({ error: "请输入正确的手机号或邮箱" }, { status: 400 });
+    if (!normalized || normalized.type !== "EMAIL") {
+      return NextResponse.json({ error: "请输入正确的邮箱地址" }, { status: 400 });
     }
     const { identifier, type } = normalized;
     if (!code || !/^\d{6}$/.test(code)) {

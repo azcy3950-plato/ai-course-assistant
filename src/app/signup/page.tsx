@@ -5,17 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useApp } from "@/contexts/AppContext";
 
-type SignupType = "PHONE" | "EMAIL";
-
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams?.get("redirect") ?? "/";
   const { state, signup, sendVerificationCode } = useApp();
 
-  const [signupType, setSignupType] = useState<SignupType>("PHONE");
   const [name, setName] = useState("");
-  const [identifier, setIdentifier] = useState("");
+  const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -25,7 +22,6 @@ function SignupForm() {
   // 验证码发送状态
   const [sending, setSending] = useState(false);
   const [sentMasked, setSentMasked] = useState<string | null>(null);
-  const [echoCode, setEchoCode] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -40,10 +36,9 @@ function SignupForm() {
 
   const handleSendCode = async () => {
     setError(null);
-    const v = identifier.trim();
-    const invalid = signupType === "EMAIL" ? !/\S+@\S+\.\S+/.test(v) : !/^(\+?86)?1[3-9]\d{9}$/.test(v.replace(/[\s-]/g, ""));
-    if (!v || invalid) {
-      setError(signupType === "EMAIL" ? "请输入有效的邮箱地址" : "请输入有效的 11 位手机号");
+    const v = email.trim();
+    if (!v || !/\S+@\S+\.\S+/.test(v)) {
+      setError("请输入有效的邮箱地址");
       return;
     }
     setSending(true);
@@ -53,7 +48,6 @@ function SignupForm() {
       setError(result.error);
     } else {
       setSentMasked(result.masked || "");
-      setEchoCode(result.echoCode || null);
       setCountdown(result.retryAfter || 60);
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
@@ -67,9 +61,7 @@ function SignupForm() {
 
   const validate = (): string | null => {
     if (!name.trim()) return "请输入姓名";
-    const v = identifier.trim();
-    if (signupType === "EMAIL" && !/\S+@\S+\.\S+/.test(v)) return "请输入有效的邮箱地址";
-    if (signupType === "PHONE" && !/^(\+?86)?1[3-9]\d{9}$/.test(v.replace(/[\s-]/g, ""))) return "请输入有效的 11 位手机号";
+    if (!/\S+@\S+\.\S+/.test(email.trim())) return "请输入有效的邮箱地址";
     if (!/^\d{6}$/.test(code.trim())) return "请输入 6 位验证码";
     if (password.length < 8) return "密码至少 8 位";
     if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) return "密码需同时包含字母和数字";
@@ -86,7 +78,7 @@ function SignupForm() {
       return;
     }
     setLoading(true);
-    const result = await signup(identifier.trim(), signupType, code.trim(), password, name.trim());
+    const result = await signup(email.trim(), "EMAIL", code.trim(), password, name.trim());
     setLoading(false);
     if (result.error) {
       setError(result.error);
@@ -112,22 +104,6 @@ function SignupForm() {
           注册
         </h1>
 
-        {/* 注册方式切换 */}
-        <div className="flex bg-gray-100 rounded-lg p-0.5 mb-5">
-          {([["PHONE", "📱 手机号注册"], ["EMAIL", "✉️ 邮箱注册"]] as [SignupType, string][]).map(([k, l]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => { setSignupType(k); setIdentifier(""); setCode(""); setSentMasked(null); setEchoCode(null); setError(null); }}
-              className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                signupType === k ? "bg-white text-[var(--color-primary)] shadow-sm" : "text-[var(--color-text-secondary)]"
-              }`}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
-
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
             {error}
@@ -150,16 +126,16 @@ function SignupForm() {
             />
           </div>
 
-          {/* Identifier */}
+          {/* Email */}
           <div>
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-              {signupType === "PHONE" ? "手机号" : "邮箱"}
+              邮箱
             </label>
             <input
-              type={signupType === "PHONE" ? "tel" : "email"}
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              placeholder={signupType === "PHONE" ? "11 位手机号" : "your@email.com"}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="your@email.com"
               required
               className={inputCls}
             />
@@ -192,12 +168,7 @@ function SignupForm() {
             </div>
             {sentMasked && (
               <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
-                验证码已发送至 {sentMasked}（5 分钟内有效）
-              </p>
-            )}
-            {echoCode && (
-              <p className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 mt-1.5">
-                ⚠️ 开发测试模式（未配置真实短信/邮件服务）：本次验证码为 <b>{echoCode}</b>
+                验证码已发送至 {sentMasked}（5 分钟内有效，请查收邮件）
               </p>
             )}
           </div>

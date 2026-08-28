@@ -26,7 +26,7 @@ function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!identifier.trim()) { setError("请输入手机号或邮箱"); return; }
+    if (!identifier.trim()) { setError("请输入邮箱地址"); return; }
     setLoading(true);
     const result = await login(identifier.trim(), password);
     setLoading(false);
@@ -64,10 +64,10 @@ function LoginForm() {
               账号
             </label>
             <input
-              type="text"
+              type="email"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="手机号 / 邮箱"
+              placeholder="你的邮箱"
               required
               className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
             />

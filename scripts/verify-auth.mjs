@@ -1,24 +1,27 @@
 /**
- * 统一账号体系验收测试（在部署服务器上执行，覆盖提示词第 27 节 A-K 全部场景）：
+ * 邮箱账号体系验收测试（在部署服务器上执行，覆盖提示词第 27 节场景）：
  *   BASE_URL=http://127.0.0.1:3000 node --env-file=.env.local scripts/verify-auth.mjs
  *
- * 前置条件：服务端已开启演示模式（VERIFICATION_CODE_ECHO=true），
- * 否则无法取得验证码明文，测试会明确失败提示。
- * 每个用例使用独立标识符，避免触发 60 秒发送冷却；
- * J（重复注册）刻意等待冷却期结束，验证真实产品行为。
+ * 账号体系已于 2026-08 收敛为邮箱唯一（短信通道停用），本矩阵覆盖：
+ * A 邮箱验证码注册+登录 / C 邮箱找回密码全链路 / E 过期验证码 / F 错误验证码
+ * G 已使用验证码 / H 60 秒冷却 / I 防账号枚举 / K 原有账号与角色 / J 重复注册（等冷却）
+ *
+ * 前置条件：服务端已配置 SMTP（EMAIL_PROVIDER=smtp）。
+ * 真实通道下，测试邮件会发送到 TEST_EMAIL_SUFFIX 域名下（默认 @demo.test 不可收件，
+ * 运行时会提示手动输入；如需全自动，把邮箱后缀改为可收件的域名并把邮件转发到可查收邮箱）。
  * 测试产生的临时账号会在结束时自动清理。
  */
 import { Pool } from "pg";
 import readline from "node:readline/promises";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:3000";
+const EMAIL_SUFFIX = process.env.TEST_EMAIL_SUFFIX || "@demo.test";
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const ts = Date.now();
 const PASSWORD = "AuthTest123";
 const NEW_PASSWORD = "NewPass456";
-const EMAIL = `auth-a-${ts}@demo.test`;
-const PHONE = "+86138" + String(ts).slice(-8);
+const EMAIL = `auth-a-${ts}${EMAIL_SUFFIX}`;
 const createdUsers = [];
 const results = [];
 let failed = 0;
@@ -44,9 +47,9 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 
 async function sendCode(identifier, purpose) {
   const r = await post("/api/auth/verification/send", { identifier, purpose });
-  // 真实通道（已接入 SMTP/阿里云短信）：验证码发到邮箱/手机，需操作者查收后输入
+  // 真实通道：验证码发送到邮箱，需操作者查收后输入
   if (r.status === 200 && !r.data?.echoCode) {
-    const typed = await rl.question(`  请输入发送至 ${r.data?.masked} 的验证码（查收邮件/短信后输入）：`);
+    const typed = await rl.question(`  请输入发送至 ${r.data?.masked} 的验证码（查收邮件后输入）：`);
     return { ...r, data: { ...r.data, echoCode: typed.trim() } };
   }
   if (!r.data?.echoCode) throw new Error(`验证码发送失败，响应: ${JSON.stringify(r.data)}`);
@@ -76,20 +79,9 @@ async function main() {
     if (r.status === 200) createdUsers.push(EMAIL);
     r = await post("/api/auth/login", { identifier: EMAIL, password: PASSWORD });
     record("A3 邮箱登录", r.status === 200 && !!r.data?.token);
+    r = await post("/api/auth/login", { email: EMAIL, password: PASSWORD });
+    record("A4 旧 email 字段兼容登录", r.status === 200 && !!r.data?.token);
   } catch (e) { record("A 邮箱注册登录", false, e.message); }
-
-  // ── B. 手机号验证码注册 + 手机号登录 ──
-  try {
-    let r = await sendCode(PHONE, "REGISTER");
-    record("B1 手机号发送验证码", r.status === 200 && !!r.data.masked, `masked=${r.data.masked}`);
-    r = await post("/api/auth/register", { identifier: PHONE, code: r.data.echoCode, password: PASSWORD, name: "验收测试B" });
-    record("B2 手机号验证码注册", r.status === 200, r.data?.error || "");
-    if (r.status === 200) createdUsers.push(PHONE);
-    r = await post("/api/auth/login", { identifier: PHONE, password: PASSWORD });
-    record("B3 手机号登录", r.status === 200 && !!r.data?.token);
-    r = await post("/api/auth/login", { email: PHONE, password: PASSWORD });
-    record("B4 旧 email 字段兼容登录", r.status === 200 && !!r.data?.token);
-  } catch (e) { record("B 手机号注册登录", false, e.message); }
 
   // ── C. 邮箱找回密码（全链路） ──
   try {
@@ -106,21 +98,9 @@ async function main() {
     record("C5 新密码登录成功", r.status === 200 && !!r.data?.token);
   } catch (e) { record("C 邮箱找回密码", false, e.message); }
 
-  // ── D. 手机号找回密码（全链路） ──
-  try {
-    let r = await sendCode(PHONE, "RESET_PASSWORD");
-    r = await post("/api/auth/verification/verify", { identifier: PHONE, purpose: "RESET_PASSWORD", code: r.data.echoCode });
-    record("D1 手机号验证码验证", r.status === 200 && !!r.data?.resetToken);
-    const resetToken = r.data?.resetToken;
-    r = await post("/api/auth/password/reset", { identifier: PHONE, resetToken, newPassword: NEW_PASSWORD });
-    record("D2 手机号设置新密码", r.status === 200, r.data?.error || "");
-    r = await post("/api/auth/login", { identifier: PHONE, password: NEW_PASSWORD });
-    record("D3 手机号新密码登录", r.status === 200 && !!r.data?.token);
-  } catch (e) { record("D 手机号找回密码", false, e.message); }
-
   // ── E. 过期验证码（独立邮箱，直接改库模拟过期） ──
   try {
-    const eEmail = `auth-e-${ts}@demo.test`;
+    const eEmail = `auth-e-${ts}${EMAIL_SUFFIX}`;
     const r0 = await sendCode(eEmail, "RESET_PASSWORD");
     await pool.query("UPDATE verification_codes SET expires_at = now() - interval '1 minute' WHERE identifier = $1 AND purpose = 'RESET_PASSWORD' AND consumed_at IS NULL", [eEmail]);
     const r = await post("/api/auth/verification/verify", { identifier: eEmail, purpose: "RESET_PASSWORD", code: r0.data.echoCode });
@@ -130,7 +110,7 @@ async function main() {
 
   // ── F. 错误验证码（独立邮箱） ──
   try {
-    const fEmail = `auth-f-${ts}@demo.test`;
+    const fEmail = `auth-f-${ts}${EMAIL_SUFFIX}`;
     await sendCode(fEmail, "RESET_PASSWORD");
     const r = await post("/api/auth/verification/verify", { identifier: fEmail, purpose: "RESET_PASSWORD", code: "000000" });
     record("F 错误验证码拒绝", r.status === 400 && !/内部|未配置/.test(r.data?.error || ""));
@@ -139,7 +119,7 @@ async function main() {
 
   // ── G. 已使用验证码再次使用（独立邮箱） ──
   try {
-    const gEmail = `auth-g-${ts}@demo.test`;
+    const gEmail = `auth-g-${ts}${EMAIL_SUFFIX}`;
     const r0 = await sendCode(gEmail, "RESET_PASSWORD");
     const r1 = await post("/api/auth/verification/verify", { identifier: gEmail, purpose: "RESET_PASSWORD", code: r0.data.echoCode });
     const firstOk = r1.status === 200;
@@ -150,18 +130,17 @@ async function main() {
 
   // ── H. 60 秒内重复发送（独立邮箱） ──
   try {
-    const hEmail = `auth-h-${ts}@demo.test`;
+    const hEmail = `auth-h-${ts}${EMAIL_SUFFIX}`;
     const r1 = await sendCode(hEmail, "REGISTER");
     const r2 = await post("/api/auth/verification/send", { identifier: hEmail, purpose: "REGISTER" });
     record("H 60 秒内重复发送被拒", r1.status === 200 && r2.status === 429);
     await pool.query("DELETE FROM verification_codes WHERE identifier = $1", [hEmail]);
   } catch (e) { record("H 重复发送限流", false, e.message); }
 
-  // ── I. 不存在账号找回密码：防枚举（独立标识符，对比响应形状） ──
+  // ── I. 不存在账号找回密码：防枚举（对比响应形状） ──
   try {
-    const ghost = `auth-ghost-${ts}@demo.test`;
-    const real = `auth-i-real-${ts}@demo.test`;
-    // 先注册一个真实账号（REGISTER 限流键独立），保证其 RESET_PASSWORD 发送不处于冷却期
+    const ghost = `auth-ghost-${ts}${EMAIL_SUFFIX}`;
+    const real = `auth-i-real-${ts}${EMAIL_SUFFIX}`;
     const reg = await sendCode(real, "REGISTER");
     await post("/api/auth/register", { identifier: real, code: reg.data.echoCode, password: PASSWORD, name: "验收测试I" });
     createdUsers.push(real);
@@ -197,6 +176,7 @@ async function main() {
   console.log(`\n结果：${results.length - failed}/${results.length} 通过${failed ? `，${failed} 失败` : ""}`);
   await cleanup();
   console.log("临时测试账号已清理");
+  rl.close();
 }
 
 main()
@@ -204,6 +184,7 @@ main()
   .catch(async (error) => {
     console.error("测试执行异常:", error.message);
     await cleanup();
+    rl.close();
     pool.end();
     process.exitCode = 1;
   });
