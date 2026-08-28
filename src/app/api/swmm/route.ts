@@ -183,7 +183,7 @@ export function modifyLid(text: string, strategy: string | undefined): { text: s
 
 function modifyRainfall(originalInpPath: string, intensity: number, simDir: string, landcover?: string, greenLevel?: number, seriesName?: string, seriesMap?: Record<string, RainfallSeries>, lidStrategy?: string): string {
   const tempInp = join(simDir, 'model.inp');
-  let text = readFileSync(originalInpPath, 'utf-8');
+  let text = readFileSync(originalInpPath, 'latin1');
   const lines = text.split('\n');
   const result: string[] = [];
   let inTS = false;
@@ -259,7 +259,7 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
     text = out.join('\n');
   }
 
-  writeFileSync(tempInp, text, 'utf-8');
+  writeFileSync(tempInp, text, 'latin1');
   return tempInp;
 }
 
@@ -273,6 +273,7 @@ import json, sys, os, math
 from datetime import datetime
 from pyswmm import Simulation, Output
 from swmm.toolkit.shared_enum import LinkAttribute, NodeAttribute
+from swmm.toolkit import output as smo
 
 inp_path = ${JSON.stringify(tempInp)}
 out_json = ${JSON.stringify(outJson)}
@@ -363,6 +364,101 @@ with Output(out_path) as out:
     active_nodes = {nid: nd for nid, nd in nodes_data.items() if any(abs(d) > 0.0005 for d in nd["depth"])}
     active_links = {lid: ld for lid, ld in links_data.items() if any(abs(f) > 0.0005 for f in ld["flow"])}
 
+    # ── 水质(污染物)时序:底层逐时段读取,COD/TP/TN 全部来自 SWMM 真实输出 ──
+    pollutants = list(out.pollutants.keys())
+    npoll = min(3, len(pollutants))
+    smo_h = smo.init()
+    smo.open(smo_h, out_path)
+    link_idx = {name: i for i, name in enumerate(out.links)}
+    node_idx = {name: i for i, name in enumerate(out.nodes)}
+    step_count = len(times)
+    peak_pipe = {}
+    peak_node = {}
+    for lid in active_links:
+        li = link_idx.get(lid)
+        if li is None:
+            continue
+        q = {}
+        for pi in range(npoll):
+            q[pollutants[pi]] = []
+        for t in range(step_count):
+            vals = smo.get_link_result(smo_h, t, li)  # [flow,depth,vel,vol,cap,q0,q1,q2]
+            for pi in range(npoll):
+                q[pollutants[pi]].append(round(vals[5 + pi], 3))
+        links_data[lid]["quality"] = q
+        for pn in pollutants[:npoll]:
+            arr = q.get(pn) or []
+            mx = max(arr) if arr else 0.0
+            if mx > 0 and (pn not in peak_pipe or mx > peak_pipe[pn][0]):
+                peak_pipe[pn] = (mx, lid, arr.index(mx))
+    for nid in active_nodes:
+        ni = node_idx.get(nid)
+        if ni is None:
+            continue
+        q = {}
+        for pi in range(npoll):
+            q[pollutants[pi]] = []
+        for t in range(step_count):
+            vals = smo.get_node_result(smo_h, t, ni)  # [depth,head,ponded,lat,total,flood,q0,q1,q2]
+            for pi in range(npoll):
+                q[pollutants[pi]].append(round(vals[6 + pi], 3))
+        nodes_data[nid]["quality"] = q
+        for pn in pollutants[:npoll]:
+            arr = q.get(pn) or []
+            mx = max(arr) if arr else 0.0
+            if mx > 0 and (pn not in peak_node or mx > peak_node[pn][0]):
+                peak_node[pn] = (mx, nid, arr.index(mx))
+    smo.close(smo_h)
+
+    # ── 从 rpt 提取污染物质量平衡(冲刷/去除/外排/溢流),全部真实 ──
+    rpt_text = ""
+    try:
+        with open(rpt_path, 'rb') as f:
+            rpt_text = f.read().decode('latin-1', errors='ignore')
+    except Exception:
+        pass
+    def grab_rows(section, names):
+        i = rpt_text.find(section)
+        if i < 0:
+            return {}
+        j = rpt_text.find("Continuity Error", i)
+        block = rpt_text[i:j if j > 0 else i + 3000]
+        found = {}
+        for line in block.splitlines():
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            try:
+                vals = [float(x) for x in parts[-3:]]
+            except ValueError:
+                continue
+            key = " ".join(parts[:-3]).strip()
+            if key in names:
+                found[key] = vals
+        return found
+
+    def to_dict(vals):
+        return {pollutants[i]: vals[i] for i in range(min(npoll, len(vals)))}
+
+    quality_balance = {
+        "washoffKg": {}, "lidRemovalKg": {}, "initialBuildupKg": {}, "remainingBuildupKg": {},
+        "wetInflowKg": {}, "networkOutflowKg": {}, "floodingLossKg": {},
+    }
+    try:
+        runoff_q = grab_rows("Runoff Quality Continuity", {"Surface Buildup", "Surface Runoff", "BMP Removal", "Remaining Buildup"})
+        routing_q = grab_rows("Quality Routing Continuity", {"Wet Weather Inflow", "External Outflow", "Flooding Loss"})
+        quality_balance = {
+            "washoffKg": to_dict(runoff_q.get("Surface Runoff", [])),
+            "lidRemovalKg": to_dict(runoff_q.get("BMP Removal", [])),
+            "initialBuildupKg": to_dict(runoff_q.get("Surface Buildup", [])),
+            "remainingBuildupKg": to_dict(runoff_q.get("Remaining Buildup", [])),
+            "wetInflowKg": to_dict(routing_q.get("Wet Weather Inflow", [])),
+            "networkOutflowKg": to_dict(routing_q.get("External Outflow", [])),
+            "floodingLossKg": to_dict(routing_q.get("Flooding Loss", [])),
+        }
+    except Exception as e:
+        print(f'[SWMM] quality balance parse skipped: {e}')
+
     # ── Summary with complete maxDepth/maxFlow ──
     max_d_val = 0; max_d_nid = None; max_d_ts = None
     for nid, nd in active_nodes.items():
@@ -406,6 +502,19 @@ with Output(out_path) as out:
             },
             "totalNodes": len(out.nodes), "totalLinks": len(out.links),
             "activeNodes": len(active_nodes), "activeLinks": len(active_links),
+            "quality": {
+                "pollutants": pollutants[:npoll],
+                "washoffKg": quality_balance.get("washoffKg", {}),
+                "lidRemovalKg": quality_balance.get("lidRemovalKg", {}),
+                "initialBuildupKg": quality_balance.get("initialBuildupKg", {}),
+                "remainingBuildupKg": quality_balance.get("remainingBuildupKg", {}),
+                "wetInflowKg": quality_balance.get("wetInflowKg", {}),
+                "networkOutflowKg": quality_balance.get("networkOutflowKg", {}),
+                "floodingLossKg": quality_balance.get("floodingLossKg", {}),
+                "peakPipeConc": {pn: {"value": round(peak_pipe[pn][0], 3), "linkId": peak_pipe[pn][1], "step": peak_pipe[pn][2]} for pn in pollutants[:npoll] if pn in peak_pipe},
+                "peakNodeConc": {pn: {"value": round(peak_node[pn][0], 3), "nodeId": peak_node[pn][1], "step": peak_node[pn][2]} for pn in pollutants[:npoll] if pn in peak_node},
+                "source": "SWMM 5.2.4 真实水质输出(冲刷/管网浓度/去除量)",
+            },
         }
     }
 
@@ -456,7 +565,7 @@ export async function POST(req: NextRequest) {
     const landcover = ["gray", "green"].includes(body.landcover) ? body.landcover : undefined;
     // 真实设计暴雨重现期序列:3A/5A/10A/20A/50A(取自 INP [TIMESERIES]);可选,命中则按真实雨型跑
     const originalInpForSeries = join(process.cwd(), 'public', 'zijing_inp.inp');
-    const rainfallScenarios = parseRainfallSeries(readFileSync(originalInpForSeries, 'utf-8'));
+    const rainfallScenarios = parseRainfallSeries(readFileSync(originalInpForSeries, 'latin1'));
     const allowedSeries = ["3A", "5A", "10A", "20A", "50A"];
     const series = typeof body.series === "string" && allowedSeries.includes(body.series) && rainfallScenarios[body.series] ? body.series : undefined;
     // LID 优化策略(均衡/径流削减/水质/生态):海绵优化走真实 [LID_USAGE] 面积重分配,不改 %Imperv;
@@ -514,20 +623,20 @@ export async function POST(req: NextRequest) {
     // 其余参与行按策略比例等比缩放 → 四策略产出不同 [LID_USAGE] 与 SWMM 结果。lidRedist 供前端提示。
     const lidRedist = { attempted: !!lidStrategy, applied: false, blockedReason: '' as string };
     if (lidStrategy) {
-      const lidApplied = modifyLid(readFileSync(tempInp, 'utf-8'), lidStrategy);
+      const lidApplied = modifyLid(readFileSync(tempInp, 'latin1'), lidStrategy);
       lidRedist.attempted = true;
       lidRedist.applied = lidApplied.applied;
       if (!lidApplied.applied) {
         lidRedist.blockedReason = 'LID策略重分配因空间候选数据不足暂不应用(COVERAGES覆盖率3.1%,现状无VS植草沟);避免UI比例与INP不符';
       }
-      writeFileSync(tempInp, lidApplied.text, 'utf-8');
+      writeFileSync(tempInp, lidApplied.text, 'latin1');
     }
     // 阀门/蓄水注入:在雨强与下垫面修改后的文本上再改直径/洼地面积(失败即标记 task failed,不滞留 running 至超时)
     let affected = { valves: [] as string[], storages: [] as string[] };
     try {
       if (Object.keys(valves).length > 0 || storages.length > 0) {
-        const injected = applyValvesStorages(readFileSync(tempInp, 'utf-8'), valves, storages);
-        writeFileSync(tempInp, injected.text, 'utf-8');
+        const injected = applyValvesStorages(readFileSync(tempInp, 'latin1'), valves, storages);
+        writeFileSync(tempInp, injected.text, 'latin1');
         affected = injected.affected;
       }
     } catch (err: any) {
