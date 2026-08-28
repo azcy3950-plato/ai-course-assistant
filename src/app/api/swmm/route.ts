@@ -432,7 +432,7 @@ with Output(out_path) as out:
                 vals = [float(x) for x in parts[-3:]]
             except ValueError:
                 continue
-            key = " ".join(parts[:-3]).strip()
+            key = " ".join(p for p in parts[:-3] if p.strip(".")).strip()
             if key in names:
                 found[key] = vals
         return found
