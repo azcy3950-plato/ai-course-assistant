@@ -6,6 +6,7 @@ import { join } from 'path';
 import { execSync } from 'child_process';
 import crypto from 'crypto';
 import { applyValvesStorages, parseValveValue, applyGreenLevel } from '@/lib/swmm-inject';
+import { parseSwmmOutfallLoadingSummary, parseSwmmOutfalls, parseSwmmPollutants, summarizeSwmmQualityModel } from '@/lib/swmm-quality';
 
 // ─── Task store ───
 interface SimTask {
@@ -267,16 +268,30 @@ function modifyRainfall(originalInpPath: string, intensity: number, simDir: stri
 function runSimulation(tempInp: string, simulationId: string, simDir: string): any {
   const outJson = join(simDir, 'result.json');
   const pyFile = join(simDir, 'run.py');
+  const inpText = readFileSync(tempInp, 'utf-8');
+  const pollutantDefinitions = parseSwmmPollutants(inpText);
+  const qualityConfig = {
+    outfalls: parseSwmmOutfalls(inpText),
+    modelConfiguration: summarizeSwmmQualityModel(inpText),
+    pollutants: pollutantDefinitions.map(pollutant => ({
+      name: pollutant.name,
+      concentrationUnit: pollutant.concentrationUnit,
+      massUnit: pollutant.massUnit,
+      cmsMassRateFactor: pollutant.cmsMassRateFactor,
+    })),
+  };
 
   const pyScript = `
 import json, sys, os, math
 from datetime import datetime
 from pyswmm import Simulation, Output
 from swmm.toolkit.shared_enum import LinkAttribute, NodeAttribute
+from swmm.toolkit.output_metadata import OutputMetadata
 
 inp_path = ${JSON.stringify(tempInp)}
 out_json = ${JSON.stringify(outJson)}
 sim_dir = ${JSON.stringify(simDir)}
+quality_config = ${JSON.stringify(qualityConfig)}
 
 # Run simulation
 rpt_path = inp_path.replace('.inp', '.rpt')
@@ -359,6 +374,88 @@ with Output(out_path) as out:
             node_data["floodingLosses"].append(round(max(0, nf.get(t, 0)), 3))
         nodes_data[nid] = node_data
 
+    # ── Water quality at model outfalls ──
+    # Concentrations are read directly from the binary .out file. The system
+    # concentration is the discharge-flow-weighted concentration across every
+    # configured outfall. Instantaneous loads use the model's CMS flow units.
+    water_quality = {
+        "available": False,
+        "concentrationSource": "swmm-binary-output",
+        "loadSeriesSource": "swmm-report-step-integration",
+        "aggregation": "flow-weighted-across-outfalls",
+        "outfalls": quality_config.get("outfalls", []),
+        "modelConfiguration": quality_config.get("modelConfiguration", {}),
+        "pollutants": {},
+    }
+    configured_pollutants = quality_config.get("pollutants", [])
+    configured_outfalls = quality_config.get("outfalls", [])
+    if configured_pollutants:
+        output_pollutants = out.pollutants
+        output_pollutants_ci = {name.upper(): index for name, index in output_pollutants.items()}
+        missing_pollutants = [p["name"] for p in configured_pollutants if p["name"].upper() not in output_pollutants_ci]
+        missing_outfalls = [oid for oid in configured_outfalls if oid not in out.nodes]
+        if missing_pollutants:
+            raise RuntimeError("Pollutants missing from SWMM output: " + ",".join(missing_pollutants))
+        if missing_outfalls:
+            raise RuntimeError("Outfalls missing from SWMM output: " + ",".join(missing_outfalls))
+
+        outfall_flows = {}
+        for oid in configured_outfalls:
+            flow_values = out.node_series(oid, NodeAttribute.TOTAL_INFLOW)
+            outfall_flows[oid] = [max(0.0, float(flow_values.get(t, 0.0))) for t in times]
+
+        # OutputMetadata creates POLLUT_CONC_1..N enum members at runtime. Passing
+        # raw integers to the SWIG binding is not equivalent and can read an
+        # unrelated output slot, so always use the generated enum object.
+        OutputMetadata(out.handle)
+        for pollutant in configured_pollutants:
+            pname = pollutant["name"]
+            pollutant_index = output_pollutants_ci[pname.upper()]
+            pollutant_attr = getattr(NodeAttribute, "POLLUT_CONC_" + str(pollutant_index))
+            concentrations_by_outfall = {}
+            for oid in configured_outfalls:
+                values = out.node_series(oid, pollutant_attr)
+                concentrations_by_outfall[oid] = [max(0.0, float(values.get(t, 0.0))) for t in times]
+
+            concentration = []
+            load_rate = []
+            mass_factor = pollutant.get("cmsMassRateFactor")
+            for i in range(len(times)):
+                total_flow = sum(outfall_flows[oid][i] for oid in configured_outfalls)
+                concentration_flow = sum(
+                    outfall_flows[oid][i] * concentrations_by_outfall[oid][i]
+                    for oid in configured_outfalls
+                )
+                aggregate_concentration = concentration_flow / total_flow if total_flow > 1e-12 else 0.0
+                concentration.append(round(aggregate_concentration, 6))
+                load_rate.append(round(concentration_flow * mass_factor, 9) if mass_factor is not None else None)
+
+            cumulative_load = [0.0 for _ in times]
+            if mass_factor is not None:
+                running_load = 0.0
+                for i in range(1, len(times)):
+                    dt_seconds = max(0.0, (times[i] - times[i - 1]).total_seconds())
+                    running_load += ((load_rate[i - 1] + load_rate[i]) / 2.0) * dt_seconds
+                    cumulative_load[i] = round(running_load, 6)
+            peak_index = max(range(len(concentration)), key=lambda i: concentration[i]) if concentration else None
+            peak_load_index = max(range(len(load_rate)), key=lambda i: load_rate[i] or 0.0) if load_rate else None
+            integrated_total = cumulative_load[-1] if cumulative_load else 0.0
+            water_quality["pollutants"][pname] = {
+                "concentrationUnit": pollutant["concentrationUnit"].lower(),
+                "massUnit": pollutant["massUnit"],
+                "concentration": concentration,
+                "loadRate": load_rate,
+                "loadRateUnit": "kg/s" if mass_factor is not None else None,
+                "cumulativeLoad": cumulative_load,
+                "totalLoad": integrated_total,
+                "totalLoadSource": "swmm-report-step-integration",
+                "peakConcentration": concentration[peak_index] if peak_index is not None else 0.0,
+                "peakConcentrationTimestamp": timestamps[peak_index] if peak_index is not None else None,
+                "peakLoadRate": load_rate[peak_load_index] if peak_load_index is not None else None,
+                "peakLoadRateTimestamp": timestamps[peak_load_index] if peak_load_index is not None else None,
+            }
+        water_quality["available"] = bool(water_quality["pollutants"])
+
     # ── Filter active ──
     active_nodes = {nid: nd for nid, nd in nodes_data.items() if any(abs(d) > 0.0005 for d in nd["depth"])}
     active_links = {lid: ld for lid, ld in links_data.items() if any(abs(f) > 0.0005 for f in ld["flow"])}
@@ -395,6 +492,7 @@ with Output(out_path) as out:
         "metadata": {"startTime": str(times[0]), "endTime": str(times[-1]), "flowUnits": "CMS"},
         "nodes": active_nodes,
         "links": active_links,
+        "waterQuality": water_quality,
         "summary": {
             "maxDepth": {"value": round(max_d_val, 3), "nodeId": max_d_nid, "timestamp": max_d_ts},
             "maxFlow": {
@@ -412,7 +510,7 @@ with Output(out_path) as out:
     with open(out_json, 'w') as f:
         json.dump(result, f)
 
-    print(f'DONE period={period} totalLinks={len(out.links)} activeLinks={len(active_links)} activeNodes={len(active_nodes)} maxDepth={round(max_d_val,3)}@{max_d_nid} maxFlow={round(max_f_val,3)}@{max_f_lid}')
+    print(f'DONE period={period} totalLinks={len(out.links)} activeLinks={len(active_links)} activeNodes={len(active_nodes)} pollutants={len(water_quality["pollutants"])} maxDepth={round(max_d_val,3)}@{max_d_nid} maxFlow={round(max_f_val,3)}@{max_f_lid}')
 `.trim();
 
   writeFileSync(pyFile, pyScript, 'utf-8');
@@ -424,7 +522,40 @@ with Output(out_path) as out:
     console.log('[SWMM]', stdout.trim());
 
     if (existsSync(outJson)) {
-      return JSON.parse(readFileSync(outJson, 'utf-8'));
+      const result = JSON.parse(readFileSync(outJson, 'utf-8'));
+      const reportPath = tempInp.replace(/\.inp$/i, '.rpt');
+      if (result?.waterQuality?.available && existsSync(reportPath)) {
+        const reportSummary = parseSwmmOutfallLoadingSummary(
+          readFileSync(reportPath, 'utf-8'),
+          pollutantDefinitions.map(pollutant => pollutant.name),
+        );
+        if (reportSummary?.system) {
+          result.waterQuality.totalLoadSource = 'swmm-report-outfall-loading-summary';
+          result.waterQuality.totalOutfallVolumeMillionLiters = reportSummary.system.totalVolumeMillionLiters;
+          result.waterQuality.outfallLoads = Object.fromEntries(
+            Object.entries(reportSummary.rows)
+              .filter(([id]) => id.toLowerCase() !== 'system')
+              .map(([id, row]) => [id, {
+                totalVolumeMillionLiters: row.totalVolumeMillionLiters,
+                pollutantLoads: row.pollutantLoads,
+              }]),
+          );
+          for (const pollutant of pollutantDefinitions) {
+            const series = result.waterQuality.pollutants?.[pollutant.name];
+            const totalLoad = reportSummary.system.pollutantLoads[pollutant.name];
+            if (!series || !Number.isFinite(totalLoad)) continue;
+            series.reportStepIntegratedLoad = series.totalLoad;
+            series.totalLoad = totalLoad;
+            series.totalLoadSource = 'swmm-report-outfall-loading-summary';
+            const volume = reportSummary.system.totalVolumeMillionLiters;
+            if (volume > 0 && pollutant.massUnit === 'kg') {
+              // kg / 10^6 L is numerically mg/L; convert again for a UG/L pollutant.
+              series.eventMeanConcentration = totalLoad / volume * (pollutant.concentrationUnit === 'UG/L' ? 1000 : 1);
+            }
+          }
+        }
+      }
+      return result;
     }
     throw new Error('No output JSON produced');
   } finally {

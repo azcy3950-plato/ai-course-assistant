@@ -93,9 +93,41 @@ export const LID_STRATEGY_DESC: Record<LidStrategyKey, string> = {
   waterquality: "侧重面源污染控制与污染负荷削减。",
   ecological: "突出绿化、降温与生态系统服务效益。",
 };
+const LID_FACILITY_LABELS = [
+  { key: "GR", label: "绿色屋顶" },
+  { key: "VS", label: "植草沟" },
+  { key: "RG", label: "雨水花园" },
+  { key: "PP", label: "透水铺装" },
+] as const;
 
-// 动态沙盘专属数据状态：污染物来自当前 INP 配置；接口暂未返回其时序与负荷结果。
+// 污染物来自当前 INP 配置；浓度/负荷率由 SWMM .out 返回，总负荷由 .rpt 出水口汇总返回。
 const WATER_QUALITY_INDICATORS = ["COD", "TN", "TP"] as const;
+type WaterQualityIndicator = (typeof WATER_QUALITY_INDICATORS)[number];
+type WaterQualitySeries = {
+  concentrationUnit: string;
+  massUnit: string;
+  concentration: number[];
+  loadRate: Array<number | null>;
+  loadRateUnit: string | null;
+  cumulativeLoad: number[];
+  totalLoad: number;
+  totalLoadSource: string;
+  eventMeanConcentration?: number;
+  peakConcentration?: number;
+};
+
+function waterQualitySeries(result: any, pollutant: WaterQualityIndicator): WaterQualitySeries | null {
+  const series = result?.waterQuality?.pollutants?.[pollutant];
+  if (!result?.waterQuality?.available || !series || !Array.isArray(series.concentration) || !Array.isArray(series.loadRate)) return null;
+  return series as WaterQualitySeries;
+}
+
+function formatPollutantLoad(value: number | null | undefined, unit = "kg"): string {
+  if (value == null || !Number.isFinite(value)) return "待计算";
+  if (Math.abs(value) >= 1000) return `${value.toLocaleString("zh-CN", { maximumFractionDigits: 1 })} ${unit}`;
+  if (Math.abs(value) >= 10) return `${value.toFixed(1)} ${unit}`;
+  return `${value.toFixed(3)} ${unit}`;
+}
 const ECO_SERVICE_INDICATORS = [
   { label: "碳减排量", unit: "kg CO₂e", source: "生态效益模型" },
   { label: "地表降温效果", unit: "℃", source: "热环境模型" },
@@ -405,7 +437,7 @@ export default function SandboxPage() {
   const [landcover, setLandcover] = useState<"default" | "green">("default");
   const [simMode, setSimMode] = useState<"baseline" | "optimize">("baseline");
   const [lidStrategy, setLidStrategy] = useState<LidStrategyKey>("balanced");
-  const [activePollutant, setActivePollutant] = useState<(typeof WATER_QUALITY_INDICATORS)[number]>("COD");
+  const [activePollutant, setActivePollutant] = useState<WaterQualityIndicator>("COD");
   // 雨强预览:拖动滑条时即时缩放横截面水位,松手防抖后真实仿真覆盖
   const [rainPreview, setRainPreview] = useState<number | null>(null);
   const simIBaseRef = useRef(100); // 当前已仿真结果对应的强度
@@ -1563,6 +1595,11 @@ export default function SandboxPage() {
   const optimizedResult = resultScenario.mode === "optimize" && resultScenario.rainfall === comparisonRainfallKey ? dynRes : null;
   const baselineMetrics = useMemo(() => deriveHydroMetrics(baselineResult, dataRef.current), [baselineResult]);
   const optimizedMetrics = useMemo(() => lidRedistApplied ? deriveHydroMetrics(optimizedResult, dataRef.current) : null, [optimizedResult, lidRedistApplied]);
+  const baselinePollutant = waterQualitySeries(baselineResult, activePollutant);
+  const optimizedPollutant = lidRedistApplied ? waterQualitySeries(optimizedResult, activePollutant) : null;
+  const waterQualityModelConfiguration = baselineResult?.waterQuality?.modelConfiguration;
+  const baselineQualitySeries = WATER_QUALITY_INDICATORS.map(pollutant => waterQualitySeries(baselineResult, pollutant));
+  const baselineQualityIsRealZero = baselineQualitySeries.every(series => series && Math.abs(series.totalLoad) < 1e-12);
   const keyMoments = useMemo(() => {
     const count = dynRes?.timestamps?.length || 0;
     if (!count) return [] as Array<{ key: string; label: string; idx: number; color: string }>;
@@ -1626,6 +1663,32 @@ export default function SandboxPage() {
       ],
     };
   }, [comparisonRainfallKey, baselineResult, optimizedResult, baselineMetrics, optimizedMetrics, currentTimeLabel]);
+  const waterQualityComparisonOption = useMemo(() => {
+    const timeValues: number[] = baselineResult?.timestamps || optimizedResult?.timestamps || [];
+    const categories = timeValues.map(fmtTime);
+    const empty = categories.map(() => null);
+    const concentrationUnit = baselinePollutant?.concentrationUnit || optimizedPollutant?.concentrationUnit || "mg/L";
+    const loadRateUnit = baselinePollutant?.loadRateUnit || optimizedPollutant?.loadRateUnit || "kg/s";
+    const currentMark = categories.includes(currentTimeLabel) ? [{ xAxis: currentTimeLabel }] : [];
+    return {
+      backgroundColor: "transparent",
+      animation: false,
+      grid: { left: 50, right: 50, top: 34, bottom: 28 },
+      legend: { top: 0, textStyle: { color: "#475569", fontSize: 9 }, itemWidth: 13, itemHeight: 7, data: ["现状浓度", "优化浓度", "现状负荷率", "优化负荷率"] },
+      tooltip: { trigger: "axis", backgroundColor: "rgba(255,255,255,.97)", borderColor: "#dbe4ef", textStyle: { color: "#334155", fontSize: 11 } },
+      xAxis: { type: "category", data: categories, axisLabel: { color: "#64748b", fontSize: 9, interval: Math.max(0, Math.floor(categories.length / 6) - 1) }, axisLine: { lineStyle: { color: "#cbd5e1" } }, axisTick: { show: false } },
+      yAxis: [
+        { type: "value", name: `浓度 (${concentrationUnit})`, nameTextStyle: { color: "#64748b", fontSize: 9 }, axisLabel: { color: "#64748b", fontSize: 9 }, splitLine: { lineStyle: { color: "#e8eef5" } } },
+        { type: "value", name: `负荷率 (${loadRateUnit})`, nameTextStyle: { color: "#64748b", fontSize: 9 }, axisLabel: { color: "#64748b", fontSize: 9 }, splitLine: { show: false } },
+      ],
+      series: [
+        { name: "现状浓度", type: "line", data: baselinePollutant?.concentration || empty, showSymbol: false, connectNulls: false, lineStyle: { color: "#94a3b8", width: 1.8 }, markLine: { silent: true, symbol: ["none", "none"], label: { show: false }, lineStyle: { color: "#2563eb", width: 1.2 }, data: currentMark } },
+        { name: "优化浓度", type: "line", data: optimizedPollutant?.concentration || empty, showSymbol: false, connectNulls: false, lineStyle: { color: "#2563eb", width: 2.2 } },
+        { name: "现状负荷率", type: "line", yAxisIndex: 1, data: baselinePollutant?.loadRate || empty, showSymbol: false, connectNulls: false, lineStyle: { color: "#64748b", width: 1.2, type: "dashed" } },
+        { name: "优化负荷率", type: "line", yAxisIndex: 1, data: optimizedPollutant?.loadRate || empty, showSymbol: false, connectNulls: false, lineStyle: { color: "#0d9488", width: 1.5, type: "dashed" } },
+      ],
+    };
+  }, [baselineResult, optimizedResult, baselinePollutant, optimizedPollutant, currentTimeLabel]);
   const representativePipeId = selected?.type === "pipe" && dynRes?.links?.[selected.data.id]
     ? selected.data.id
     : (representativeSystemPipe?.id || autoPipeId);
@@ -1836,6 +1899,7 @@ export default function SandboxPage() {
           <div className="mb-2">
             <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-blue-600">优化目标</div>
             <div className="mt-1 text-[8px] leading-3 text-slate-500">选择情景后，将与现状基准使用同一降雨条件计算。</div>
+            <div className="mt-0.5 text-[8px] leading-3 text-slate-400">下列数据为方案目标的 LID 设施组合占比。</div>
           </div>
           <div className="grid min-h-0 flex-1 grid-cols-1 content-start gap-1.5 overflow-y-auto">
               {(Object.keys(LID_STRATEGY_MAP) as LidStrategyKey[]).map(key => (
@@ -1852,6 +1916,18 @@ export default function SandboxPage() {
                 >
                   <span className="flex items-center gap-2 text-[10px] font-bold"><span className={`flex h-5 w-5 items-center justify-center rounded-md text-[8px] ${lidStrategy === key ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{(Object.keys(LID_STRATEGY_MAP) as LidStrategyKey[]).indexOf(key) + 1}</span>{LID_STRATEGY_MAP[key].label}</span>
                   <span className="mt-1.5 block pl-7 text-[8px] leading-3 text-slate-500">{LID_STRATEGY_DESC[key]}</span>
+                  <span className="mt-1.5 grid grid-cols-2 gap-1 pl-7">
+                    {LID_FACILITY_LABELS.map(facility => (
+                      <span
+                        key={facility.key}
+                        title={`${facility.label}（${facility.key}）`}
+                        className={`flex min-w-0 items-center justify-between gap-1 rounded px-1.5 py-0.5 text-[8px] ${lidStrategy === key ? "bg-white/80" : "bg-slate-100/80"}`}
+                      >
+                        <span className="font-semibold text-slate-500">{facility.key}</span>
+                        <span className={`tabular-nums ${lidStrategy === key ? "font-bold text-blue-700" : "font-semibold text-slate-600"}`}>{LID_STRATEGY_MAP[key][facility.key].toFixed(2)}%</span>
+                      </span>
+                    ))}
+                  </span>
                 </button>
               ))}
           </div>
@@ -2311,11 +2387,11 @@ export default function SandboxPage() {
                   {[
                     { label: "径流控制", value: reductionLabel(baselineMetrics?.cumulativeOutflow ?? null, optimizedMetrics?.cumulativeOutflow ?? null), state: "SWMM派生" },
                     { label: "峰值流量", value: reductionLabel(baselineMetrics?.peakOutflow ?? null, optimizedMetrics?.peakOutflow ?? null), state: "SWMM派生" },
-                    { label: "污染负荷", value: "待接入", state: "接口未返回水质结果" },
+                    { label: "污染负荷", value: reductionLabel(baselinePollutant?.totalLoad ?? null, optimizedPollutant?.totalLoad ?? null), state: `SWMM出水口${activePollutant}总负荷` },
                     { label: "生态服务效益", value: "待接入", state: "需生态效益模型" },
                   ].map(item => <div key={item.label} className="rounded-lg border border-slate-100 bg-white px-2 py-2"><div className="text-[9px] text-slate-600">{item.label}</div><div className="mt-1 text-sm font-bold text-blue-700">{item.value}</div><div className="mt-1 text-[7px] text-slate-400">{item.state}</div></div>)}
                 </div>
-                <div className="mt-2 text-[8px] leading-3 text-slate-500">均衡型同时保留水动力、水质和生态目标；当前仅水动力指标具备真实结果。</div>
+                <div className="mt-2 text-[8px] leading-3 text-slate-500">均衡型同时保留水动力、水质和生态目标；当前水动力与污染负荷使用真实 SWMM 结果，生态效益模型仍待接入。</div>
               </>)}
 
               {lidStrategy === "waterquality" && (<>
@@ -2323,12 +2399,20 @@ export default function SandboxPage() {
                   <span className="text-[9px] font-semibold text-blue-700">污染物浓度与负荷对比</span>
                   <div className="flex gap-1">{WATER_QUALITY_INDICATORS.map(pollutant => <button key={pollutant} onClick={() => setActivePollutant(pollutant)} className={`rounded border px-2 py-0.5 text-[8px] font-semibold ${activePollutant === pollutant ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-500"}`}>{pollutant}</button>)}</div>
                 </div>
-                <div className="relative flex h-[118px] items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white">
-                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[7px] text-slate-400">时间</span>
-                  <span className="absolute left-1 top-1/2 -translate-y-1/2 -rotate-90 text-[7px] text-slate-400">浓度 / 负荷</span>
-                  <div className="text-center"><div className="text-[10px] font-semibold text-slate-600">{activePollutant} 暂无时序结果</div><div className="mt-1 text-[8px] text-slate-400">INP已配置该污染物，当前SWMM接口尚未返回浓度与负荷字段</div></div>
+                {baselinePollutant ? (
+                  <ReactEChartsCore echarts={echarts} option={waterQualityComparisonOption} style={{ height: 138, width: "100%" }} notMerge />
+                ) : (
+                  <div className="flex h-[138px] items-center justify-center rounded-lg border border-dashed border-amber-200 bg-amber-50/40 text-center">
+                    <div><div className="text-[10px] font-semibold text-amber-700">{activePollutant} 水质结果不可用</div><div className="mt-1 text-[8px] text-amber-600">本次 SWMM 响应未包含该污染物，请重新运行情景并检查服务端水质输出。</div></div>
+                  </div>
+                )}
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[8px] text-slate-500">
+                  <span>现状总负荷：{formatPollutantLoad(baselinePollutant?.totalLoad, baselinePollutant?.massUnit)}</span>
+                  <span>优化总负荷：{formatPollutantLoad(optimizedPollutant?.totalLoad, optimizedPollutant?.massUnit)}</span>
+                  <span className="font-semibold text-blue-700">负荷削减率：{reductionLabel(baselinePollutant?.totalLoad ?? null, optimizedPollutant?.totalLoad ?? null)}</span>
+                  <span className="basis-full text-[7px] text-slate-400">浓度/负荷率曲线来自 SWMM .out；全事件总负荷优先采用 .rpt 出水口汇总，响应中的来源字段保留实际取值路径。</span>
                 </div>
-                <div className="mt-1 flex items-center gap-3 text-[8px] text-slate-400"><span>现状基准：待接入</span><span>海绵优化：待接入</span><span>负荷削减率：待接入</span></div>
+                {baselineQualityIsRealZero && <div className="mt-1.5 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[8px] leading-3 text-amber-700">本次真实 SWMM 水质结果为 0，并非接口缺字段。当前 INP 的 COVERAGES 仅覆盖 {waterQualityModelConfiguration?.coveredSubcatchments ?? 0}/{waterQualityModelConfiguration?.totalSubcatchments ?? 0} 个汇水区（{waterQualityModelConfiguration?.coveragePercent ?? 0}%），其中 {waterQualityModelConfiguration?.coveredSubcatchmentsFullyOccupiedByLid ?? 0} 个被 LID 面积完全占用；未用估算或 mock 补造污染负荷。</div>}
               </>)}
 
               {lidStrategy === "ecological" && (<>

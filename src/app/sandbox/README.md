@@ -22,6 +22,9 @@
 - 节点水柱动画（depth）、管道流向/流速着色（flow + velocity）
 - 节点/管道实时属性查看
 - ECharts 时间序列曲线（水深/入流/积水/洪泛，流量/水深/流速/容量）
+- COD/TN/TP 出水口流量加权浓度与瞬时负荷率（来自 `.out`）
+- COD/TN/TP 全事件出水口总负荷与削减率（来自 `.rpt` 的 SWMM 引擎汇总）
+- 水质为零时显示 INP 的 COVERAGES/LID 覆盖诊断，不以估算值或 mock 填充
 - 每次仿真独立 simulationId（UUID）
 
 ## 数据流
@@ -30,9 +33,10 @@
 INP (紫荆雅园_改造后.inp)
   ├─ 前端静态解析 → Three.js 3D 场景（90 节点 / 89 管道 / 汇水区）
   └─ POST /api/swmm → 生成临时 INP（降雨倍率修改）
-       └─ PySWMM Simulation.execute() → .out 文件
-            └─ PySWMM Output API (LinkAttribute / NodeAttribute)
-                 └─ JSON 时间序列 → 前端动态回放
+       └─ PySWMM Simulation.execute() → .out + .rpt
+            ├─ PySWMM Output API → 水力时序 + 出水口污染物浓度/负荷率
+            └─ Outfall Loading Summary → 全事件污染物总负荷
+                 └─ JSON 真实结果 → 前端动态回放与现状/优化对比
 ```
 
 ## simulationId 目录结构
