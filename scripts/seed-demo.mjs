@@ -186,6 +186,30 @@ async function ensureSchema() {
       has_references BOOLEAN NOT NULL DEFAULT false,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id SERIAL PRIMARY KEY,
+      user_email TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      link TEXT NOT NULL DEFAULT '',
+      read_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_email ON notifications(user_email, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS favorites (
+      id SERIAL PRIMARY KEY,
+      user_email TEXT NOT NULL,
+      ref_type TEXT NOT NULL,
+      ref_id TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      in_review BOOLEAN NOT NULL DEFAULT false,
+      last_reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (user_email, ref_type, ref_id)
+    );
   `);
 }
 
