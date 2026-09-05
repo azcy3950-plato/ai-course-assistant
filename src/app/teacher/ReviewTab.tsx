@@ -9,6 +9,7 @@ const REASON_CLS: Record<string, string> = {
   "解释不清": "bg-amber-50 text-amber-700",
   "答非所问": "bg-purple-50 text-purple-700",
   "信息不完整": "bg-blue-50 text-blue-700",
+  "教师抽检": "bg-cyan-50 text-cyan-700",
   "其他": "bg-gray-100 text-gray-600",
 };
 
@@ -73,7 +74,7 @@ export default function ReviewTab() {
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 items-center">
         {[
           { k: "pending" as const, l: `待处理（${stats.pending}）` },
           { k: "done" as const, l: "已处理" },
@@ -84,6 +85,11 @@ export default function ReviewTab() {
             {f.l}
           </button>
         ))}
+        <button onClick={() => act({ action: "spotcheck" })} disabled={busy}
+          className="ml-auto px-3 py-1.5 rounded-full text-xs font-medium border border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100 disabled:opacity-50"
+          title="从最近无反馈的 AI 回答中抽取 5 条进行定期抽检">
+          🔍 随机抽检
+        </button>
       </div>
 
       {loading ? (

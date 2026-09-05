@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useApp } from "@/contexts/AppContext";
 
 interface Me { id: string; email: string; name: string; role: string; avatar: string | null }
 
@@ -9,6 +10,7 @@ function getAuthToken(): string | null {
 }
 
 export default function ProfilePage() {
+  const { updateUserName } = useApp();
   const [me, setMe] = useState<Me | null>(null);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [name, setName] = useState("");
@@ -39,7 +41,7 @@ export default function ProfilePage() {
     setBusy(true);
     const { ok, d } = await api("/api/auth/me", "PATCH", { name: name.trim() });
     setBusy(false);
-    if (ok) { setMe(m => m ? { ...m, name: name.trim() } : m); flash("姓名已更新 ✓", true); }
+    if (ok) { setMe(m => m ? { ...m, name: name.trim() } : m); updateUserName(name.trim()); flash("姓名已更新 ✓", true); }
     else flash(d.error || "保存失败", false);
   };
 

@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useApp, getAuthToken } from "@/contexts/AppContext";
-import { supabase } from '@/lib/supabase';
 import { TASK_TYPE_META, TASK_STATUS_META } from "@/lib/task-ui";
 
 // ══════════════ UNAUTHENTICATED LANDING ══════════════
@@ -108,8 +107,6 @@ export default function HomePage() {
     if (!state.role) return;
     (async () => {
       try {
-        const { data: s } = await supabase.auth.getSession();
-        const em = s.session?.user?.email || '';
         // Fetch documents count(经 /api/storage,仅教师可见)
         let docCount = 0;
         if (state.role === "teacher") {
@@ -117,11 +114,11 @@ export default function HomePage() {
           if (dRes.ok) { const docs = await dRes.json(); docCount = Array.isArray(docs) ? docs.length : 0; }
         }
         // Fetch quiz stats(经 /api/quiz-results,登录查询自己的)
-        const qRes = await fetch('/api/quiz-results?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        const qRes = await fetch('/api/quiz-results', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         let quizTotal = 0, quizRate = 0;
         if (qRes.ok) { const qr = await qRes.json(); quizTotal = qr.length; quizRate = qr.length > 0 ? Math.round(qr.filter((q: any) => q.is_correct).length / qr.length * 100) : 0; }
         // Fetch records count
-        const rRes = await fetch("/api/records?email=" + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        const rRes = await fetch("/api/records", { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         let recordCount = 0;
         if (rRes.ok) { const recs = await rRes.json(); recordCount = recs.length; }
         setStats({ docCount, quizTotal, quizRate, recordCount });

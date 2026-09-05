@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireTeacher } from "@/lib/auth-server";
 import {
+  pool,
   ensureLearningSchema,
   listAiFeedback,
   listAiVersions,
@@ -36,6 +37,27 @@ export async function POST(req: NextRequest) {
       if (!feedbackId) return NextResponse.json({ error: "缺少反馈 ID" }, { status: 400 });
       await updateAiFeedbackStatus(feedbackId, action === "resolve" ? "resolved" : "dismissed");
       return NextResponse.json({ ok: true });
+    }
+
+    // 随机抽检：取最近 5 条无任何反馈的 AI 回答生成待审项（确定性：按 id 倒序）
+    if (action === "spotcheck") {
+      const limit = Math.min(10, Math.max(1, Number(body.limit) || 5));
+      const { rows } = await pool.query(
+        `SELECT id FROM ai_qa_messages m
+         WHERE NOT EXISTS (SELECT 1 FROM ai_content_feedback f WHERE f.message_id = m.id)
+         ORDER BY m.id DESC LIMIT $1`,
+        [limit],
+      );
+      let added = 0;
+      for (const row of rows) {
+        await pool.query(
+          `INSERT INTO ai_content_feedback (message_id, user_email, reason, note, status)
+           VALUES ($1, $2, '教师抽检', '系统按最近问答自动抽取，供教师定期抽检 AI 回答质量', 'pending')`,
+          [row.id, auth.email],
+        );
+        added += 1;
+      }
+      return NextResponse.json({ ok: true, added });
     }
 
     if (action === "edit") {

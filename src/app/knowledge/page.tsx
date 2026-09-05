@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useChat } from '@/contexts/ChatContext';
 import { useApp, getAuthToken } from '@/contexts/AppContext';
 import { useLearning } from '@/contexts/LearningContext';
-import { supabase } from '@/lib/supabase';
 import { queryKnowledgeAgent, queryKnowledgeAgentStream } from '@/services/agent';
 import ChatMessage from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
@@ -22,6 +21,7 @@ export default function KnowledgePage() {
   const [allReferences, setAllReferences] = useState<Reference[]>([]);
   const [lastDomain, setLastDomain] = useState<string | undefined>(undefined);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [quizNotice, setQuizNotice] = useState('');
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const sourcePanelRef = useRef<HTMLDivElement>(null);
@@ -71,19 +71,16 @@ export default function KnowledgePage() {
         updateTitle(activeConv.id, shortQ);
       }
 
-      // Save record
+      // Save record（服务端由 JWT 解析身份，勿用 supabase session 做门禁——纯 JWT 登录下 session 恒为空）
       try {
-        const { data: s } = await supabase.auth.getSession();
-        const em = s.session?.user?.email || '';
-        if (em) {
-          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: (lastRefs?.length || 0) > 0 }) });
-          // 问答存档（供 AI 历史页与教师内容审核使用）
-          await fetch('/api/qa-messages', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer: fullAnswer, references: lastRefs || [] }) });
-          const qr = await fetch('/api/quiz?email=' + encodeURIComponent(em), { headers: { Authorization: `Bearer ${getAuthToken()}` } });
-          const qd = await qr.json();
-          if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }
-        }
-      } catch (e) {}
+        await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: (lastRefs?.length || 0) > 0 }) });
+        // 问答存档（供 AI 历史页与教师内容审核使用）
+        await fetch('/api/qa-messages', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer: fullAnswer, references: lastRefs || [] }) });
+        const qr = await fetch('/api/quiz', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        const qd = await qr.json();
+        if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }
+        else if (qd.needsQuiz || (qd.error)) { setQuizNotice('小测服务暂时不可用，稍后再试'); }
+      } catch (e) { console.error('[knowledge] 持久化失败:', e); }
 
       addRecord('knowledge', content.slice(0, 30) + (content.length > 30 ? '...' : ''), `查询了关于"${content.slice(0, 50)}"的内容`);
     } catch (err) {
@@ -247,6 +244,13 @@ export default function KnowledgePage() {
               <button key={q} onClick={() => handleSend(q)} disabled={loading} className="text-xs px-3 py-1.5 bg-blue-50 text-[var(--color-primary)] rounded-full hover:bg-blue-100 transition-colors disabled:opacity-50">{q}</button>
             ))}
           </div>
+          {quizNotice && (
+            <div className="px-6 -mt-1 mb-1">
+              <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                ⚠️ {quizNotice}
+              </p>
+            </div>
+          )}
           <ChatInput onSend={handleSend} disabled={loading} placeholder="输入课程知识相关问题..." />
       </div>
 

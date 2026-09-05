@@ -206,6 +206,10 @@ export default function GuidedPage() {
         const ids = data.graphContext ? setCurrentFromContext(data.graphContext) : []; const concepts = ids.map(nodeForId).filter(Boolean) as KnowledgeNode[];
         const kind = data.status === "complete" ? "final" : (data.status === "mastered" ? "info" : "answer");
         if (data.status === "complete" || data.status === "mastered") { setSocraticActive(false); setSocraticQuestion(""); setTurn(0); setHintLevel(0); refreshMastery(); } // 收束后即时刷新掌握度(色阶/仪表盘联动)
+        // 引导完成落库（仅事件上报，不改引导逻辑）：服务器此前对引导完成无任何记录
+        if (data.status === "complete") {
+          fetch("/api/learning-events", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ type: "GUIDED_COMPLETED", title: "完成一轮引导学习", summary: (socraticQuestion || "").slice(0, 100), refType: "guided" }) }).catch(() => {});
+        }
         else setTurn((t) => Math.min(MAX_TURNS, t + 1));
         setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: data.response || "继续思考一下，你离答案很近了。", pending: false, nodeIds: ids, concepts, kind } : m));
       } catch (e) { if ((e as Error).name !== "AbortError") setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: (e as Error).message || "网络错误，请重试", pending: false, error: true } : m)); else setMessages((old) => old.map((m) => m.id === `${requestId}-a` ? { ...m, content: "已停止生成。你可以继续回答或提出新问题。", pending: false, kind: "info" } : m)); }

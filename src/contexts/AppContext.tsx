@@ -24,6 +24,7 @@ interface AppContextValue {
   verifyCode: (identifier: string, purpose: 'REGISTER' | 'RESET_PASSWORD', code: string) => Promise<{ error: string | null; resetToken?: string }>;
   resetPassword: (identifier: string, resetToken: string, newPassword: string) => Promise<{ error: string | null }>;
   logout: () => Promise<void>;
+  updateUserName: (name: string) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -148,8 +149,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState({ role: null, userName: null, authLoading: false });
   }, []);
 
+  // 改名后同步导航栏显示（更新 localStorage 缓存 + 全局状态）
+  const updateUserName = useCallback((name: string) => {
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      const user = raw ? JSON.parse(raw) : {};
+      user.name = name;
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+    } catch { /* 忽略 */ }
+    setState((prev) => ({ ...prev, userName: name }));
+  }, []);
+
   return (
-    <AppContext.Provider value={{ state, darkMode, toggleDarkMode, login, signup, sendVerificationCode, verifyCode, resetPassword, logout }}>
+    <AppContext.Provider value={{ state, darkMode, toggleDarkMode, login, signup, sendVerificationCode, verifyCode, resetPassword, logout, updateUserName }}>
       {children}
     </AppContext.Provider>
   );

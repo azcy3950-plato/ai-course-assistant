@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { useApp, getAuthToken } from "@/contexts/AppContext";
-import { supabase } from "@/lib/supabase";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
 const COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444"];
