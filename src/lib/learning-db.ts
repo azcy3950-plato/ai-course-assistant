@@ -379,7 +379,7 @@ export async function setStudentTaskStatus(taskId: number, email: string, status
     `UPDATE student_tasks SET status = $3, updated_at = now(),
         started_at = COALESCE(started_at, now()),
         completed_at = CASE WHEN $3 = 'COMPLETED' THEN now() ELSE completed_at END,
-        completion_note = CASE WHEN $4 IS NULL THEN completion_note ELSE $4 END
+        completion_note = CASE WHEN $4::text IS NULL THEN completion_note ELSE $4 END
      WHERE task_id = $1 AND user_email = $2`,
     [taskId, email, status, note ?? null],
   );
