@@ -173,9 +173,16 @@ export default function HistoryPage() {
     else grouped.push({ date, items: [e] });
   }
 
-  // 错题按知识点分组 + 同题错误次数
+  // 错题按知识点分组 + 同题错误次数；已被"重新作答正确"取代的旧错题不展示
+  // （重做成功后新写入一条正确记录，旧错题行由更新的正确记录覆盖，保持历史可查且列表干净）
+  const supersededByCorrect = (q: any) => {
+    return quizResults.some(
+      (r) => r.is_correct && r.question === q.question && new Date(r.created_at) > new Date(q.created_at),
+    );
+  };
   const wrongByTopic: { topic: string; items: any[] }[] = [];
   for (const q of quizResults) {
+    if (q.is_correct || supersededByCorrect(q)) continue;
     const topic = q.topic || "未分类";
     let group = wrongByTopic.find((g) => g.topic === topic);
     if (!group) { group = { topic, items: [] }; wrongByTopic.push(group); }

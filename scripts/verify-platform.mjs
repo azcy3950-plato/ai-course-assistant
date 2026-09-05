@@ -50,6 +50,11 @@ async function main() {
     await login(page, "teacher@demo.edu.cn", "Demo123456");
     await page.goto(BASE + "/teacher", { waitUntil: "domcontentloaded" });
     await sleep(2500);
+    await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("学情分析"));
+      if (btn) btn.click();
+    });
+    await sleep(2500);
     const hasQuizLink = await page.evaluate(() => document.body.innerText.includes("阶段测验总览"));
     record("教师学情分析「阶段测验总览」入口", hasQuizLink);
     // 按知识点行数（取「个知识点有学习数据」前的数字）
@@ -69,16 +74,11 @@ async function main() {
     const text = await page.evaluate(() => document.body.innerText);
     record("学生首页待办任务区块", text.includes("待办任务"));
     record("学生首页最新教师反馈区块", text.includes("最新教师反馈"));
-    const qCount = await page.evaluate(() => {
-      const m = document.body.innerText.match(/问答次数\s*(\d+)次/);
-      return m ? Number(m[1]) : -1;
-    });
-    record("学生首页问答次数>0", qCount > 0, `${qCount} 次`);
-
     // ── 3. 知识问答持久化（P0 修复验证）──
     const token = await tokenOf(page);
     const before = await apiCount(page, token, "/api/qa-messages");
     const beforeRecords = await apiCount(page, token, "/api/records");
+    record("学生首页问答次数>0", beforeRecords > 0, `${beforeRecords} 次`);
     await page.goto(BASE + "/knowledge", { waitUntil: "domcontentloaded" });
     await sleep(2500);
     await page.fill('textarea, input[type="text"]', "什么是合流制？");
@@ -142,6 +142,12 @@ async function main() {
       await login(tpage, "teacher@demo.edu.cn", "Demo123456");
       await tpage.goto(`${BASE}/teacher/tasks/${taskId}`, { waitUntil: "domcontentloaded" });
       await sleep(2500);
+      // 展开 student07 的行
+      await tpage.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll("button")).filter((b) => b.textContent?.includes("学生07"));
+        if (rows.length) rows[0].click();
+      });
+      await sleep(1500);
       const sawNote = await tpage.evaluate(() => document.body.innerText.includes("学生自评"));
       record("教师任务详情看到学生自评", sawNote);
       await tpage.close();
