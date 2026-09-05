@@ -25,11 +25,13 @@ describe("SWMM 真实水质数据契约", () => {
   });
 
   it("暴露实际水质覆盖范围，不把模型零负荷伪装成接口缺失", () => {
+    // 注:2026-08-28 修复 INP [LID_USAGE] 覆盖率乱值(scripts/fix-lid-usage.mjs 钳制到 ≤100%)后,
+    // 完全被 LID 覆盖的子汇水区由 28 降为 17——此数值应随 INP 修复后的真实状态更新。
     expect(summarizeSwmmQualityModel(inp)).toEqual({
       totalSubcatchments: 931,
       coveredSubcatchments: 29,
       coveragePercent: 3.1,
-      coveredSubcatchmentsFullyOccupiedByLid: 28,
+      coveredSubcatchmentsFullyOccupiedByLid: 17,
     });
   });
 
