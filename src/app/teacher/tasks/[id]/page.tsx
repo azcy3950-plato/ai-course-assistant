@@ -238,6 +238,12 @@ export default function TeacherTaskDetailPage() {
                           </div>
                         )}
                       </div>
+                    ) : t.completion_note ? (
+                      <div className="mt-3 bg-white rounded-lg p-3">
+                        <div className="text-xs font-semibold text-[var(--color-text)] mb-1">🎓 学生自评（标记完成时填写）</div>
+                        <p className="text-xs text-[var(--color-text-secondary)] leading-5">{t.completion_note}</p>
+                        <div className="text-[10px] text-[var(--color-text-muted)] mt-1">状态：学生自评完成（未提交文件）</div>
+                      </div>
                     ) : (
                       <div className="py-6 text-center text-xs text-[var(--color-text-muted)]">该学生尚未提交</div>
                     )}

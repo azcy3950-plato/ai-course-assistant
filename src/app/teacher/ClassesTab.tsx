@@ -52,7 +52,7 @@ export default function ClassesTab() {
   return (
     <div>
       <p className="text-[10px] text-[var(--color-text-muted)] mb-4">
-        注：当前为演示环境，学生均为匿名演示账号（演示数据）
+        注：数据来自真实学习记录与小测；含固定演示账号（student01-12@demo.edu.cn）产生的可复现演示数据
       </p>
 
       <div className="grid grid-cols-2 gap-4 mb-5">

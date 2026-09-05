@@ -12,6 +12,7 @@ const navLinks = {
     { href: "/knowledge", label: "知识问答", icon: "📚" },
     { href: "/guided", label: "引导学习", icon: "💡" },
     { href: "/sandbox", label: "电子沙盘", icon: "🗺️" },
+    { href: "/insights", label: "学习洞察", icon: "📊" },
     { href: "/history", label: "学习档案", icon: "📖" },
     { href: "/records", label: "学习记录", icon: "🕐" },
   ],

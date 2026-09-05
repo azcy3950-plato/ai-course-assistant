@@ -3,8 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useApp, getAuthToken } from "@/contexts/AppContext";
-import { useLearning } from '@/contexts/LearningContext';
 import { supabase } from '@/lib/supabase';
+import { TASK_TYPE_META, TASK_STATUS_META } from "@/lib/task-ui";
 
 // ══════════════ UNAUTHENTICATED LANDING ══════════════
 function LandingPage() {
@@ -98,8 +98,11 @@ const teacherModules = [
 
 export default function HomePage() {
   const { state } = useApp();
-  const { state: learningState } = useLearning();
   const [stats, setStats] = useState({ docCount: 0, quizTotal: 0, quizRate: 0, recordCount: 0 });
+  // 学生首页：待办任务、教师反馈、最近学习事件（真实数据）
+  const [pendingTasks, setPendingTasks] = useState<any[]>([]);
+  const [latestFeedback, setLatestFeedback] = useState<any[]>([]);
+  const [recentEvents, setRecentEvents] = useState<any[]>([]);
 
   useEffect(() => {
     if (!state.role) return;
@@ -122,6 +125,32 @@ export default function HomePage() {
         let recordCount = 0;
         if (rRes.ok) { const recs = await rRes.json(); recordCount = recs.length; }
         setStats({ docCount, quizTotal, quizRate, recordCount });
+        // 学生：待办任务 + 最新教师反馈 + 最近学习事件
+        if (state.role === "student") {
+          const [tRes, fRes, eRes] = await Promise.all([
+            fetch("/api/tasks", { headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+            fetch("/api/feedback", { headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+            fetch("/api/learning-events", { headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+          ]);
+          if (tRes.ok) {
+            const tasks = await tRes.json();
+            const prio: Record<string, number> = { REVISION_REQUIRED: 0, OVERDUE: 1, IN_PROGRESS: 2, TODO: 3 };
+            setPendingTasks(
+              tasks
+                .filter((t: any) => ["TODO", "IN_PROGRESS", "REVISION_REQUIRED", "OVERDUE"].includes(t.effective_status))
+                .sort((a: any, b: any) => (prio[a.effective_status] ?? 9) - (prio[b.effective_status] ?? 9))
+                .slice(0, 3),
+            );
+          }
+          if (fRes.ok) {
+            const fb = await fRes.json();
+            setLatestFeedback(Array.isArray(fb) ? fb.slice(0, 3) : []);
+          }
+          if (eRes.ok) {
+            const events = await eRes.json();
+            setRecentEvents(Array.isArray(events) ? events.slice(0, 3) : []);
+          }
+        }
       } catch (e) {}
     })();
   }, [state.role]);
@@ -157,6 +186,57 @@ export default function HomePage() {
           ))}
         </div>
       </div>
+
+      {/* 学生：待办任务与教师反馈（真实数据） */}
+      {isStudent && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="bg-white rounded-xl border border-[var(--color-border)] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-[var(--color-text)]">⏳ 待办任务</h3>
+              <Link href="/tasks" className="text-xs text-[var(--color-primary)] hover:underline">全部 →</Link>
+            </div>
+            {pendingTasks.length === 0 ? (
+              <p className="text-xs text-[var(--color-text-muted)] py-3 text-center">暂无待办任务</p>
+            ) : (
+              <div className="space-y-2">
+                {pendingTasks.map((t) => (
+                  <Link key={t.id} href={`/tasks/${t.id}`}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 hover:border-[var(--color-primary)] transition-colors ${t.effective_status === "REVISION_REQUIRED" ? "border-red-200 bg-red-50" : "border-[var(--color-border)]"}`}>
+                    <span className="text-sm">{TASK_TYPE_META[t.type as keyof typeof TASK_TYPE_META]?.icon || "📋"}</span>
+                    <span className="text-xs font-medium text-[var(--color-text)] flex-1 truncate">{t.title}</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${TASK_STATUS_META[t.effective_status as keyof typeof TASK_STATUS_META]?.cls || "bg-gray-100 text-gray-600"}`}>
+                      {TASK_STATUS_META[t.effective_status as keyof typeof TASK_STATUS_META]?.label || t.effective_status}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="bg-white rounded-xl border border-[var(--color-border)] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-[var(--color-text)]">💬 最新教师反馈</h3>
+              <Link href="/tasks" className="text-xs text-[var(--color-primary)] hover:underline">全部 →</Link>
+            </div>
+            {latestFeedback.length === 0 ? (
+              <p className="text-xs text-[var(--color-text-muted)] py-3 text-center">暂无教师反馈</p>
+            ) : (
+              <div className="space-y-2">
+                {latestFeedback.map((f) => (
+                  <Link key={f.id} href={`/tasks/${f.task_id}`} className="block rounded-lg border border-[var(--color-border)] px-3 py-2 hover:border-[var(--color-primary)] transition-colors">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-[var(--color-text)] truncate">{f.task_title}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${f.status === "revision_required" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
+                        {f.status === "revision_required" ? "需要修改" : "已通过"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--color-text-secondary)] mt-1 line-clamp-2">{f.content}</p>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Welcome subtitle */}
       <p className="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-6 text-center">
@@ -200,8 +280,8 @@ export default function HomePage() {
         ))}
       </div>
 
-      {/* Recent Records (student only) */}
-      {isStudent && learningState.records.length > 0 && (
+      {/* Recent Records (student only, 真实学习事件) */}
+      {isStudent && recentEvents.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-[var(--color-text)]">
@@ -215,21 +295,21 @@ export default function HomePage() {
             </Link>
           </div>
           <div className="bg-white rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-            {learningState.records.slice(0, 3).map(record => (
-              <div key={record.id} className="flex items-center gap-4 px-5 py-3.5">
+            {recentEvents.slice(0, 3).map((e: any) => (
+              <div key={e.id} className="flex items-center gap-4 px-5 py-3.5">
                 <span className="text-xl">
-                  {record.type === 'knowledge' ? '📚' : record.type === 'guided' ? '💡' : '🗺️'}
+                  {String(e.type || '').includes('KNOWLEDGE') ? '📚' : String(e.type || '').includes('GUIDED') ? '💡' : '🗺️'}
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-[var(--color-text)] truncate">
-                    {record.title}
+                    {e.title}
                   </div>
                   <div className="text-xs text-[var(--color-text-secondary)] truncate">
-                    {record.summary}
+                    {e.summary}
                   </div>
                 </div>
                 <div className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">
-                  {new Date(record.timestamp).toLocaleDateString('zh-CN')}
+                  {new Date(e.created_at).toLocaleDateString('zh-CN')}
                 </div>
               </div>
             ))}

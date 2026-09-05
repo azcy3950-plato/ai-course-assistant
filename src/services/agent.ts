@@ -1,11 +1,4 @@
-import type {
-  AgentResponse,
-  GraphContext,
-  KnowledgeGraphResponse,
-  Reference,
-  StudentNodeProgress,
-} from "@/types";
-import { guidedScenarios } from "@/data/guided-scenarios";
+import type { AgentResponse, GraphContext, Reference } from "@/types";
 
 function getToken(): string {
   if (typeof window === "undefined") return "";
@@ -104,86 +97,4 @@ export async function queryKnowledgeAgent(question: string): Promise<AgentRespon
   } catch {
     return { answer: "抱歉，AI服务暂时不可用，请稍后再试。", references: [] };
   }
-}
-
-export async function getKnowledgeGraph(): Promise<KnowledgeGraphResponse> {
-  const res = await fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getToken()}` } });
-  if (!res.ok) throw new Error("知识图谱加载失败");
-  return res.json();
-}
-
-export async function recordKnowledgeNodeInteraction(
-  nodeId: string,
-  kind: "question" | "study" = "study",
-): Promise<StudentNodeProgress | undefined> {
-  const res = await fetch("/api/knowledge-graph", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-    body: JSON.stringify({ action: "record_interaction", nodeId, kind }),
-  });
-  if (!res.ok) return undefined;
-  return (await res.json()).progress;
-}
-
-export async function generateKnowledgeNodeQuiz(nodeId: string) {
-  const result = await callAgent("node_quiz", { nodeId });
-  return result.questions || [];
-}
-
-export async function startGuidedScenario(scenarioId: string) {
-  const scenario = guidedScenarios.find((s) => s.id === scenarioId);
-  if (!scenario) throw new Error("Scenario not found");
-  const firstStep = scenario.steps[0];
-  try {
-    const result = await callAgent("guided_start", {
-      scenarioTitle: scenario.title,
-      scenarioDescription: scenario.description,
-      firstQuestion: firstStep.question,
-      totalSteps: firstStep.totalSteps,
-    });
-    return { greeting: result.greeting, firstQuestion: result.firstQuestion || firstStep.question, step: 1, totalSteps: firstStep.totalSteps };
-  } catch {
-    return { greeting: "欢迎进入" + scenario.title + "！", firstQuestion: firstStep.question, step: 1, totalSteps: firstStep.totalSteps };
-  }
-}
-
-export async function evaluateGuidedAnswer(scenarioId: string, currentStep: number, studentAnswer: string) {
-  const scenario = guidedScenarios.find((s) => s.id === scenarioId);
-  if (!scenario) throw new Error("Scenario not found");
-  const stepData = scenario.steps[currentStep - 1];
-  if (!stepData) return { feedback: "引导已完成！", isComplete: true, explanation: "" };
-  const isLastStep = currentStep >= stepData.totalSteps;
-  const nextStep = isLastStep ? null : scenario.steps[currentStep];
-  try {
-    const result = await callAgent("guided_evaluate", {
-      scenarioTitle: scenario.title,
-      stepNumber: currentStep,
-      totalSteps: stepData.totalSteps,
-      question: stepData.question,
-      expectedAnswer: stepData.expectedAnswer || "",
-      studentAnswer,
-    });
-    return { feedback: result.feedback, nextQuestion: isLastStep ? undefined : nextStep?.question, isComplete: isLastStep, explanation: result.explanation };
-  } catch {
-    return { feedback: studentAnswer.length > 10 ? stepData.explanation : "试着展开说一下？", nextQuestion: nextStep?.question, isComplete: isLastStep, explanation: stepData.explanation };
-  }
-}
-
-export async function getHint(scenarioId: string, currentStep: number, hintsUsed: number) {
-  const scenario = guidedScenarios.find((s) => s.id === scenarioId);
-  if (!scenario) return "场景不可用。";
-  const stepData = scenario.steps[currentStep - 1];
-  if (!stepData) return "无提示。";
-  try {
-    const result = await callAgent("guided_hint", { question: stepData.question, hintsUsed });
-    return result.hint;
-  } catch { return stepData.hints[Math.min(hintsUsed, stepData.hints.length - 1)]; }
-}
-
-export async function querySandboxAgent(question: string, context?: { intensity: number; duration: number; maxDepth: number; floodArea: number }): Promise<AgentResponse> {
-  if (!context) return { answer: "请先运行模拟。" };
-  try {
-    const result = await callAgent("sandbox", { question, simulation: context });
-    return { answer: result.answer, references: [] };
-  } catch { return { answer: "AI分析暂时不可用。", references: [] }; }
 }

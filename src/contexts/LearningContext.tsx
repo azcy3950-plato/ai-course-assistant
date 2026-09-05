@@ -65,24 +65,7 @@ const LearningContext = createContext<LearningContextValue | null>(null);
 export function LearningProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(learningReducer, {
     guidedProgress: null,
-    records: [
-      {
-        id: 'rec-1',
-        type: 'knowledge',
-        title: '城市内涝成因查询',
-        summary: '查询了城市内涝的主要成因，获取了排水系统设计标准和海绵城市相关资料',
-        timestamp: Date.now() - 86400000,
-        duration: 15,
-      },
-      {
-        id: 'rec-2',
-        type: 'sandbox',
-        title: '内涝模拟实验',
-        summary: '使用电子沙盘模拟了50mm/h降雨强度下的内涝情景，观察了积水变化过程',
-        timestamp: Date.now() - 172800000,
-        duration: 25,
-      },
-    ],
+    records: [],
   });
 
   const startGuided = useCallback(

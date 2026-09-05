@@ -60,6 +60,8 @@ export default function TeacherPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // 真实学生数据(/api/students,users 表 + 学习聚合)
   const [students, setStudents] = useState<any[]>([]);
+  // 知识图谱真实计数(知识库管理 tab)
+  const [graphCounts, setGraphCounts] = useState({ nodes: 0, networks: 0 });
   const [loadingStudents, setLoadingStudents] = useState(false);
   // 行内管理操作
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
@@ -79,6 +81,18 @@ export default function TeacherPage() {
   }, []);
 
   useEffect(() => { if (authorized) loadStudents(); }, [authorized, loadStudents]);
+  useEffect(() => {
+    if (!authorized) return;
+    fetch("/api/knowledge-graph", { headers: { Authorization: `Bearer ${getAuthToken()}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        const allNodes = d.graph?.nodes?.length ?? 0;
+        const networks = Array.isArray(d.networks) ? d.networks.length : 0;
+        setGraphCounts({ nodes: allNodes, networks });
+      })
+      .catch(() => {});
+  }, [authorized]);
 
   const flashStu = (email: string, ok: boolean, text: string) => {
     setStuMsg({ email, ok, text });
@@ -283,14 +297,14 @@ export default function TeacherPage() {
             <div className="bg-white rounded-xl border border-[var(--color-border)] p-6">
               <h3 className="text-sm font-bold mb-4">📊 知识库概览</h3>
               <div className="grid grid-cols-2 gap-4">
-                {[["文档总数", files.length, "bg-blue-50 text-blue-700"], ["知识网络", 8, "bg-green-50 text-green-700"], ["图谱节点", 257, "bg-purple-50 text-purple-700"], ["向量分块", "未启用", "bg-amber-50 text-amber-700"]].map(([label, val, cls]) => (
+                {[["文档总数", files.length, "bg-blue-50 text-blue-700"], ["知识网络", graphCounts.networks, "bg-green-50 text-green-700"], ["图谱节点", graphCounts.nodes, "bg-purple-50 text-purple-700"], ["向量分块", "未启用", "bg-amber-50 text-amber-700"]].map(([label, val, cls]) => (
                   <div key={String(label)} className={`${cls} rounded-lg p-4 text-center`}>
                     <div className="text-2xl font-bold">{String(val)}</div>
                     <div className="text-xs opacity-70 mt-1">{String(label)}</div>
                   </div>
                 ))}
               </div>
-              <div className="mt-3 text-[11px] leading-4 text-[var(--color-text-muted)]">文档数来自 OSS 存储真实列表;知识网络/图谱节点为内置 8 网络 257 节点;向量索引未启用,当前问答基于关键词检索 + AI 生成。</div>
+              <div className="mt-3 text-[11px] leading-4 text-[var(--color-text-muted)]">文档数来自 OSS 存储真实列表;知识网络/图谱节点计数来自课程知识图谱(实时);向量索引未启用,当前问答基于关键词检索 + AI 生成。</div>
             </div>
             <div className="bg-white rounded-xl border border-[var(--color-border)] p-6">
               <h3 className="text-sm font-bold mb-4">📑 文档列表</h3>

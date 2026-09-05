@@ -90,10 +90,10 @@ export default function TaskDetailPage() {
     else if (state.role !== "student") router.replace("/teacher");
   }, [state.authLoading, state.role, router, id]);
 
-  const patch = useCallback(async (action: string) => {
+  const patch = useCallback(async (action: string, note?: string) => {
     setBusy(true);
     try {
-      const res = await fetch(`/api/tasks/${id}`, { method: "PATCH", headers, body: JSON.stringify({ action }) });
+      const res = await fetch(`/api/tasks/${id}`, { method: "PATCH", headers, body: JSON.stringify({ action, note }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) alert(data.error || "操作失败");
       else await load();
@@ -104,6 +104,17 @@ export default function TaskDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, load]);
+
+  // 标记完成弹窗（必填"我的收获"，教师可见）
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
+
+  const submitCompleteNote = async () => {
+    if (!noteText.trim()) { alert("请填写一句本次学习的收获"); return; }
+    await patch("complete", noteText.trim());
+    setNoteOpen(false);
+    setNoteText("");
+  };
 
   const submitPractice = useCallback(async () => {
     const answers = (task?.questions || []).map((q, index) => ({ index, studentAnswer: practiceAnswers[index] || "" }));
@@ -239,7 +250,7 @@ export default function TaskDetailPage() {
               前往知识问答学习
             </a>
             {canMarkComplete && (
-              <button onClick={() => patch("complete")} disabled={busy}
+              <button onClick={() => { setNoteText(""); setNoteOpen(true); }} disabled={busy}
                 className="px-5 py-2.5 border border-[var(--color-primary)] text-[var(--color-primary)] rounded-lg text-sm font-medium hover:bg-[var(--color-primary-bg)] disabled:opacity-50">
                 ✓ 标记完成
               </button>
@@ -258,7 +269,7 @@ export default function TaskDetailPage() {
               前往引导学习
             </a>
             {canMarkComplete && (
-              <button onClick={() => patch("complete")} disabled={busy}
+              <button onClick={() => { setNoteText(""); setNoteOpen(true); }} disabled={busy}
                 className="px-5 py-2.5 border border-[var(--color-primary)] text-[var(--color-primary)] rounded-lg text-sm font-medium hover:bg-[var(--color-primary-bg)] disabled:opacity-50">
                 ✓ 标记完成
               </button>
@@ -336,7 +347,7 @@ export default function TaskDetailPage() {
             <a href="/guided" className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors">💡 引导学习</a>
             <a href="/sandbox" className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors">🗺️ 电子沙盘</a>
             {canMarkComplete && (
-              <button onClick={() => patch("complete")} disabled={busy}
+              <button onClick={() => { setNoteText(""); setNoteOpen(true); }} disabled={busy}
                 className="px-5 py-2 bg-[var(--color-primary)] text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
                 ✓ 标记完成
               </button>
@@ -439,6 +450,26 @@ export default function TaskDetailPage() {
             )}
           </div>
         </>
+      )}
+
+      {/* 标记完成弹窗（必填"我的收获"） */}
+      {noteOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setNoteOpen(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-[var(--color-text)] mb-1">✓ 标记任务完成</h3>
+            <p className="text-xs text-[var(--color-text-muted)] mb-3">写下你本次学习的收获（一句话即可，教师可见）</p>
+            <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3} autoFocus
+              placeholder="例如：理解了分流制与合流制的适用条件，也知道了溢流污染的控制思路"
+              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2.5 text-sm focus:outline-none focus:border-[var(--color-primary)] resize-y" />
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setNoteOpen(false)} className="px-4 py-2 text-sm border border-[var(--color-border)] rounded-lg text-[var(--color-text-secondary)] hover:bg-gray-50">取消</button>
+              <button onClick={submitCompleteNote} disabled={busy || !noteText.trim()}
+                className="px-5 py-2 text-sm bg-[var(--color-primary)] text-white rounded-lg hover:opacity-90 disabled:opacity-50">
+                {busy ? "提交中..." : "确认完成"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

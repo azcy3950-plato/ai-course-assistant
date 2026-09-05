@@ -1,4 +1,5 @@
 import { Pool, type PoolClient } from "pg";
+import { buildAllNetworks } from "./knowledge-map-builder";
 
 /**
  * 教学平台外围功能数据层：班级、学习任务、学生提交、教师反馈、
@@ -85,6 +86,7 @@ async function initSchema() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY (task_id, user_email)
       );
+      ALTER TABLE student_tasks ADD COLUMN IF NOT EXISTS completion_note TEXT;
       CREATE INDEX IF NOT EXISTS idx_student_tasks_email ON student_tasks(user_email);
 
       CREATE TABLE IF NOT EXISTS task_submissions (
@@ -364,13 +366,22 @@ export async function listTaskTargets(taskId: number) {
   return rows;
 }
 
-export async function setStudentTaskStatus(taskId: number, email: string, status: StudentTaskStatus) {
+/** 学生提交"标记完成"自评（教师端可见） */
+export async function setStudentTaskNote(taskId: number, email: string, note: string) {
+  await pool.query(
+    "UPDATE student_tasks SET completion_note = $3, updated_at = now() WHERE task_id = $1 AND user_email = $2",
+    [taskId, email, note],
+  );
+}
+
+export async function setStudentTaskStatus(taskId: number, email: string, status: StudentTaskStatus, note?: string) {
   await pool.query(
     `UPDATE student_tasks SET status = $3, updated_at = now(),
         started_at = COALESCE(started_at, now()),
-        completed_at = CASE WHEN $3 = 'COMPLETED' THEN now() ELSE completed_at END
+        completed_at = CASE WHEN $3 = 'COMPLETED' THEN now() ELSE completed_at END,
+        completion_note = CASE WHEN $4 IS NULL THEN completion_note ELSE $4 END
      WHERE task_id = $1 AND user_email = $2`,
-    [taskId, email, status],
+    [taskId, email, status, note ?? null],
   );
 }
 
@@ -627,20 +638,53 @@ export async function addAiVersion(input: { messageId: number; content: string; 
 export async function nodeAnalysis(teacherEmail: string) {
   const studentEmails = await listTeacherStudentEmails(teacherEmail);
   if (studentEmails.length === 0) return [];
-  const { rows } = await pool.query(
-    `SELECT n.id, n.name, n.chapter, n.category,
-        (SELECT count(*)::int FROM student_node_progress p WHERE p.node_id = n.id AND p.user_email = ANY($1)) AS student_count,
-        (SELECT round(avg(p.mastery)::numeric, 1) FROM student_node_progress p WHERE p.node_id = n.id AND p.user_email = ANY($1)) AS avg_mastery,
-        (SELECT COALESCE(sum(p.quiz_correct), 0)::int FROM student_node_progress p WHERE p.node_id = n.id AND p.user_email = ANY($1)) AS quiz_correct,
-        (SELECT COALESCE(sum(p.quiz_total), 0)::int FROM student_node_progress p WHERE p.node_id = n.id AND p.user_email = ANY($1)) AS quiz_total,
-        (SELECT count(*)::int FROM tasks t WHERE t.teacher_email = $2 AND n.id = ANY(t.knowledge_node_ids)) AS related_tasks
-     FROM knowledge_graph_nodes n
-     WHERE EXISTS (SELECT 1 FROM student_node_progress p WHERE p.node_id = n.id AND p.user_email = ANY($1))
-     ORDER BY avg_mastery ASC NULLS LAST, student_count DESC
-     LIMIT 100`,
-    [studentEmails, teacherEmail],
-  );
-  return rows;
+
+  // 运行时进度表存的节点 id 来自课程图谱（内存图谱），不是 knowledge_graph_nodes（历史远程同步表）。
+  // 因此以课程图谱为名称/章节源，legacy 库表只做兜底（保留旧 id 行不丢）。
+  const [progressRes, taskRes, legacyRes] = await Promise.all([
+    pool.query(
+      `SELECT node_id, count(*)::int AS student_count, round(avg(mastery)::numeric, 1) AS avg_mastery,
+              COALESCE(sum(quiz_correct), 0)::int AS quiz_correct, COALESCE(sum(quiz_total), 0)::int AS quiz_total
+       FROM student_node_progress WHERE user_email = ANY($1) GROUP BY node_id`,
+      [studentEmails],
+    ),
+    pool.query("SELECT knowledge_node_ids FROM tasks WHERE teacher_email = $1", [teacherEmail]),
+    pool.query("SELECT id, name, chapter FROM knowledge_graph_nodes").catch(() => ({ rows: [] })),
+  ]);
+
+  const nameMap = new Map<string, { name: string; chapter: string }>();
+  for (const net of buildAllNetworks()) {
+    for (const n of net.nodes) nameMap.set(n.id, { name: n.name, chapter: n.chapter });
+  }
+  for (const row of legacyRes.rows as Array<{ id: string; name: string; chapter: string }>) {
+    if (!nameMap.has(row.id)) nameMap.set(row.id, { name: row.name, chapter: row.chapter });
+  }
+
+  const related = new Map<string, number>();
+  for (const t of taskRes.rows as Array<{ knowledge_node_ids: string[] | null }>) {
+    for (const id of t.knowledge_node_ids || []) related.set(id, (related.get(id) || 0) + 1);
+  }
+
+  return (progressRes.rows as Array<{
+    node_id: string; student_count: number; avg_mastery: number | null;
+    quiz_correct: number; quiz_total: number;
+  }>)
+    .map((row) => {
+      const meta = nameMap.get(row.node_id) || { name: row.node_id, chapter: "" };
+      return {
+        id: row.node_id,
+        name: meta.name,
+        chapter: meta.chapter,
+        category: "",
+        student_count: row.student_count,
+        avg_mastery: row.avg_mastery,
+        quiz_correct: row.quiz_correct,
+        quiz_total: row.quiz_total,
+        related_tasks: related.get(row.node_id) || 0,
+      };
+    })
+    .sort((a, b) => (a.avg_mastery ?? 0) - (b.avg_mastery ?? 0))
+    .slice(0, 100);
 }
 
 /** 某知识点下的学生明细（掌握度 + 错题数） */

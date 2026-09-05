@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verify } from "jsonwebtoken";
 import { Pool } from "pg";
 import { ensureKnowledgeGraphSchema } from "@/lib/knowledge-graph";
+import { buildAllNetworks } from "@/lib/knowledge-map-builder";
 import {
   ensureLearningSchema,
   listStudentTasks,
@@ -43,8 +44,8 @@ export async function GET(req: NextRequest) {
         listLearningEvents(emailParam, 50),
         listFeedbackForStudent(emailParam),
         pool.query(
-          `SELECT p.node_id, n.name AS node_name, p.mastery, p.quiz_correct, p.quiz_total
-           FROM student_node_progress p JOIN knowledge_graph_nodes n ON n.id = p.node_id
+          `SELECT p.node_id, p.mastery, p.quiz_correct, p.quiz_total
+           FROM student_node_progress p
            WHERE p.user_email = $1 ORDER BY p.mastery ASC NULLS LAST LIMIT 10`,
           [emailParam],
         ),
@@ -68,6 +69,15 @@ export async function GET(req: NextRequest) {
         rate: quizRows.length ? Math.round((correct / quizRows.length) * 100) : 0,
         topics: [...topics].slice(0, 30),
       };
+      // 薄弱知识点名称用课程图谱解析（progress 节点 id 与图谱同源，不再 JOIN legacy 表）
+      const nodeNameMap = new Map<string, string>();
+      for (const net of buildAllNetworks()) {
+        for (const n of net.nodes) nodeNameMap.set(n.id, n.name);
+      }
+      const weakNodes = progressRes.rows.map((r: any) => ({
+        ...r,
+        node_name: nodeNameMap.get(r.node_id) || r.node_id,
+      }));
       return NextResponse.json({
         stats,
         records: records.rows,
@@ -82,7 +92,7 @@ export async function GET(req: NextRequest) {
           correct,
           rate: quizRows.length ? Math.round((correct / quizRows.length) * 100) : null,
         },
-        weakNodes: progressRes.rows,
+        weakNodes,
       });
     }
     const { rows } = await pool.query(

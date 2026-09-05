@@ -91,14 +91,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (st.status === "SUBMITTED" || st.status === "REVISION_REQUIRED") {
         return NextResponse.json({ error: "该任务需要提交并由教师批阅，不能直接标记完成" }, { status: 400 });
       }
-      await setStudentTaskStatus(taskId, auth.email, "COMPLETED");
+      // 标记完成必须附一句"我的收获"（教师可见），避免零证据完成
+      const note = typeof body.note === "string" ? body.note.trim() : "";
+      if (!note || note.length > 500) {
+        return NextResponse.json({ error: "请填写一句本次学习的收获（1-500 字）" }, { status: 400 });
+      }
+      await setStudentTaskStatus(taskId, auth.email, "COMPLETED", note);
       const eventType =
         task.type === "GUIDED" ? "GUIDED_COMPLETED" : task.type === "KNOWLEDGE" ? "KNOWLEDGE_COMPLETED" : "TASK_COMPLETED";
       await addLearningEvent({
         userEmail: auth.email,
         type: eventType,
         title: `完成任务：${task.title}`,
-        summary: task.title,
+        summary: note,
         refType: "task",
         refId: String(taskId),
       });

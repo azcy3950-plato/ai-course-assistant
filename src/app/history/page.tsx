@@ -91,6 +91,57 @@ export default function HistoryPage() {
     } catch { alert("网络错误"); }
   };
 
+  // ── 错题重新作答（仅存储了选项的题目可用） ──
+  const [retrySel, setRetrySel] = useState<Record<number, string>>({});
+  const [retrying, setRetrying] = useState<Set<number>>(new Set());
+  const [retryOpen, setRetryOpen] = useState<Set<number>>(new Set());
+
+  const answerText = (q: any, ans: string | null | undefined): string => {
+    if (!ans) return "未作答";
+    if (/^[A-D]$/.test(ans) && Array.isArray(q.options) && q.options.length > 0) {
+      const idx = ans.charCodeAt(0) - 65;
+      if (q.options[idx]) return `${ans}. ${q.options[idx]}`;
+    }
+    return ans;
+  };
+
+  const correctLetter = (q: any): string | null => {
+    if (/^[A-D]$/.test(q.correct_answer || "")) return q.correct_answer;
+    const idx = Array.isArray(q.options) ? q.options.indexOf(q.correct_answer) : -1;
+    return idx >= 0 ? String.fromCharCode(65 + idx) : null;
+  };
+
+  const retryQuiz = async (q: any) => {
+    const letter = retrySel[q.id];
+    const correct = correctLetter(q);
+    if (!letter || !correct) return;
+    setRetrying((prev) => new Set(prev).add(q.id));
+    try {
+      const r = await fetch("/api/quiz", {
+        method: "POST", headers: jsonHeaders,
+        body: JSON.stringify({
+          question: q.question, student_answer: letter, correct_answer: correct,
+          is_correct: letter === correct, topic: q.topic || "未分类",
+          options: q.options || [], explanation: q.explanation || "",
+        }),
+      });
+      if (!r.ok) { alert("重新作答保存失败"); return; }
+      // 订正事件（正确与否都算订正一次；答对后该题因 is_correct=true 自动移出错题本）
+      await fetch("/api/learning-events", {
+        method: "POST", headers: jsonHeaders,
+        body: JSON.stringify({
+          type: "PRACTICE_CORRECTED", title: letter === correct ? "错题订正成功" : "错题再次作答",
+          summary: (q.question || "").slice(0, 100),
+          refType: "quiz_result", refId: String(q.id),
+        }),
+      });
+      setRetryOpen((prev) => { const n = new Set(prev); n.delete(q.id); return n; });
+      setRetrySel((prev) => ({ ...prev, [q.id]: "" }));
+      await Promise.all([loadMistakes(), loadEvents()]);
+    } catch { alert("网络错误"); }
+    setRetrying((prev) => { const n = new Set(prev); n.delete(q.id); return n; });
+  };
+
   const submitFeedback = async () => {
     setFbSending(true);
     try {
@@ -206,14 +257,17 @@ export default function HistoryPage() {
                   <div className="divide-y divide-[var(--color-border)]">
                     {g.items.map((q, i) => {
                       const corrected = correctedIds.has(Number(q.id));
+                      const canRetry = Array.isArray(q.options) && q.options.length >= 2 && correctLetter(q) !== null;
+                      const retryExpanded = retryOpen.has(q.id);
                       return (
                         <div key={i} className="px-5 py-4">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-[var(--color-text)]">📝 {q.question}</p>
                               <div className="text-xs mt-2 space-y-1">
-                                <div className="text-red-600">你的答案：{q.student_answer || "未作答"}</div>
-                                <div className="text-green-700">正确答案：{q.correct_answer}</div>
+                                <div className="text-red-600">你的答案：{answerText(q, q.student_answer)}</div>
+                                <div className="text-green-700">正确答案：{answerText(q, q.correct_answer)}</div>
+                                {q.explanation && <div className="text-[var(--color-text-muted)]">💡 {q.explanation}</div>}
                                 <div className="text-[var(--color-text-muted)]">错 {q.times} 次 · 最近 {formatDate(q.created_at)}</div>
                               </div>
                             </div>
@@ -226,11 +280,40 @@ export default function HistoryPage() {
                                   标记已订正
                                 </button>
                               )}
-                              <a href="/knowledge" className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-primary)]">
-                                复习相关知识点 →
-                              </a>
+                              <div className="flex items-center gap-2">
+                                {canRetry && !corrected && (
+                                  <button onClick={() => setRetryOpen((prev) => { const n = new Set(prev); if (n.has(q.id)) n.delete(q.id); else n.add(q.id); return n; })}
+                                    className="text-xs px-2.5 py-1 rounded-full bg-[var(--color-primary)] text-white hover:opacity-90">
+                                    {retryExpanded ? "收起" : "重新作答"}
+                                  </button>
+                                )}
+                                <a href="/knowledge" className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-primary)]">
+                                  复习相关知识点 →
+                                </a>
+                              </div>
                             </div>
                           </div>
+                          {retryExpanded && (
+                            <div className="mt-3 rounded-lg border border-[var(--color-border)] p-3 bg-gray-50">
+                              <p className="text-xs font-semibold text-[var(--color-text-secondary)] mb-2">重新作答（提交后即时判分）</p>
+                              <div className="space-y-1.5">
+                                {q.options.map((opt: string, oi: number) => {
+                                  const letter = String.fromCharCode(65 + oi);
+                                  return (
+                                    <label key={oi} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer ${retrySel[q.id] === letter ? "border-[var(--color-primary)] bg-white" : "border-transparent hover:bg-white"}`}>
+                                      <input type="radio" name={`retry-${q.id}`} checked={retrySel[q.id] === letter}
+                                        onChange={() => setRetrySel((prev) => ({ ...prev, [q.id]: letter }))} className="accent-[var(--color-primary)]" />
+                                      <span>{letter}. {opt}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                              <button onClick={() => retryQuiz(q)} disabled={retrying.has(q.id) || !retrySel[q.id]}
+                                className="mt-2.5 px-4 py-1.5 text-xs bg-[var(--color-primary)] text-white rounded-lg hover:opacity-90 disabled:opacity-50">
+                                {retrying.has(q.id) ? "提交中..." : "提交答案"}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

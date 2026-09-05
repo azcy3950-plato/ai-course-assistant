@@ -48,6 +48,8 @@ export default function QuizPanel({ questions, onClose, onComplete }: Props) {
             correct_answer: questions[i].correct,
             is_correct: isCorrect,
             topic: questions[i].topic,
+            options: questions[i].options || [],
+            explanation: (questions[i] as any).explanation || "",
           }),
         });
       } catch (e) {}

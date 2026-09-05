@@ -62,7 +62,7 @@ export default function AnalysisTab() {
   return (
     <div>
       <p className="text-[10px] text-[var(--color-text-muted)] mb-4">
-        数据来自真实学习记录与测验结果；当前为演示环境，学生均为匿名演示账号（演示数据）
+        数据来自真实学习记录与测验结果；含固定演示账号（student01-12@demo.edu.cn）产生的可复现演示数据
       </p>
 
       <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
@@ -76,6 +76,10 @@ export default function AnalysisTab() {
             {t.l}
           </button>
         ))}
+        <button onClick={() => router.push("/teacher/quizzes")}
+          className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary-bg)] transition-colors">
+          📊 阶段测验总览 →
+        </button>
       </div>
 
       {loading ? (

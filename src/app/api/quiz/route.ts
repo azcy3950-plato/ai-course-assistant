@@ -82,12 +82,14 @@ export async function POST(req: NextRequest) {
   try {
     const me = getUserEmail(req);
     if (!me) return NextResponse.json({ error: "未登录" }, { status: 401 });
-    const { question, student_answer, correct_answer, is_correct, topic } = await req.json();
+    const { question, student_answer, correct_answer, is_correct, topic, options, explanation } = await req.json();
     // 强制写自己的结果,忽略客户端传入的 user_email
     const user_email = me;
     await pool.query(
-      "INSERT INTO quiz_results (user_email, question, correct_answer, student_answer, is_correct, topic) VALUES ($1,$2,$3,$4,$5,$6)",
-      [user_email, question, correct_answer, student_answer, is_correct, topic]
+      "INSERT INTO quiz_results (user_email, question, correct_answer, student_answer, is_correct, topic, options, explanation) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+      [user_email, question, correct_answer, student_answer, is_correct, topic,
+        Array.isArray(options) ? JSON.stringify(options) : JSON.stringify([]),
+        typeof explanation === "string" ? explanation : ""]
     );
     await recordQuizResultByTopic(user_email, topic, Boolean(is_correct));
     return NextResponse.json({ ok: true });

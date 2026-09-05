@@ -3,11 +3,13 @@
  *   node --env-file=.env.local scripts/seed-demo.mjs
  *
  * 创建固定的匿名演示账号、班级、学习任务、提交/批阅、学习事件、
- * 错题与 AI 问答存档，均为可复现的演示数据（不使用随机数）。
+ * 问答记录、知识点进度、错题与 AI 问答存档，均为可复现的演示数据（不使用随机数）。
  * 登录信息（演示）：
  *   教师：teacher@demo.edu.cn / Demo123456
  *   学生：student01..12@demo.edu.cn / Demo123456
  */
+import { readFileSync } from "fs";
+import { join } from "path";
 import { Pool } from "pg";
 import { hash } from "bcryptjs";
 
@@ -71,6 +73,7 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (task_id, user_email)
     );
+    ALTER TABLE student_tasks ADD COLUMN IF NOT EXISTS completion_note TEXT;
     CREATE INDEX IF NOT EXISTS idx_student_tasks_email ON student_tasks(user_email);
 
     CREATE TABLE IF NOT EXISTS task_submissions (
@@ -145,6 +148,44 @@ async function ensureSchema() {
       user_email TEXT NOT NULL,
       corrected_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    -- ── 平台基础表（历史上手工建，这里补成自包含；幂等） ──
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      phone TEXT,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'student',
+      avatar TEXT,
+      last_login TIMESTAMPTZ,
+      token_version INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS quiz_results (
+      id SERIAL PRIMARY KEY,
+      user_email TEXT NOT NULL,
+      question TEXT NOT NULL,
+      correct_answer TEXT,
+      student_answer TEXT,
+      is_correct BOOLEAN,
+      topic TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    ALTER TABLE quiz_results ADD COLUMN IF NOT EXISTS options JSONB NOT NULL DEFAULT '[]';
+    ALTER TABLE quiz_results ADD COLUMN IF NOT EXISTS explanation TEXT NOT NULL DEFAULT '';
+
+    CREATE TABLE IF NOT EXISTS learning_records (
+      id SERIAL PRIMARY KEY,
+      user_email TEXT NOT NULL,
+      question TEXT NOT NULL,
+      answer_summary TEXT NOT NULL DEFAULT '',
+      keywords TEXT[] NOT NULL DEFAULT '{}',
+      topics TEXT[] NOT NULL DEFAULT '{}',
+      has_references BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
 }
 
@@ -166,6 +207,8 @@ async function main() {
   await pool.query("DELETE FROM quiz_results WHERE user_email = ANY($1)", [demoEmails]);
   await pool.query("DELETE FROM learning_events WHERE user_email = ANY($1)", [demoEmails]);
   await pool.query("DELETE FROM ai_qa_messages WHERE user_email = ANY($1)", [demoEmails]);
+  await pool.query("DELETE FROM learning_records WHERE user_email = ANY($1)", [demoEmails]);
+  await pool.query("DELETE FROM student_node_progress WHERE user_email = ANY($1)", [demoEmails]);
 
   // ── 1. 用户 ──
   const pwHash = await hash(DEMO_PASSWORD, 10);
@@ -193,11 +236,15 @@ async function main() {
   }
   const class231 = students.slice(0, 8);
 
-  // ── 3. 真实知识图谱节点（用于任务关联与错题主题） ──
-  const nodeRes = await pool.query("SELECT id, name FROM knowledge_graph_nodes ORDER BY sort_order NULLS LAST LIMIT 40");
-  const nodes = nodeRes.rows;
-  const pick = (n) => nodes.slice(0, Math.min(n, nodes.length)).map((x) => x.id);
-  const nodeName = (id) => nodes.find((x) => x.id === id)?.name || id;
+  // ── 3. 知识点目录（scripts/node-catalog.json，与运行时内存图谱一致的节点 id） ──
+  // 固定演示数据：按名称硬编码选取排水网络节点（可复现，不用随机；演示数据）
+  const catalog = JSON.parse(readFileSync(join(process.cwd(), "scripts", "node-catalog.json"), "utf-8"));
+  const DEMO_NODE_NAMES = ["排水工程", "体制", "分流制", "合流制", "雨水", "雨水量计算", "设计流量", "管渠水力", "排水系统组成", "平面布置", "排水量估算"];
+  const demoNodes = DEMO_NODE_NAMES
+    .map((name) => catalog.find((c) => c.net === "drainage" && c.name === name))
+    .filter(Boolean);
+  const pick = (n) => demoNodes.slice(0, n).map((x) => x.id);
+  const nodeName = (id) => demoNodes.find((x) => x.id === id)?.name || id;
 
   // ── 4. 任务 ──
   const insertTask = async (t) => {
@@ -444,28 +491,99 @@ async function main() {
   await insertEvent(students[9], "TEACHER_FEEDBACK_RECEIVED", "教师反馈：需要修改", "第 1 题错误……", 12, "submission", String(p4));
   await insertEvent(students[10], "TASK_STARTED", "开始任务：重现期情景对比", "重现期情景对比", 6);
 
-  // ── 8. 错题数据（quiz_results） ──
-  const insertQuiz = async (email, question, correct, studentAns, topic, isCorrect, hoursAgoVal) => {
+  // ── 8. 错题数据（quiz_results，含选项与解析，演示数据） ──
+  const insertQuiz = async (email, question, correct, studentAns, topic, isCorrect, hoursAgoVal, options = [], explanation = "") => {
     await pool.query(
-      "INSERT INTO quiz_results (user_email, question, correct_answer, student_answer, is_correct, topic, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-      [email, question, correct, studentAns, isCorrect, topic, hoursAgo(hoursAgoVal)],
+      "INSERT INTO quiz_results (user_email, question, correct_answer, student_answer, is_correct, topic, options, explanation, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+      [email, question, correct, studentAns, isCorrect, topic, JSON.stringify(options), explanation, hoursAgo(hoursAgoVal)],
     );
   };
-  const topicA = nodes[0]?.name || "排水系统设计";
-  const topicB = nodes[1]?.name || "雨水管网规划";
-  const topicC = nodes[2]?.name || "暴雨强度计算";
-  await insertQuiz(students[2], "合流制管渠溢流的主要影响是？", "造成受纳水体污染", "增加管道输送能力", topicA, false, 26);
-  await insertQuiz(students[2], "雨水管渠设计流量按什么计算？", "设计暴雨强度公式", "年平均降雨量", topicB, false, 24);
-  await insertQuiz(students[6], "重现期为 2 年的一小时降雨量通常比 50 年一遇的（　）", "小", "大", topicC, false, 20);
-  await insertQuiz(students[6], "LID 设施的核心目标是？", "源头削减径流", "增大管径", topicC, false, 8);
-  await insertQuiz(students[2], "雨水口的主要作用是？", "汇集地面径流", "汇集地面径流", topicB, true, 6);
-  await insertQuiz(students[0], "设计暴雨重现期越大，暴雨强度（　）", "越大", "越大", topicC, true, 30);
-  await insertQuiz(students[1], "绿色屋顶属于哪类措施？", "源头削减", "源头削减", topicC, true, 12);
-  await insertQuiz(students[9], "径流系数反映的是？", "降雨转化为径流的比例", "管道粗糙程度", topicB, false, 14);
-  await insertQuiz(students[9], "汇水区按什么划分？", "地形分水线", "道路中线", topicB, false, 10);
-  await insertQuiz(students[10], "重现期提高意味着？", "设计暴雨更强", "管径变小", topicC, false, 7);
-  await insertQuiz(students[8], "雨水口的作用是？", "汇集地面径流", "汇集地面径流", topicB, true, 18);
-  await insertQuiz(students[11], "LID 设施属于哪类控制？", "源头控制", "源头控制", topicC, true, 16);
+  const topicA = "排水系统组成";
+  const topicB = "设计流量";
+  const topicC = "雨水量计算";
+  await insertQuiz(students[2], "合流制管渠溢流的主要影响是？", "造成受纳水体污染", "增加管道输送能力", topicA, false, 26,
+    ["增加管道输送能力", "造成受纳水体污染", "减少污水处理量", "提高管网坡度"], "合流制雨天超量混合污水经溢流口直排，造成受纳水体污染。");
+  await insertQuiz(students[2], "雨水管渠设计流量按什么计算？", "设计暴雨强度公式", "年平均降雨量", topicB, false, 24,
+    ["年平均降雨量", "设计暴雨强度公式", "管渠粗糙系数", "汇水区绿化率"], "设计流量按设计暴雨强度公式与径流系数计算。");
+  await insertQuiz(students[6], "重现期为 2 年的一小时降雨量通常比 50 年一遇的（　）", "小", "大", topicC, false, 20,
+    ["大", "小", "相等", "无法比较"], "重现期越长，设计暴雨强度越大。");
+  await insertQuiz(students[6], "LID 设施的核心目标是？", "源头削减径流", "增大管径", topicC, false, 8,
+    ["增大管径", "源头削减径流", "提高污水浓度", "增加泵站扬程"], "LID 通过源头控制削减径流。");
+  await insertQuiz(students[2], "雨水口的主要作用是？", "汇集地面径流", "汇集地面径流", topicB, true, 6,
+    ["输送雨水", "汇集地面径流", "净化水质", "蓄存雨水"], "雨水口收集地面径流进入管渠。");
+  await insertQuiz(students[0], "设计暴雨重现期越大，暴雨强度（　）", "越大", "越大", topicC, true, 30,
+    ["越大", "越小", "不变", "无法确定"], "重现期与设计暴雨强度正相关。");
+  await insertQuiz(students[1], "绿色屋顶属于哪类措施？", "源头削减", "源头削减", topicC, true, 12,
+    ["末端处理", "源头削减", "管道扩容", "泵站调蓄"], "绿色屋顶属于源头控制（LID）措施。");
+  await insertQuiz(students[9], "径流系数反映的是？", "降雨转化为径流的比例", "管道粗糙程度", topicB, false, 14,
+    ["管道粗糙程度", "降雨转化为径流的比例", "管渠坡度", "降雨历时"], "径流系数为径流量与降雨量之比。");
+  await insertQuiz(students[9], "汇水区按什么划分？", "地形分水线", "道路中线", topicB, false, 10,
+    ["道路中线", "地形分水线", "行政区划", "管径大小"], "汇水区按地形分水线就近划分。");
+  await insertQuiz(students[10], "重现期提高意味着？", "设计暴雨更强", "管径变小", topicC, false, 7,
+    ["管径变小", "设计暴雨更强", "造价降低", "汇流更快"], "重现期提高对应更强的设计暴雨。");
+  await insertQuiz(students[8], "雨水口的作用是？", "汇集地面径流", "汇集地面径流", topicB, true, 18,
+    ["汇集地面径流", "输送污水", "蓄存雨水", "净化水质"], "雨水口汇集地面径流。");
+  await insertQuiz(students[11], "LID 设施属于哪类控制？", "源头控制", "源头控制", topicC, true, 16,
+    ["源头控制", "末端控制", "中途控制", "泵站控制"], "LID 属于源头控制。");
+
+  // ── 8.5 问答记录（learning_records，固定演示数据；时间早于该生最新小测以保持"5 问触发小测"节奏） ──
+  const DEMO_QUESTIONS = [
+    "城市内涝的主要成因是什么？", "海绵城市有哪些核心技术？", "暴雨强度公式中各参数的含义？",
+    "SWMM模型如何用于内涝模拟？", "合流制与分流制有什么区别？", "雨水管渠设计流量的计算步骤？",
+    "LID设施对径流削减有什么作用？", "排水系统的组成包括哪些部分？", "重现期与设计暴雨强度的关系？",
+    "透水铺装的适用条件是什么？", "径流系数的含义与取值？", "植草沟的布置要点有哪些？",
+  ];
+  const recordSchedules = [
+    { email: students[0], hours: [80, 76, 72, 68, 64, 60, 56, 52, 48, 44, 40, 36] },
+    { email: students[1], hours: [60, 54, 48, 42, 36, 12] },
+    { email: students[2], hours: [72, 66, 60, 54, 48, 32] },
+    { email: students[3], hours: [50, 44, 38, 30] },
+    { email: students[4], hours: [40, 34, 28] },
+    { email: students[5], hours: [70, 62, 54, 44, 26] },
+    { email: students[6], hours: [46, 38, 30] },
+    { email: students[7], hours: [60, 50, 40, 24] },
+    { email: students[8], hours: [50, 40, 30, 20] },
+    { email: students[9], hours: [40, 30, 20] },
+    { email: students[10], hours: [48, 36, 22] },
+    { email: students[11], hours: [28, 18] },
+  ];
+  const topicNames = [DEMO_NODE_NAMES[5], DEMO_NODE_NAMES[6], DEMO_NODE_NAMES[8], DEMO_NODE_NAMES[9]];
+  for (const schedule of recordSchedules) {
+    for (let i = 0; i < schedule.hours.length; i++) {
+      const q = DEMO_QUESTIONS[i % DEMO_QUESTIONS.length];
+      await pool.query(
+        `INSERT INTO learning_records (user_email, question, answer_summary, keywords, topics, has_references, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [schedule.email, q, `关于「${q}」的问答学习记录（演示数据）`, [topicNames[i % topicNames.length]],
+         [topicNames[i % topicNames.length], topicNames[(i + 1) % topicNames.length]], i % 2 === 0, hoursAgo(schedule.hours[i])],
+      );
+    }
+  }
+
+  // ── 8.6 知识点掌握进度（student_node_progress，固定演示数据；node id 与课程图谱一致） ──
+  const progressSchedules = [
+    { email: students[0], mastery: [92, 90, 88, 85, 83, 80, 78, 75, 72, 70, 68] },
+    { email: students[1], mastery: [85, 80, 75, 70, 66, 60, 55, 48] },
+    { email: students[2], mastery: [78, 72, 68, 62, 58, 52, 45, 40] },
+    { email: students[3], mastery: [70, 66, 60, 55, 48, 42] },
+    { email: students[4], mastery: [65, 60, 55, 50, 44, 38] },
+    { email: students[5], mastery: [55, 48, 40, 32] },
+    { email: students[6], mastery: [40, 35, 30] },
+  ];
+  for (const s of progressSchedules) {
+    for (let i = 0; i < s.mastery.length; i++) {
+      const node = demoNodes[i];
+      if (!node) continue;
+      const mastery = s.mastery[i];
+      const quizTotal = 6;
+      const quizCorrect = Math.round((mastery / 100) * quizTotal);
+      await pool.query(
+        `INSERT INTO student_node_progress (user_email, node_id, question_count, study_count, quiz_correct, quiz_total, last_studied_at, mastery)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [s.email, node.id, 5 + i, 3 + (i % 3), quizCorrect, quizTotal, hoursAgo(4 + i * 9), mastery],
+      );
+    }
+  }
 
   // ── 9. AI 问答存档 + 一条待审核反馈 ──
   const qa1 = (await pool.query(
@@ -534,7 +652,7 @@ async function main() {
   console.log(`  学习事件：${await cnt("SELECT count(*)::int AS count FROM learning_events WHERE user_email = ANY($1)", [demoEmails])}`);
   console.log(`  错题记录：${await cnt("SELECT count(*)::int AS count FROM quiz_results WHERE user_email = ANY($1)", [demoEmails])}`);
   console.log(`  AI 问答存档：${await cnt("SELECT count(*)::int AS count FROM ai_qa_messages WHERE user_email = ANY($1)", [demoEmails])}（含 ${pendingFeedback} 条待审核反馈）`);
-  console.log(`知识点关联：${nodes.length > 0 ? `使用真实图谱节点（如 ${nodes[0].name}）` : "知识图谱暂无节点，任务未关联知识点"}`);
+  console.log(`知识点关联：${demoNodes.length > 0 ? `使用课程图谱排水网络节点（如 ${demoNodes[0].name}）` : "节点目录缺失，任务未关联知识点"}`);
   console.log(`\n教师登录：${teacher} / ${DEMO_PASSWORD}`);
   console.log(`学生登录：student01@demo.edu.cn / ${DEMO_PASSWORD}（01-12 均可）`);
 }
