@@ -50,7 +50,7 @@ export default function HistoryPage() {
       fetch("/api/quiz-results", { headers }),
       fetch("/api/corrections", { headers }),
     ]);
-    if (qRes.ok) setQuizResults((await qRes.json()).filter((r: any) => !r.is_correct));
+    if (qRes.ok) setQuizResults(await qRes.json()); // 保留全量行：错题列表过滤依赖"被正确重做取代"判断
     if (cRes.ok) setCorrectedIds(new Set((await cRes.json()).ids || []));
   }, []);
   const loadQa = useCallback(async () => {
