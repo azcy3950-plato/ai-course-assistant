@@ -41,11 +41,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const st = await getStudentTask(taskId, auth.email);
     if (!st) return NextResponse.json({ error: "你未被分配该任务" }, { status: 403 });
-    const submissions = await listStudentSubmissions(taskId, auth.email);
+    const [submissions, attachments] = await Promise.all([
+      listStudentSubmissions(taskId, auth.email),
+      listTaskAttachments(taskId),
+    ]);
     return NextResponse.json({
       task: { ...task, questions: maskQuestions(task.questions || []) },
       studentTask: st,
       submissions,
+      attachments,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

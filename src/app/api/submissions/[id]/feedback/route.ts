@@ -19,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!result) return NextResponse.json({ error: "提交不存在" }, { status: 404 });
     if (result.error) return NextResponse.json({ error: result.error }, { status: 403 });
 
-    await addLearningEvent({
+    if (!(result as any).duplicated) await addLearningEvent({
       userEmail: result.submission.user_email,
       type: "TEACHER_FEEDBACK_RECEIVED",
       title: status === "passed" ? "任务通过：教师已批阅" : "教师反馈：需要修改",
@@ -35,11 +35,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     addNotification({
       userEmail: result.submission.user_email,
       type: notifType,
+      dedupeKey: `FEEDBACK:${result.submission.id}:${result.submission.version}`,
       title: status === "passed" ? `教师已批阅：${taskTitle}` : `任务需要修改：${taskTitle}`,
       body: String(content).slice(0, 120),
       link: `/tasks/${result.submission.task_id}`,
     }).catch(() => {});
-    await logAudit({ operatorEmail: auth.email, action: "FEEDBACK_SUBMIT", targetType: "submission", targetId: String(result.submission.id), detail: status });
+    if (!(result as any).duplicated) await logAudit({ operatorEmail: auth.email, action: "FEEDBACK_SUBMIT", targetType: "submission", targetId: String(result.submission.id), detail: status });
     return NextResponse.json({ ok: true, feedback: result.feedback });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

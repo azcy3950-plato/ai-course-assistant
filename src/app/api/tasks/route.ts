@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
       addNotification({
         userEmail: em,
         type: notifyType,
+        dedupeKey: `${notifyType}:${task.id}:${em}`,
         title: type === "REMEDIAL" ? `教师布置了补充学习：${title}` : `新任务：${title}`,
         body: input.description.slice(0, 80),
         link: `/tasks/${task.id}`,

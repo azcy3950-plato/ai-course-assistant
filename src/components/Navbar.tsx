@@ -286,6 +286,9 @@ export default function Navbar() {
                     </button>
                   ))
                 )}
+                <p className="px-4 py-2.5 text-[10px] text-[var(--color-text-muted)] border-t border-[var(--color-border)]">
+                  截止提醒在您访问平台时检查生成；其他通知由任务、批阅等事件即时产生。
+                </p>
               </div>
             )}
           </div>

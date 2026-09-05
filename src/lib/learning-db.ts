@@ -173,6 +173,8 @@ async function initSchema() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS idx_notifications_email ON notifications(user_email, created_at DESC);
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_dedupe ON notifications(user_email, type, dedupe_key) WHERE dedupe_key IS NOT NULL;
 
       CREATE TABLE IF NOT EXISTS favorites (
         id SERIAL PRIMARY KEY,
@@ -520,6 +522,15 @@ export async function addTeacherFeedback(submissionId: number, teacherEmail: str
   const task = await getTask(submission.task_id);
   if (!task || task.teacher_email !== teacherEmail) return { error: "无权批阅该提交" };
 
+  // 幂等：同一提交已存在同状态批阅（双击/重试）→ 直接返回已有，不重复插行/发通知/记事件
+  const existing = await pool.query(
+    "SELECT * FROM teacher_feedback WHERE submission_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT 1",
+    [submissionId, status],
+  );
+  if (existing.rows[0]) {
+    return { feedback: existing.rows[0], submission, duplicated: true };
+  }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -794,11 +805,12 @@ export async function teacherStudentsOverview(teacherEmail: string) {
 
 // ─── 通知中心 ───
 export async function addNotification(input: {
-  userEmail: string; type: string; title: string; body?: string; link?: string;
+  userEmail: string; type: string; title: string; body?: string; link?: string; dedupeKey?: string;
 }) {
   await pool.query(
-    "INSERT INTO notifications (user_email, type, title, body, link) VALUES ($1,$2,$3,$4,$5)",
-    [input.userEmail, input.type, input.title, input.body || "", input.link || ""],
+    `INSERT INTO notifications (user_email, type, title, body, link, dedupe_key) VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (user_email, type, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
+    [input.userEmail, input.type, input.title, input.body || "", input.link || "", input.dedupeKey || null],
   );
 }
 
@@ -841,7 +853,7 @@ export async function lazyDueSoonNotifications(email: string) {
   );
   for (const r of rows) {
     await addNotification({
-      userEmail: email, type: "TASK_DUE_SOON",
+      userEmail: email, type: "TASK_DUE_SOON", dedupeKey: `TASK_DUE_SOON:${r.task_id}:${email}`,
       title: `任务即将截止：${r.title}`,
       body: `截止时间 ${new Date(r.deadline).toLocaleString("zh-CN", { hour12: false })}`,
       link: `/tasks/${r.task_id}`,

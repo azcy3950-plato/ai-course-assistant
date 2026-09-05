@@ -232,7 +232,7 @@ export default function HistoryPage() {
         <p className="text-sm text-[var(--color-text-secondary)]">学习历史、错题订正与 AI 问答记录</p>
       </div>
 
-      <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
+      <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit max-w-full flex-wrap overflow-x-auto">
         {[
           { k: "events" as const, l: "🕐 学习历史" },
           { k: "mistakes" as const, l: "❌ 我的错题" },

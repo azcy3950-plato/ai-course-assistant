@@ -30,6 +30,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     const st = await getStudentTask(taskId, auth.email);
     if (!st) return NextResponse.json({ error: "你未被分配该任务" }, { status: 403 });
+    // 防双击：已提交且未被要求修改时拒绝再次提交（练习任务除外——允许重新作答）
+    if (st.status === "SUBMITTED" && task.type !== "PRACTICE") {
+      return NextResponse.json({ error: "已提交，等待教师批阅" }, { status: 400 });
+    }
     return NextResponse.json(await listStudentSubmissions(taskId, auth.email));
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -114,6 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     addNotification({
       userEmail: task.teacher_email,
       type: submission.version > 1 ? "RESUBMISSION_RECEIVED" : "SUBMISSION_RECEIVED",
+      dedupeKey: `SUBMISSION:${submission.id}:${submission.version}`,
       title: submission.version > 1 ? `学生重新提交：${task.title}` : `学生提交：${task.title}`,
       body: `${auth.email} 第 ${submission.version} 版提交`,
       link: `/teacher/tasks/${taskId}`,

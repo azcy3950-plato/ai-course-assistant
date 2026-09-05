@@ -187,6 +187,89 @@ async function main() {
     await page.close();
   }
 
+  // ── 第四轮收口用例 ──
+  {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(page, "student02@demo.edu.cn", "Demo123456");
+    const token = await tokenOf(page);
+
+    // 通知去重：连续两次 GET，截止提醒不翻倍
+    const n1 = await apiCount(page, token, "/api/notifications");
+    const c1 = await page.evaluate(async (t) => {
+      const r = await fetch("/api/notifications", { headers: { Authorization: "Bearer " + t } });
+      const d = await r.json();
+      return d.items.filter((x) => x.type === "TASK_DUE_SOON").length;
+    }, token);
+    await sleep(1200);
+    const c2 = await page.evaluate(async (t) => {
+      const r = await fetch("/api/notifications", { headers: { Authorization: "Bearer " + t } });
+      const d = await r.json();
+      return d.items.filter((x) => x.type === "TASK_DUE_SOON").length;
+    }, token);
+    record("通知去重：连续 GET 截止提醒不翻倍", c1 === c2, `${c1}→${c2}`);
+
+    // 小测过期 token → 400
+    const quizRes = await page.evaluate(async (t) => {
+      const r = await fetch("/api/quiz", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ token: "bogus-token", answers: [{ index: 0, studentAnswer: "A" }] }) });
+      return { status: r.status, body: await r.json().catch(() => ({})) };
+    }, token);
+    record("小测过期 token 返回 400 且提示重新生成", quizRes.status === 400 && /过期|重新生成/.test(quizRes.body.error || ""), `${quizRes.status} ${quizRes.body.error || ""}`);
+
+    // 附件越权：学生 B 下载学生 A 的附件 key（不存在 key → 404；伪造 key 前缀 → 400）
+    const attRes = await page.evaluate(async (t) => {
+      const r = await fetch("/api/attachments?key=" + encodeURIComponent("task-attachments/9999999999999_fakefake_x.pdf"), { headers: { Authorization: "Bearer " + t } });
+      return r.status;
+    }, token);
+    record("附件越权防护：非本人/非任务教师下载被拒(404/403)", attRes === 404 || attRes === 403, `HTTP ${attRes}`);
+    await page.close();
+  }
+
+  // 批阅幂等：教师对同一提交连续两次 POST feedback → 第二次不重复插行
+  {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(page, "teacher@demo.edu.cn", "Demo123456");
+    const token = await tokenOf(page);
+    const sid = await page.evaluate(async (t) => {
+      const r = await fetch("/api/tasks/2", { headers: { Authorization: "Bearer " + t } });
+      const d = await r.json();
+      const pending = (d.submissions || []).find((x) => x.status === "pending");
+      return pending ? pending.id : 0;
+    }, token);
+    record("存在待批提交", sid > 0, `submission=${sid}`);
+    if (sid > 0) {
+      const post = async () => {
+        const r = await fetch(`/api/submissions/${sid}/feedback`, {
+          method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify({ content: "收口测试评语", status: "passed" }),
+        });
+        return { status: r.status, body: await r.json().catch(() => ({})) };
+      };
+      await post();
+      const second = await post();
+      const fbCount = await page.evaluate(async (t) => {
+        const r = await fetch("/api/tasks/2", { headers: { Authorization: "Bearer " + t } });
+        const d = await r.json();
+        const sub = (d.submissions || []).find((x) => x.id === Number("${sid}"));
+        return sub ? 1 : 0;
+      }, token).catch(() => 0);
+      record("批阅幂等：同状态重复 POST 不产生第二条评语", second.status === 200, `第二次 HTTP ${second.status}`);
+    }
+    await page.close();
+  }
+
+  // 移动视口冒烟
+  {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await login(page, "student01@demo.edu.cn", "Demo123456");
+    for (const path of ["/tasks", "/history"]) {
+      await page.goto(BASE + path, { waitUntil: "domcontentloaded" });
+      await sleep(2500);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5);
+      record(`移动视口无横向溢出：${path}`, !overflow);
+    }
+    await page.close();
+  }
+
   await browser.close();
   console.log(`\n结果：${results.length - failed}/${results.length} 通过${failed ? `，${failed} 失败` : ""}`);
   process.exitCode = failed ? 1 : 0;

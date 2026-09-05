@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireUser } from "@/lib/auth-server";
 import crypto from "crypto";
+import { pool, ensureLearningSchema } from "@/lib/learning-db";
 
 /**
  * 任务提交附件（学生上传 / 教师与学生下载）。
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
     const fileKey = `task-attachments/${Date.now()}_${crypto.randomUUID().slice(0, 8)}_${safeName}`;
     const uploadUrl = await getSignedUrl(
       s3,
-      new PutObjectCommand({ Bucket: BUCKET, Key: fileKey, ContentType: ct }),
+      new PutObjectCommand({ Bucket: BUCKET, Key: fileKey, ContentType: ct, ACL: "private" }),
       { expiresIn: 300 },
     );
     return NextResponse.json({ uploadUrl, fileKey, contentType: ct });
@@ -50,6 +51,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "无效的附件路径" }, { status: 400 });
   }
   try {
+    await ensureLearningSchema();
+    // 归属校验：仅上传者本人或该任务教师可下载（防猜 key 越权）
+    const { rows } = await pool.query(
+      `SELECT a.uploaded_by, t.teacher_email
+       FROM task_attachments a
+       JOIN task_submissions sub ON sub.id = a.submission_id
+       JOIN tasks t ON t.id = sub.task_id
+       WHERE a.file_key = $1 LIMIT 1`,
+      [key],
+    );
+    const owner = rows[0];
+    if (!owner) return NextResponse.json({ error: "附件不存在" }, { status: 404 });
+    if (owner.uploaded_by !== auth.email && owner.teacher_email !== auth.email) {
+      return NextResponse.json({ error: "无权下载该附件" }, { status: 403 });
+    }
     const downloadUrl = await getSignedUrl(
       s3,
       new GetObjectCommand({ Bucket: BUCKET, Key: key }),

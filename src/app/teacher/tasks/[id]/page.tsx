@@ -16,6 +16,7 @@ export default function TeacherTaskDetailPage() {
   const [task, setTask] = useState<any>(null);
   const [targets, setTargets] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
+  const [attachments, setAttachments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -39,6 +40,7 @@ export default function TeacherTaskDetailPage() {
       setTask(d.task);
       setTargets(d.targets || []);
       setSubmissions(d.submissions || []);
+      setAttachments(d.attachments || []);
     } catch {
       setError("网络错误");
     } finally {
@@ -219,6 +221,19 @@ export default function TeacherTaskDetailPage() {
                           <div className="bg-white rounded-lg p-3">
                             <div className="text-xs font-semibold text-purple-800 mb-1">我的反思</div>
                             <p className="text-xs text-[var(--color-text-secondary)] leading-5 whitespace-pre-wrap">{latest.reflection}</p>
+                          </div>
+                        )}
+                        {attachments.filter((a: any) => a.submission_id === latest.id).length > 0 && (
+                          <div className="bg-white rounded-lg p-3">
+                            <div className="text-xs font-semibold text-[var(--color-text)] mb-1.5">📎 附件</div>
+                            <div className="flex flex-wrap gap-2">
+                              {attachments.filter((a: any) => a.submission_id === latest.id).map((a: any) => (
+                                <a key={a.id} href={`/api/attachments?key=${encodeURIComponent(a.file_key)}`} target="_blank" rel="noopener noreferrer"
+                                  className="text-[10px] px-2 py-1 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100">
+                                  📎 {a.file_name}（{(a.file_size / 1024).toFixed(0)}KB）
+                                </a>
+                              ))}
+                            </div>
                           </div>
                         )}
                         {latest.answers?.length > 0 && (

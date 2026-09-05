@@ -100,7 +100,7 @@ export default function TasksPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {[
           ["⏳", pending, "待完成"],
           ["📤", submitted, "待教师反馈"],
@@ -148,7 +148,7 @@ export default function TasksPage() {
               <p className="text-sm text-[var(--color-text-secondary)]">{filter === "ALL" ? "暂无任务，等待老师布置" : "该状态下暂无任务"}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 gap-4">
               {sortedTasks.map((t) => {
                 const typeMeta = TASK_TYPE_META[t.type];
                 const statusMeta = TASK_STATUS_META[t.effective_status];
@@ -214,7 +214,7 @@ export default function TasksPage() {
       )}
 
       {tab === "progress" && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-3 gap-4">
           {[
             { label: "✅ 已完成", nodes: completedNodes, cls: "bg-green-50", empty: "尚未有知识点达到掌握标准" },
             { label: "📖 正在学习", nodes: studyingNodes, cls: "bg-blue-50", empty: "暂无进行中的知识点" },

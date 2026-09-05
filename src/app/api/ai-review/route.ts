@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
         addNotification({
           userEmail: row.user_email,
           type: "AI_ANSWER_REVISED",
+          dedupeKey: `AI_REVISED:${messageId}:${version.version}`,
           title: "你反馈的 AI 回答已修正",
           body: "教师已审核并修正该回答，可在学习档案中查看最新版本",
           link: "/history",

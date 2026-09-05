@@ -75,7 +75,14 @@ export default function KnowledgePage() {
 
       // Save record（服务端由 JWT 解析身份，勿用 supabase session 做门禁——纯 JWT 登录下 session 恒为空）
       try {
-        await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: (lastRefs?.length || 0) > 0 }) });
+        // 关联知识点：从智能体返回的图谱上下文提取节点 id（阶段检测据此出题，学生实际学的知识点）
+        const gc = (response as any)?.graphContext;
+        const gcTopics = [
+          gc?.focusNode?.id,
+          ...(gc?.highlightNodeIds || []),
+          ...((gc?.relatedNodes || []).map((n: any) => n.id)),
+        ].filter((x: any) => typeof x === "string").slice(0, 10);
+        await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: gcTopics, has_references: (lastRefs?.length || 0) > 0 }) });
         // 问答存档（供 AI 历史页与教师内容审核使用）
         await fetch('/api/qa-messages', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer: fullAnswer, references: lastRefs || [] }) });
         const qr = await fetch('/api/quiz', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
