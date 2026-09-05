@@ -34,6 +34,9 @@ export async function POST(req: NextRequest) {
     }
 
     const user = rows[0];
+    if (user.status === "disabled") {
+      return NextResponse.json({ error: "账号或密码错误" }, { status: 401 });
+    }
     const valid = await compare(password, user.password_hash);
     if (!valid) {
       await auditEvent("LOGIN_FAILED", maskIdentifier(identifier, type), "wrong_password");

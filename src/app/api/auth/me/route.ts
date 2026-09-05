@@ -21,11 +21,12 @@ export async function GET(req: NextRequest) {
     if (!decoded) return NextResponse.json({ error: "未登录" }, { status: 401 });
     // 从库取最新 name/avatar(改名/传头像后 JWT 内旧值不生效)
     const { rows } = await pool.query(
-      "SELECT id, email, phone, name, role, avatar, token_version FROM users WHERE id = $1",
+      "SELECT id, email, phone, name, role, avatar, token_version, status FROM users WHERE id = $1",
       [decoded.id],
     );
     if (rows.length === 0) return NextResponse.json({ error: "账号不存在" }, { status: 404 });
     const u = rows[0];
+    if ((u as any).status === "disabled") return NextResponse.json({ error: "账号已停用" }, { status: 403 });
     // 密码重置后 token_version 递增：旧会话立即失效
     if (Number(u.token_version ?? 0) !== Number((decoded as any).tv ?? 0)) {
       return NextResponse.json({ error: "登录已失效，请重新登录" }, { status: 401 });

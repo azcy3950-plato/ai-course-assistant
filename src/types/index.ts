@@ -1,5 +1,5 @@
 // ========== User & Role ==========
-export type UserRole = 'student' | 'teacher';
+export type UserRole = 'student' | 'teacher' | 'admin';
 
 export interface User {
   name: string;

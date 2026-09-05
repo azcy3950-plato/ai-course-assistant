@@ -22,6 +22,8 @@ export default function KnowledgePage() {
   const [lastDomain, setLastDomain] = useState<string | undefined>(undefined);
   const [quizOpen, setQuizOpen] = useState(false);
   const [quizNotice, setQuizNotice] = useState('');
+  // 阶段检测：生成后提示学生，可立即或稍后进行（不再强制弹窗）
+  const [pendingQuiz, setPendingQuiz] = useState<{ token: string; questions: any[] } | null>(null);
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const sourcePanelRef = useRef<HTMLDivElement>(null);
@@ -78,8 +80,14 @@ export default function KnowledgePage() {
         await fetch('/api/qa-messages', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer: fullAnswer, references: lastRefs || [] }) });
         const qr = await fetch('/api/quiz', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         const qd = await qr.json();
-        if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }
-        else if (qd.needsQuiz || (qd.error)) { setQuizNotice('小测服务暂时不可用，稍后再试'); }
+        if (qd.needsQuiz && qd.questions?.length) {
+          setPendingQuiz({ token: qd.token, questions: qd.questions });
+          setQuizNotice('');
+        } else if (qd.error) {
+          setQuizNotice('小测服务暂时不可用，稍后再试');
+        } else if (qd.needsQuiz) {
+          setQuizNotice('小测服务暂时不可用，稍后再试');
+        }
       } catch (e) { console.error('[knowledge] 持久化失败:', e); }
 
       addRecord('knowledge', content.slice(0, 30) + (content.length > 30 ? '...' : ''), `查询了关于"${content.slice(0, 50)}"的内容`);
@@ -244,11 +252,14 @@ export default function KnowledgePage() {
               <button key={q} onClick={() => handleSend(q)} disabled={loading} className="text-xs px-3 py-1.5 bg-blue-50 text-[var(--color-primary)] rounded-full hover:bg-blue-100 transition-colors disabled:opacity-50">{q}</button>
             ))}
           </div>
-          {quizNotice && (
+          {(quizNotice || pendingQuiz) && (
             <div className="px-6 -mt-1 mb-1">
-              <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-                ⚠️ {quizNotice}
-              </p>
+              <div className="flex items-center gap-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                <span>📝 {pendingQuiz ? "已为你准备好阶段检测（2 道题），可立即进行" : quizNotice}</span>
+                {pendingQuiz && (
+                  <button onClick={() => setQuizOpen(true)} className="px-2.5 py-0.5 rounded bg-[var(--color-primary)] text-white font-medium shrink-0">立即检测</button>
+                )}
+              </div>
             </div>
           )}
           <ChatInput onSend={handleSend} disabled={loading} placeholder="输入课程知识相关问题..." />
@@ -292,7 +303,7 @@ export default function KnowledgePage() {
           )}
         </div>
       </aside>
-      {quizOpen && <QuizPanel questions={quizQuestions} onClose={() => setQuizOpen(false)} onComplete={() => setQuizOpen(false)} />}
+      {quizOpen && pendingQuiz && <QuizPanel token={pendingQuiz.token} questions={pendingQuiz.questions} onClose={() => { setQuizOpen(false); setPendingQuiz(null); }} onComplete={() => { setQuizOpen(false); setPendingQuiz(null); }} />}
     </div>
   );
 }

@@ -3,6 +3,9 @@ const { hash } = require("bcryptjs");
 
 async function main() {
   const [rawEmail, password, name = "教师", role = "teacher"] = process.argv.slice(2);
+  if (!["student", "teacher", "admin"].includes(role)) {
+    throw new Error("角色必须是 student / teacher / admin");
+  }
   const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
   if (!process.env.DATABASE_URL) {
     throw new Error("缺少 DATABASE_URL。可使用 node --env-file=.env.local mkuser.js ... 运行。");

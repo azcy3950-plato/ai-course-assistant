@@ -217,6 +217,12 @@ async function main() {
      ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role`,
     [teacher, pwHash, "张老师", "teacher"],
   );
+  await pool.query(
+    `INSERT INTO users (email, password_hash, name, role) VALUES ($1,$2,$3,$4)
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role`,
+    ["admin@demo.edu.cn", pwHash, "管理员", "admin"],
+  );
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'").catch(() => {});
   for (let i = 0; i < 12; i++) {
     await pool.query(
       `INSERT INTO users (email, password_hash, name, role) VALUES ($1,$2,$3,$4)
@@ -644,6 +650,23 @@ async function main() {
   // ── 10. 汇总 ──
   const cnt = async (sql, params = []) => (await pool.query(sql, params)).rows[0].count;
   const pendingFeedback = await cnt("SELECT count(*)::int AS count FROM ai_content_feedback WHERE status = 'pending'");
+  // ── 9.5 演示通知与收藏（固定演示数据） ──
+  await pool.query("DELETE FROM notifications WHERE user_email = ANY($1)", [demoEmails]).catch(() => {});
+  await pool.query("DELETE FROM favorites WHERE user_email = ANY($1)", [demoEmails]).catch(() => {});
+  await pool.query(
+    `INSERT INTO notifications (user_email, type, title, body, link, created_at) VALUES
+     ($1,'REVISION_REQUIRED','任务需要修改：下垫面方案比较','教师评语：结论对但解释不足，请补充机理分析后重新提交','/tasks/2', now() - interval '5 hours'),
+     ($1,'TEACHER_FEEDBACK','教师已批阅：城市排水系统基础','已通过，继续保持','/tasks/1', now() - interval '2 days'),
+     ($2,'SUBMISSION_RECEIVED','学生提交：下垫面方案比较','student02@demo.edu.cn 第 1 版提交','/teacher/tasks/2', now() - interval '2 days')`,
+    [students[1], teacher],
+  ).catch(() => {});
+  await pool.query(
+    `INSERT INTO favorites (user_email, ref_type, ref_id, note, in_review) VALUES
+     ($1,'qa_message','demo-fav-1','合流制与分流制对比',true),
+     ($1,'node','demo-fav-2','设计流量公式待复习',true)`,
+    [students[0]],
+  ).catch(() => {});
+
   console.log("演示数据导入完成：");
   console.log(`  用户：1 教师 + ${students.length} 学生（密码 ${DEMO_PASSWORD}）`);
   console.log(`  班级：2（排水231班 ${class231.length} 人 / 排水232班 4 人）`);

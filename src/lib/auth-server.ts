@@ -46,3 +46,11 @@ export function requireUser(req: NextRequest): { auth: AuthUser; resp: NextRespo
   if (!auth.ok) return { auth, resp: unauthorized() };
   return { auth, resp: null };
 }
+
+/** 要求 Admin 角色；返回 null 表示通过 */
+export function requireAdmin(req: NextRequest): { auth: AuthUser; resp: NextResponse | null } {
+  const auth = verifyUser(req);
+  if (!auth.ok) return { auth, resp: unauthorized() };
+  if (auth.role !== "admin") return { auth, resp: forbidden() };
+  return { auth, resp: null };
+}

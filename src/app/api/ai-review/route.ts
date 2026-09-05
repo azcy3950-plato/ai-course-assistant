@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireTeacher } from "@/lib/auth-server";
 import {
   pool,
+  addNotification,
   ensureLearningSchema,
   listAiFeedback,
   listAiVersions,
   updateAiFeedbackStatus,
   addAiVersion,
 } from "@/lib/learning-db";
+import { logAudit } from "@/lib/audit";
 
 /** 教师 AI 内容审核：待处理队列 + 版本修正（保留 V1 原回答，写入 V(n+1) 修正版） */
 export async function GET(req: NextRequest) {
@@ -78,6 +80,21 @@ export async function POST(req: NextRequest) {
           await updateAiFeedbackStatus(item.id, "resolved");
         }
       }
+      // 通知原反馈学生"该回答已修正"
+      const { rows: fbRows } = await pool.query(
+        "SELECT DISTINCT user_email FROM ai_content_feedback WHERE message_id = $1",
+        [messageId],
+      );
+      for (const row of fbRows) {
+        addNotification({
+          userEmail: row.user_email,
+          type: "AI_ANSWER_REVISED",
+          title: "你反馈的 AI 回答已修正",
+          body: "教师已审核并修正该回答，可在学习档案中查看最新版本",
+          link: "/history",
+        }).catch(() => {});
+      }
+      await logAudit({ operatorEmail: auth.email, action: "AI_REVIEW_EDIT", targetType: "qa_message", targetId: String(messageId) });
       return NextResponse.json({ ok: true, version });
     }
 

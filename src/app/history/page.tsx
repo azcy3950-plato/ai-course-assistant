@@ -6,6 +6,7 @@ import { useApp } from "@/contexts/AppContext";
 import { getAuthToken } from "@/contexts/AppContext";
 import { formatDate } from "@/lib/task-ui";
 import type { LearningEvent, QaMessage } from "@/types";
+import InsightsPanel from "./InsightsPanel";
 
 const EVENT_META: Record<string, string> = {
   KNOWLEDGE_COMPLETED: "📚",
@@ -23,7 +24,11 @@ const FEEDBACK_REASONS = ["内容错误", "解释不清", "答非所问", "信�
 export default function HistoryPage() {
   const { state } = useApp();
   const router = useRouter();
-  const [tab, setTab] = useState<"events" | "mistakes" | "qa">("events");
+  const [tab, setTab] = useState<"events" | "mistakes" | "qa" | "insights" | "favorites">(
+    () => (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "insights" ? "insights" : "events"),
+  );
+  const [records, setRecords] = useState<any[]>([]);
+  const [favorites, setFavorites] = useState<any[]>([]);
   const [events, setEvents] = useState<LearningEvent[]>([]);
   const [quizResults, setQuizResults] = useState<any[]>([]);
   const [correctedIds, setCorrectedIds] = useState<Set<number>>(new Set());
@@ -57,11 +62,19 @@ export default function HistoryPage() {
     const r = await fetch("/api/qa-messages", { headers });
     if (r.ok) setQaMessages(await r.json());
   }, []);
+  const loadRecords = useCallback(async () => {
+    const r = await fetch("/api/records", { headers });
+    if (r.ok) setRecords(await r.json());
+  }, []);
+  const loadFavorites = useCallback(async () => {
+    const r = await fetch("/api/favorites", { headers });
+    if (r.ok) setFavorites((await r.json()).items || []);
+  }, []);
 
   useEffect(() => {
     if (state.role !== "student") return;
     setLoading(true);
-    Promise.all([loadEvents(), loadMistakes(), loadQa()]).finally(() => setLoading(false));
+    Promise.all([loadEvents(), loadMistakes(), loadQa(), loadRecords(), loadFavorites()]).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.role]);
 
@@ -119,18 +132,16 @@ export default function HistoryPage() {
     try {
       const r = await fetch("/api/quiz", {
         method: "POST", headers: jsonHeaders,
-        body: JSON.stringify({
-          question: q.question, student_answer: letter, correct_answer: correct,
-          is_correct: letter === correct, topic: q.topic || "未分类",
-          options: q.options || [], explanation: q.explanation || "",
-        }),
+        body: JSON.stringify({ question: q.question, studentAnswer: letter }),
       });
-      if (!r.ok) { alert("重新作答保存失败"); return; }
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { alert(data.error || "重新作答保存失败"); return; }
+      const serverCorrect = data.results?.[0]?.isCorrect === true;
       // 订正事件（正确与否都算订正一次；答对后该题因 is_correct=true 自动移出错题本）
       await fetch("/api/learning-events", {
         method: "POST", headers: jsonHeaders,
         body: JSON.stringify({
-          type: "PRACTICE_CORRECTED", title: letter === correct ? "错题订正成功" : "错题再次作答",
+          type: "PRACTICE_CORRECTED", title: serverCorrect ? "错题订正成功" : "错题再次作答",
           summary: (q.question || "").slice(0, 100),
           refType: "quiz_result", refId: String(q.id),
         }),
@@ -163,6 +174,29 @@ export default function HistoryPage() {
   if (state.authLoading || !state.role || state.role !== "student") {
     return <div className="flex items-center justify-center min-h-[60vh] text-[var(--color-text-muted)]">加载中...</div>;
   }
+
+  // 学习记录 tab：合并学习事件 + 知识问答记录 + 小测（真实数据）
+  interface MergedItem { id: string; icon: string; title: string; summary: string; ts: number; }
+  const mergedItems: MergedItem[] = [];
+  for (const e of events) {
+    mergedItems.push({
+      id: `e-${e.id}`, icon: EVENT_META[e.type] || "📋", title: e.title, summary: e.summary,
+      ts: new Date(e.created_at).getTime(),
+    });
+  }
+  for (const r of records) {
+    mergedItems.push({
+      id: `r-${r.id}`, icon: "📚", title: r.question || "知识问答", summary: r.answer_summary || "",
+      ts: new Date(r.created_at).getTime(),
+    });
+  }
+  for (const q of quizResults) {
+    mergedItems.push({
+      id: `q-${q.id}`, icon: "📝", title: q.question || "阶段检测", summary: q.is_correct ? "✓ 回答正确" : "✗ 回答错误，已记入错题本",
+      ts: new Date(q.created_at).getTime(),
+    });
+  }
+  mergedItems.sort((a, b) => b.ts - a.ts);
 
   // 按日期分组学习历史
   const grouped: { date: string; items: LearningEvent[] }[] = [];
@@ -203,6 +237,8 @@ export default function HistoryPage() {
           { k: "events" as const, l: "🕐 学习历史" },
           { k: "mistakes" as const, l: "❌ 我的错题" },
           { k: "qa" as const, l: "🤖 AI 问答历史" },
+          { k: "insights" as const, l: "📊 学习洞察" },
+          { k: "favorites" as const, l: "⭐ 收藏与待复习" },
         ].map((t) => (
           <button key={t.k} onClick={() => setTab(t.k)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t.k ? "bg-white text-[var(--color-text)] shadow-sm" : "text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"}`}>
@@ -215,32 +251,41 @@ export default function HistoryPage() {
         <div>
           {loading ? (
             <div className="p-10 text-center text-sm text-[var(--color-text-muted)]">加载中...</div>
-          ) : grouped.length === 0 ? (
+          ) : mergedItems.length === 0 ? (
             <div className="bg-white rounded-xl border border-[var(--color-border)] p-12 text-center">
               <div className="text-4xl mb-3">🕐</div>
               <p className="text-sm text-[var(--color-text-secondary)]">暂无学习记录，开始学习后会自动记录</p>
             </div>
           ) : (
             <div className="space-y-5">
-              {grouped.map((g) => (
-                <div key={g.date}>
-                  <div className="text-xs font-semibold text-[var(--color-text-muted)] mb-2 ml-1">{g.date}</div>
-                  <div className="bg-white rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                    {g.items.map((e) => (
-                      <div key={e.id} className="flex items-start gap-3 px-4 py-3">
-                        <span className="text-lg mt-0.5">{EVENT_META[e.type] || "•"}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-[var(--color-text)]">{e.title}</div>
-                          {e.summary && <div className="text-xs text-[var(--color-text-secondary)] mt-0.5 line-clamp-1">{e.summary}</div>}
+              {(() => {
+                const groups: { date: string; items: MergedItem[] }[] = [];
+                for (const it of mergedItems) {
+                  const date = new Date(it.ts).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
+                  const last = groups[groups.length - 1];
+                  if (last && last.date === date) last.items.push(it);
+                  else groups.push({ date, items: [it] });
+                }
+                return groups.map((g) => (
+                  <div key={g.date}>
+                    <div className="text-xs font-semibold text-[var(--color-text-muted)] mb-2 ml-1">{g.date}</div>
+                    <div className="bg-white rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                      {g.items.map((it) => (
+                        <div key={it.id} className="flex items-start gap-3 px-4 py-3">
+                          <span className="text-lg mt-0.5">{it.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-[var(--color-text)]">{it.title}</div>
+                            {it.summary && <div className="text-xs text-[var(--color-text-secondary)] mt-0.5 line-clamp-1">{it.summary}</div>}
+                          </div>
+                          <span className="text-[10px] text-[var(--color-text-muted)] shrink-0 mt-1">
+                            {new Date(it.ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
                         </div>
-                        <span className="text-[10px] text-[var(--color-text-muted)] shrink-0 mt-1">
-                          {new Date(e.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ));
+              })()}
             </div>
           )}
         </div>
@@ -357,6 +402,10 @@ export default function HistoryPage() {
                     <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">AI 生成</span>
                       {hasTeacherEdit && <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700">教师已修正 V{m.latest_version}</span>}
+                      <button onClick={async () => {
+                        await fetch("/api/favorites", { method: "POST", headers: jsonHeaders, body: JSON.stringify({ refType: "qa_message", refId: String(m.id), note: m.question.slice(0, 60) }) });
+                        loadFavorites();
+                      }} className="text-[10px] px-2 py-0.5 rounded-full border border-[var(--color-border)] hover:border-[var(--color-primary)]">☆ 收藏</button>
                       {hasFeedback ? (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">已反馈 · 审核中</span>
                       ) : (
@@ -382,6 +431,50 @@ export default function HistoryPage() {
                 </div>
               );
             })
+          )}
+        </div>
+      )}
+
+      {tab === "insights" && <InsightsPanel />}
+
+      {tab === "favorites" && (
+        <div>
+          {favorites.length === 0 ? (
+            <div className="bg-white rounded-xl border border-[var(--color-border)] p-12 text-center">
+              <div className="text-4xl mb-3">⭐</div>
+              <p className="text-sm text-[var(--color-text-secondary)]">暂无收藏。在知识点抽屉、AI 问答或错题处点 ☆ 收藏</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[var(--color-text-muted)]">共 {favorites.length} 条 · {favorites.filter((f) => f.in_review).length} 条待复习</span>
+              </div>
+              {favorites.map((f) => {
+                const label = f.ref_type === "qa_message" ? `🤖 ${f.note || "AI 问答"}` : f.ref_type === "node" ? `📚 ${f.note || "知识点"}` : `📝 ${f.note || "错题"}`;
+                return (
+                  <div key={f.id} className="bg-white rounded-xl border border-[var(--color-border)] p-4 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-[var(--color-text)]">{label}</div>
+                      <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
+                        收藏于 {new Date(f.created_at).toLocaleDateString("zh-CN")}
+                        {f.in_review && <span className="ml-2 text-amber-600">待复习</span>}
+                        {!f.in_review && f.last_reviewed_at && <span className="ml-2 text-green-600">已复习 {new Date(f.last_reviewed_at).toLocaleDateString("zh-CN")}</span>}
+                      </div>
+                    </div>
+                    <button onClick={async () => {
+                      await fetch("/api/favorites", { method: "PATCH", headers: jsonHeaders, body: JSON.stringify({ id: f.id, inReview: !f.in_review }) });
+                      loadFavorites();
+                    }} className="text-xs px-2.5 py-1 rounded-full border border-[var(--color-border)] hover:bg-gray-50 shrink-0">
+                      {f.in_review ? "✓ 标记已复习" : "＋ 加入待复习"}
+                    </button>
+                    <button onClick={async () => {
+                      await fetch("/api/favorites", { method: "DELETE", headers: jsonHeaders, body: JSON.stringify({ id: f.id }) });
+                      loadFavorites();
+                    }} className="text-xs text-[var(--color-text-muted)] hover:text-red-500 shrink-0">取消收藏</button>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, requireTeacher } from "@/lib/auth-server";
+import { addNotification } from "@/lib/learning-db";
+import { logAudit } from "@/lib/audit";
 import {
   ensureLearningSchema,
   listTeacherTasks,
@@ -78,6 +80,18 @@ export async function POST(req: NextRequest) {
     }
 
     const task = await createTask(input);
+    await logAudit({ operatorEmail: auth.email, action: "TASK_CREATE", targetType: "task", targetId: String(task.id), detail: `${type}:${title}` });
+    // 通知：新任务（异步触发，不阻塞创建）
+    const notifyType = type === "REMEDIAL" ? "REMEDIAL_ASSIGNED" : "TASK_ASSIGNED";
+    for (const em of targetEmails) {
+      addNotification({
+        userEmail: em,
+        type: notifyType,
+        title: type === "REMEDIAL" ? `教师布置了补充学习：${title}` : `新任务：${title}`,
+        body: input.description.slice(0, 80),
+        link: `/tasks/${task.id}`,
+      }).catch(() => {});
+    }
     return NextResponse.json({ ok: true, task });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

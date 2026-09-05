@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth-server";
 import {
   pool,
   ensureLearningSchema,
+  listTaskAttachments,
   getTask,
   getStudentTask,
   listTaskTargets,
@@ -32,8 +33,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (auth.role === "teacher") {
       if (task.teacher_email !== auth.email) return NextResponse.json({ error: "无权查看该任务" }, { status: 403 });
-      const [targets, submissions] = await Promise.all([listTaskTargets(taskId), listTaskSubmissions(taskId)]);
-      return NextResponse.json({ task, targets, submissions });
+      const [targets, submissions, attachments] = await Promise.all([
+        listTaskTargets(taskId), listTaskSubmissions(taskId), listTaskAttachments(taskId),
+      ]);
+      return NextResponse.json({ task, targets, submissions, attachments });
     }
 
     const st = await getStudentTask(taskId, auth.email);

@@ -54,6 +54,29 @@ export default function TeacherTaskDetailPage() {
     return st.status;
   };
 
+  const exportCsv = () => {
+    const rows = [["学生", "状态", "最新提交版本", "提交时间", "自评/评语"]];
+    for (const t of targets) {
+      const es = effectiveStatus(t);
+      const latest = latestByEmail[t.user_email];
+      const note = latest ? (latest.feedback_content || "") : (t.completion_note || "");
+      rows.push([
+        t.name || t.user_email.split("@")[0],
+        TASK_STATUS_META[es as keyof typeof TASK_STATUS_META]?.label || es,
+        latest ? `V${latest.version}` : "",
+        latest ? new Date(latest.submitted_at).toLocaleString("zh-CN", { hour12: false }) : "",
+        note,
+      ]);
+    }
+    const csv = "\uFEFF" + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `任务提交状态_${task?.title || "export"}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const submitFeedback = async (email: string, submissionId: number, status: "passed" | "revision_required") => {
     const content = (feedbackTexts[email] || "").trim();
     if (!content) { alert("请先填写评语"); return; }
@@ -141,6 +164,10 @@ export default function TeacherTaskDetailPage() {
 
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm font-semibold text-[var(--color-text)]">学生提交与批阅</span>
+        <button onClick={exportCsv}
+          className="text-xs px-3 py-1.5 rounded-lg border border-[var(--color-border)] hover:bg-gray-50">
+          ⬇️ 导出提交状态 CSV
+        </button>
         {incompleteEmails.length > 0 && (
           <button onClick={() => { setChecked(new Set(incompleteEmails)); setModalOpen(true); }}
             className="text-xs px-3 py-1.5 rounded-lg border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary-bg)]">
