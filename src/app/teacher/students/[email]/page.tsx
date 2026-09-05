@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useApp, getAuthToken } from "@/contexts/AppContext";
 import { TASK_TYPE_META, TASK_STATUS_META, formatDate } from "@/lib/task-ui";
 import RemedialModal from "../../RemedialModal";
@@ -80,10 +81,16 @@ export default function StudentDetailPage() {
           <h1 className="text-2xl font-bold text-[var(--color-text)]">🧑‍🎓 {data.user?.name || email.split("@")[0]}</h1>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">{email}</p>
         </div>
-        <button onClick={() => setModalOpen(true)}
-          className="px-4 py-2 text-sm bg-[var(--color-primary)] text-white rounded-lg hover:opacity-90">
-          🔁 布置补充学习
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href={"/messages/" + encodeURIComponent(email)}
+            className="px-4 py-2 text-sm rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-gray-50 transition-colors">
+            💬 私信该学生
+          </Link>
+          <button onClick={() => setModalOpen(true)}
+            className="px-4 py-2 text-sm bg-[var(--color-primary)] text-white rounded-lg hover:opacity-90">
+            🔁 布置补充学习
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">

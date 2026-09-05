@@ -95,6 +95,32 @@ export default function Navbar() {
     } catch (e) { /* 静默 */ }
   };
 
+  // ── 私信未读（信封角标，学生/教师） ──
+  const [dmUnread, setDmUnread] = useState(0);
+
+  const loadDmUnread = useCallback(async () => {
+    try {
+      const r = await fetch("/api/messages/unread", { headers: authHeaders() });
+      if (r.ok) {
+        const d = await r.json();
+        setDmUnread(d.count || 0);
+      }
+    } catch (e) { /* 静默 */ }
+  }, []);
+
+  useEffect(() => {
+    if (state.role !== "student" && state.role !== "teacher") return;
+    loadDmUnread();
+    const iv = setInterval(loadDmUnread, 60000);
+    // 会话页标记已读后立即刷新角标（无需等 60s 轮询）
+    const onDmEvent = () => loadDmUnread();
+    window.addEventListener("dm-unread", onDmEvent);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener("dm-unread", onDmEvent);
+    };
+  }, [state.role, loadDmUnread]);
+
   // ── 教师发布公告（在通知下拉内） ──
   const [pubTitle, setPubTitle] = useState("");
   const [pubBody, setPubBody] = useState("");
@@ -240,6 +266,18 @@ export default function Navbar() {
               </div>
             )}
           </div>
+
+          {/* 私信入口（信封，直达收件箱） */}
+          {(state.role === "student" || state.role === "teacher") && (
+            <Link href="/messages" className="relative px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-colors" title="私信">
+              <span className="text-lg">✉️</span>
+              {dmUnread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-semibold">
+                  {dmUnread > 99 ? "99+" : dmUnread}
+                </span>
+              )}
+            </Link>
+          )}
 
           {/* 通知铃铛 */}
           <div className="relative" ref={notifRef}>

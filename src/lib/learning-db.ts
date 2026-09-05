@@ -222,6 +222,21 @@ async function initSchema() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS direct_messages (
+        id SERIAL PRIMARY KEY,
+        student_email TEXT NOT NULL,
+        teacher_email TEXT NOT NULL,
+        sender_email TEXT NOT NULL,
+        body TEXT NOT NULL,
+        read_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_dm_thread ON direct_messages(student_email, teacher_email, id);
+      CREATE INDEX IF NOT EXISTS idx_dm_unread_student ON direct_messages(student_email, id)
+        WHERE read_at IS NULL AND sender_email <> student_email;
+      CREATE INDEX IF NOT EXISTS idx_dm_unread_teacher ON direct_messages(teacher_email, id)
+        WHERE read_at IS NULL AND sender_email <> teacher_email;
     `);
   } finally {
     client.release();
@@ -943,4 +958,272 @@ export async function listDocumentStatus() {
 export async function getDocumentStatus(fileKey: string) {
   const { rows } = await pool.query("SELECT * FROM document_status WHERE file_key = $1", [fileKey]);
   return rows[0] || null;
+}
+
+// ─── 师生私信 ───
+/** 取用户显示名（users 为基础表，仅查询，沿用学情 JOIN users 的先例） */
+export async function getUserName(email: string): Promise<string | null> {
+  const { rows } = await pool.query("SELECT name FROM users WHERE email = $1", [email]);
+  return rows[0]?.name ?? null;
+}
+
+/** 学生所在班级的任课教师列表（学生侧发私信的可联系对象 + 授权判据） */
+export async function listStudentTeachers(studentEmail: string) {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT c.teacher_email, u.name AS teacher_name
+     FROM classes c
+     JOIN class_members m ON m.class_id = c.id
+     LEFT JOIN users u ON u.email = c.teacher_email
+     WHERE m.user_email = $1
+     ORDER BY u.name ASC NULLS LAST`,
+    [studentEmail],
+  );
+  return rows;
+}
+
+/** 未读私信数（收件人为自己且未读），Navbar 信封角标用 */
+export async function unreadDirectMessageCount(email: string): Promise<number> {
+  const { rows } = await pool.query(
+    `SELECT count(*)::int AS c FROM direct_messages
+     WHERE (student_email = $1 OR teacher_email = $1) AND sender_email <> $1 AND read_at IS NULL`,
+    [email],
+  );
+  return rows[0]?.c ?? 0;
+}
+
+/** 私信收件箱：每会话最近一条 + 未读数，按最近消息倒序 */
+export async function listDirectMessageThreads(email: string) {
+  const [latest, unread] = await Promise.all([
+    pool.query(
+      `SELECT x.peer AS peer_email, u.name AS peer_name, x.sender_email, x.body, x.read_at, x.created_at
+       FROM (
+         SELECT DISTINCT ON (t.peer) t.peer, t.sender_email, t.body, t.read_at, t.created_at
+         FROM (
+           SELECT CASE WHEN student_email = $1 THEN teacher_email ELSE student_email END AS peer,
+                  sender_email, body, read_at, created_at, id
+           FROM direct_messages
+           WHERE student_email = $1 OR teacher_email = $1
+         ) t
+         ORDER BY t.peer, t.created_at DESC, t.id DESC
+       ) x
+       LEFT JOIN users u ON u.email = x.peer
+       ORDER BY x.created_at DESC`,
+      [email],
+    ),
+    pool.query(
+      `SELECT CASE WHEN student_email = $1 THEN teacher_email ELSE student_email END AS peer,
+              count(*)::int AS unread
+       FROM direct_messages
+       WHERE (student_email = $1 OR teacher_email = $1) AND sender_email <> $1 AND read_at IS NULL
+       GROUP BY 1`,
+      [email],
+    ),
+  ]);
+  const unreadByPeer = new Map(unread.rows.map((r) => [r.peer, r.unread]));
+  const conversations = latest.rows.map((r) => ({
+    peer_email: r.peer_email,
+    peer_name: r.peer_name,
+    last_sender: r.sender_email,
+    last_body: r.body,
+    last_at: r.created_at,
+    unread: unreadByPeer.get(r.peer_email) ?? 0,
+  }));
+  const totalUnread = conversations.reduce((s, c) => s + c.unread, 0);
+  return { conversations, totalUnread };
+}
+
+/** 会话时间线（取最近 limit 条后升序返回，用于渲染） */
+export async function getDirectMessages(studentEmail: string, teacherEmail: string, limit = 200) {
+  const { rows } = await pool.query(
+    `SELECT * FROM (
+       SELECT * FROM direct_messages
+       WHERE student_email = $1 AND teacher_email = $2
+       ORDER BY id DESC LIMIT $3
+     ) x ORDER BY id ASC`,
+    [studentEmail, teacherEmail, limit],
+  );
+  return rows;
+}
+
+export async function addDirectMessage(input: {
+  studentEmail: string; teacherEmail: string; senderEmail: string; body: string;
+}) {
+  const { rows } = await pool.query(
+    `INSERT INTO direct_messages (student_email, teacher_email, sender_email, body)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [input.studentEmail, input.teacherEmail, input.senderEmail, input.body],
+  );
+  return rows[0];
+}
+
+/** 把"对端发给 reader 的未读消息"标为已读，幂等；返回本次置位条数 */
+export async function markDirectMessagesRead(studentEmail: string, teacherEmail: string, readerEmail: string) {
+  const { rowCount } = await pool.query(
+    `UPDATE direct_messages SET read_at = now()
+     WHERE student_email = $1 AND teacher_email = $2 AND sender_email = $3 AND read_at IS NULL`,
+    [studentEmail, teacherEmail, readerEmail],
+  );
+  return rowCount ?? 0;
+}
+
+// ─── 教师数据仪表盘 ───
+/** 仪表盘聚合涉及的跨模块基础表补充索引；表尚不存在（全新库）时静默跳过 */
+export async function ensureAnalyticsIndexes(): Promise<void> {
+  try {
+    await pool.query("CREATE INDEX IF NOT EXISTS idx_quiz_results_user ON quiz_results(user_email, created_at DESC)");
+  } catch { /* quiz_results 由 seed 建，全新库时忽略 */ }
+}
+
+/** 任务维度总览（student_tasks 行口径：total/done/submitted/revision/overdue） */
+export async function dashboardTaskStats(teacherEmail: string) {
+  const { rows } = await pool.query(
+    `SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE st.status = 'COMPLETED')::int AS done,
+            count(*) FILTER (WHERE st.status = 'SUBMITTED')::int AS submitted,
+            count(*) FILTER (WHERE st.status = 'REVISION_REQUIRED')::int AS revision,
+            count(*) FILTER (WHERE st.status IN ('TODO','IN_PROGRESS') AND t.deadline IS NOT NULL AND t.deadline < now())::int AS overdue
+     FROM tasks t
+     JOIN student_tasks st ON st.task_id = t.id
+     WHERE t.teacher_email = $1`,
+    [teacherEmail],
+  );
+  return rows[0] ?? { total: 0, done: 0, submitted: 0, revision: 0, overdue: 0 };
+}
+
+/** 待批阅提交数（submission 层独立查询，防与任务 join 行数放大） */
+export async function dashboardPendingSubmissions(teacherEmail: string) {
+  const { rows } = await pool.query(
+    `SELECT count(*)::int AS pending
+     FROM task_submissions s
+     JOIN tasks t ON t.id = s.task_id
+     WHERE t.teacher_email = $1 AND s.status = 'pending'`,
+    [teacherEmail],
+  );
+  return rows[0]?.pending ?? 0;
+}
+
+/** 近 N 天活跃学生数（多源并集去重：事件/小测/问答/提交/图谱进度/登录） */
+export async function dashboardActiveStudents(teacherEmail: string, days = 7) {
+  const emails = await listTeacherStudentEmails(teacherEmail);
+  if (emails.length === 0) return 0;
+  const { rows } = await pool.query(
+    `SELECT count(*)::int AS active FROM (
+       SELECT user_email FROM learning_events WHERE user_email = ANY($1) AND created_at >= now() - make_interval(days => $2::int)
+       UNION
+       SELECT user_email FROM quiz_results WHERE user_email = ANY($1) AND created_at >= now() - make_interval(days => $2::int)
+       UNION
+       SELECT user_email FROM ai_qa_messages WHERE user_email = ANY($1) AND created_at >= now() - make_interval(days => $2::int)
+       UNION
+       SELECT user_email FROM task_submissions WHERE user_email = ANY($1) AND submitted_at >= now() - make_interval(days => $2::int)
+       UNION
+       SELECT user_email FROM student_node_progress WHERE user_email = ANY($1) AND last_studied_at >= now() - make_interval(days => $2::int)
+       UNION
+       SELECT email AS user_email FROM users WHERE email = ANY($1) AND last_login >= now() - make_interval(days => $2::int)
+     ) x`,
+    [emails, days],
+  );
+  return rows[0]?.active ?? 0;
+}
+
+/** 近 N 天按日趋势（generate_series 补 0 桶；返回 MM-DD 字符串标签，前端直显不重解析） */
+export async function dashboardTrend(teacherEmail: string, days = 14) {
+  const emails = await listTeacherStudentEmails(teacherEmail);
+  if (emails.length === 0) return [];
+  const { rows } = await pool.query(
+    `WITH ds AS (
+       SELECT generate_series((now() - make_interval(days => $2::int - 1))::date, now()::date, interval '1 day')::date AS day
+     ), acts AS (
+       SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS day, user_email FROM learning_events
+         WHERE user_email = ANY($1) AND created_at >= now() - make_interval(days => $2::int - 1)
+       UNION ALL
+       SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS day, user_email FROM quiz_results
+         WHERE user_email = ANY($1) AND created_at >= now() - make_interval(days => $2::int - 1)
+       UNION ALL
+       SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS day, user_email FROM ai_qa_messages
+         WHERE user_email = ANY($1) AND created_at >= now() - make_interval(days => $2::int - 1)
+       UNION ALL
+       SELECT (submitted_at AT TIME ZONE 'Asia/Shanghai')::date AS day, user_email FROM task_submissions
+         WHERE user_email = ANY($1) AND submitted_at >= now() - make_interval(days => $2::int - 1)
+     )
+     SELECT to_char(ds.day, 'MM-DD') AS day,
+            COALESCE(a.events, 0)::int AS events,
+            COALESCE(a.students, 0)::int AS students
+     FROM ds
+     LEFT JOIN (
+       SELECT day, count(*)::int AS events, count(DISTINCT user_email)::int AS students
+       FROM acts GROUP BY day
+     ) a ON a.day = ds.day
+     ORDER BY ds.day`,
+    [emails, days],
+  );
+  return rows;
+}
+
+/** 按班级任务完成度对比（只统计归属本班的任务；教师个人 remedial 任务 class_id=NULL 天然不落班） */
+export async function dashboardClassProgress(teacherEmail: string) {
+  const { rows } = await pool.query(
+    `SELECT c.id, c.name,
+            count(st.task_id)::int AS total,
+            count(st.task_id) FILTER (WHERE st.status = 'COMPLETED')::int AS done,
+            count(st.task_id) FILTER (WHERE st.status = 'REVISION_REQUIRED')::int AS revision
+     FROM classes c
+     LEFT JOIN tasks t ON t.class_id = c.id
+     LEFT JOIN student_tasks st ON st.task_id = t.id
+     WHERE c.teacher_email = $1
+     GROUP BY c.id, c.name
+     ORDER BY c.created_at ASC`,
+    [teacherEmail],
+  );
+  return rows;
+}
+
+/** 班级范围内小测正确率按 topic 聚合（绕过 /api/quiz-results 教师分支的全表 LIMIT 200 陷阱） */
+export async function dashboardQuizTopicAccuracy(teacherEmail: string) {
+  const emails = await listTeacherStudentEmails(teacherEmail);
+  if (emails.length === 0) return [];
+  const { rows } = await pool.query(
+    `SELECT COALESCE(NULLIF(topic, ''), '未分类') AS topic,
+            count(*)::int AS total,
+            count(*) FILTER (WHERE is_correct)::int AS correct
+     FROM quiz_results
+     WHERE user_email = ANY($1)
+     GROUP BY 1
+     ORDER BY (count(*) FILTER (WHERE is_correct))::float / count(*) ASC, total DESC`,
+    [emails],
+  );
+  return rows;
+}
+
+/** 薄弱学生 topK（按平均掌握度升序；有真实进度行才出现，不补 0） */
+export async function dashboardWeakStudents(teacherEmail: string, limit = 5) {
+  const emails = await listTeacherStudentEmails(teacherEmail);
+  if (emails.length === 0) return [];
+  const { rows } = await pool.query(
+    `SELECT p.user_email, u.name, round(avg(p.mastery), 1) AS avg_mastery,
+            count(*)::int AS nodes, max(p.last_studied_at) AS last_studied
+     FROM student_node_progress p
+     LEFT JOIN users u ON u.email = p.user_email
+     WHERE p.user_email = ANY($1)
+     GROUP BY p.user_email, u.name
+     ORDER BY avg(p.mastery) ASC
+     LIMIT $2`,
+    [emails, limit],
+  );
+  return rows;
+}
+
+/** 最近学习事件时间线（班级范围内） */
+export async function dashboardRecentEvents(teacherEmail: string, limit = 20) {
+  const emails = await listTeacherStudentEmails(teacherEmail);
+  if (emails.length === 0) return [];
+  const { rows } = await pool.query(
+    `SELECT e.*, u.name AS student_name
+     FROM learning_events e
+     LEFT JOIN users u ON u.email = e.user_email
+     WHERE e.user_email = ANY($1)
+     ORDER BY e.created_at DESC
+     LIMIT $2`,
+    [emails, limit],
+  );
+  return rows;
 }

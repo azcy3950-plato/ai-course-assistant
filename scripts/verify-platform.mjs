@@ -266,17 +266,141 @@ async function main() {
     await page.close();
   }
 
+  // ── 第五轮用例：师生私信闭环 ──
+  {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(page, "student01@demo.edu.cn", "Demo123456");
+    const token = await tokenOf(page);
+    const tag = "自动化验证" + Date.now();
+
+    const unreadBefore = await page.evaluate(async (t) => {
+      const r = await fetch("/api/messages/unread", { headers: { Authorization: "Bearer " + t } });
+      return (await r.json()).count ?? -1;
+    }, token);
+
+    const sendRes = await page.evaluate(async ([t, body]) => {
+      const r = await fetch("/api/messages", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t },
+        body: JSON.stringify({ with: "teacher@demo.edu.cn", body }),
+      });
+      return { status: r.status, body: await r.json().catch(() => ({})) };
+    }, [token, tag + " 学生提问"]);
+    record("学生发私信成功", sendRes.status === 200 && sendRes.body.message?.id > 0, `HTTP ${sendRes.status}`);
+
+    // 越权：无 token → 401
+    const noToken = await page.evaluate(async () => {
+      const r = await fetch("/api/messages");
+      return r.status;
+    });
+    record("私信无 token 返回 401", noToken === 401, `HTTP ${noToken}`);
+
+    // ── 教师侧：收件箱可见 + 越权矩阵 + 回复 ──
+    const tpage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(tpage, "teacher@demo.edu.cn", "Demo123456");
+    const ttoken = await tokenOf(tpage);
+
+    const inbox = await tpage.evaluate(async ([t, body]) => {
+      const r = await fetch("/api/messages", { headers: { Authorization: "Bearer " + t } });
+      const d = await r.json();
+      const conv = (d.conversations || []).find((x) => x.peer_email === "student01@demo.edu.cn");
+      return { status: r.status, found: !!conv, lastBody: conv?.last_body || "", unread: conv?.unread ?? -1 };
+    }, [ttoken, tag]);
+    record("教师收件箱可见学生新消息", inbox.status === 200 && inbox.found && inbox.lastBody.includes(tag), inbox.lastBody.slice(0, 30));
+
+    const forbid = await tpage.evaluate(async (t) => {
+      const r = await fetch("/api/messages?with=" + encodeURIComponent("student13@demo.edu.cn"), { headers: { Authorization: "Bearer " + t } });
+      return r.status;
+    }, ttoken);
+    record("教师访问非本班学生被拒 403", forbid === 403, `HTTP ${forbid}`);
+
+    const replyRes = await tpage.evaluate(async ([t, body]) => {
+      const r = await fetch("/api/messages", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t },
+        body: JSON.stringify({ with: "student01@demo.edu.cn", body }),
+      });
+      return { status: r.status, body: await r.json().catch(() => ({})) };
+    }, [ttoken, tag + " 教师回复"]);
+    record("教师回复私信成功", replyRes.status === 200, `HTTP ${replyRes.status}`);
+
+    // 教师仪表盘 payload 结构
+    const dash = await tpage.evaluate(async (t) => {
+      const r = await fetch("/api/dashboard", { headers: { Authorization: "Bearer " + t } });
+      const d = await r.json();
+      return { status: r.status, classCount: d.stats?.classCount, studentCount: d.stats?.studentCount,
+        trendLen: (d.trend || []).length, weakLen: (d.weakStudents || []).length, error: d.error || "" };
+    }, ttoken);
+    record("仪表盘 payload：班级≥2 学生=12", dash.status === 200 && dash.classCount >= 2 && dash.studentCount === 12, `${dash.classCount} 班 ${dash.studentCount} 人`);
+    record("仪表盘 trend 恰 14 条", dash.trendLen === 14, `${dash.trendLen} 条`);
+    record("仪表盘薄弱学生 ≤5", dash.weakLen <= 5, `${dash.weakLen} 人`);
+
+    // ── 学生侧：未读增加 → 打开会话归零 → 对方消息已读 ──
+    const unreadAfter = await page.evaluate(async (t) => {
+      const r = await fetch("/api/messages/unread", { headers: { Authorization: "Bearer " + t } });
+      return (await r.json()).count ?? -1;
+    }, token);
+    record("学生未读增加", unreadAfter > unreadBefore, `${unreadBefore}→${unreadAfter}`);
+
+    await page.goto(BASE + "/messages/teacher%40demo.edu.cn", { waitUntil: "domcontentloaded" });
+    await sleep(3000);
+    const unreadNow = await page.evaluate(async (t) => {
+      const r = await fetch("/api/messages/unread", { headers: { Authorization: "Bearer " + t } });
+      return (await r.json()).count ?? -1;
+    }, token);
+    record("打开会话页后未读归零", unreadNow === 0, `now=${unreadNow}`);
+
+    const thread = await page.evaluate(async ([t, body]) => {
+      const r = await fetch("/api/messages?with=" + encodeURIComponent("teacher@demo.edu.cn"), { headers: { Authorization: "Bearer " + t } });
+      const d = await r.json();
+      const reply = (d.messages || []).filter((m) => m.body.includes(body)).pop();
+      return { count: (d.messages || []).length, replyRead: reply ? !!reply.read_at : null };
+    }, [token, tag]);
+    record("会话时间线含双方消息且教师回复已读", thread.count >= 2 && thread.replyRead === true, `${thread.count} 条`);
+
+    await tpage.close();
+    await page.close();
+  }
+
+  // ── 第五轮用例：admin 被拒 + 空数据教师空态 ──
+  {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(page, "admin@demo.edu.cn", "Demo123456");
+    const token = await tokenOf(page);
+    const adminRes = await page.evaluate(async (t) => {
+      const r = await fetch("/api/messages", { headers: { Authorization: "Bearer " + t } });
+      return r.status;
+    }, token);
+    record("admin 访问私信被拒 403", adminRes === 403, `HTTP ${adminRes}`);
+    await page.close();
+  }
+  {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(page, "teacherEmpty@demo.edu.cn", "Demo123456");
+    await page.goto(BASE + "/teacher", { waitUntil: "domcontentloaded" });
+    await sleep(3500);
+    const text = await page.evaluate(() => document.body.innerText);
+    record("空数据教师仪表盘显示整页空态", text.includes("暂无班级与学生"), "");
+    await page.close();
+  }
+
   // 移动视口冒烟
   {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await login(page, "student01@demo.edu.cn", "Demo123456");
-    for (const path of ["/tasks", "/history"]) {
+    for (const path of ["/tasks", "/history", "/messages", "/messages/teacher%40demo.edu.cn"]) {
       await page.goto(BASE + path, { waitUntil: "domcontentloaded" });
       await sleep(2500);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5);
       record(`移动视口无横向溢出：${path}`, !overflow);
     }
     await page.close();
+
+    const tpage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await login(tpage, "teacher@demo.edu.cn", "Demo123456");
+    await tpage.goto(BASE + "/teacher", { waitUntil: "domcontentloaded" });
+    await sleep(3500);
+    const overflow = await tpage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5);
+    record("移动视口无横向溢出：/teacher(仪表盘)", !overflow);
+    await tpage.close();
   }
 
   await browser.close();

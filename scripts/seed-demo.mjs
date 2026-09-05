@@ -210,6 +210,21 @@ async function ensureSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE (user_email, ref_type, ref_id)
     );
+
+    CREATE TABLE IF NOT EXISTS direct_messages (
+      id SERIAL PRIMARY KEY,
+      student_email TEXT NOT NULL,
+      teacher_email TEXT NOT NULL,
+      sender_email TEXT NOT NULL,
+      body TEXT NOT NULL,
+      read_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_dm_thread ON direct_messages(student_email, teacher_email, id);
+    CREATE INDEX IF NOT EXISTS idx_dm_unread_student ON direct_messages(student_email, id)
+      WHERE read_at IS NULL AND sender_email <> student_email;
+    CREATE INDEX IF NOT EXISTS idx_dm_unread_teacher ON direct_messages(teacher_email, id)
+      WHERE read_at IS NULL AND sender_email <> teacher_email;
   `);
 }
 
@@ -233,6 +248,7 @@ async function main() {
   await pool.query("DELETE FROM ai_qa_messages WHERE user_email = ANY($1)", [demoEmails]);
   await pool.query("DELETE FROM learning_records WHERE user_email = ANY($1)", [demoEmails]);
   await pool.query("DELETE FROM student_node_progress WHERE user_email = ANY($1)", [demoEmails]);
+  await pool.query("DELETE FROM direct_messages WHERE student_email = ANY($1) OR teacher_email = ANY($1)", [demoEmails]);
 
   // ── 1. 用户 ──
   const pwHash = await hash(DEMO_PASSWORD, 10);
@@ -245,6 +261,12 @@ async function main() {
     `INSERT INTO users (email, password_hash, name, role) VALUES ($1,$2,$3,$4)
      ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role`,
     ["admin@demo.edu.cn", pwHash, "管理员", "admin"],
+  );
+  // 空数据教师账号：无班级无任务，用于验收仪表盘/消息页全空态
+  await pool.query(
+    `INSERT INTO users (email, password_hash, name, role) VALUES ($1,$2,$3,$4)
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role`,
+    ["teacherEmpty@demo.edu.cn", pwHash, "空数据老师", "teacher"],
   );
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'").catch(() => {});
   for (let i = 0; i < 12; i++) {
@@ -691,6 +713,20 @@ async function main() {
     [students[0]],
   ).catch(() => {});
 
+  // ── 9.6 演示私信（student01 ↔ 教师，覆盖学生/教师两侧未读角标） ──
+  await pool.query(
+    `INSERT INTO direct_messages (student_email, teacher_email, sender_email, body, read_at, created_at) VALUES
+     ($1,$2,$1,'老师，下垫面加 LID 后模拟的最大水深能降多少？',$3,$4),
+     ($1,$2,$2,'建议你跑一组 60% 与 90% 不透水率对照，记录峰值流量差值再对比，同时关注积水消退时间的变化。',NULL,$5),
+     ($1,$2,$1,'好的，我跑完把数据发给您。',NULL,$6)`,
+    [students[0], teacher, hoursAgo(28), hoursAgo(30), hoursAgo(20), hoursAgo(2)],
+  ).catch(() => {});
+  await pool.query(
+    `INSERT INTO notifications (user_email, type, title, body, link, created_at) VALUES
+     ($1,'DIRECT_MSG','教师回复了您的私信','建议你跑一组 60% 与 90% 不透水率对照……','/messages/teacher%40demo.edu.cn', now() - interval '20 hours')`,
+    [students[0]],
+  ).catch(() => {});
+
   console.log("演示数据导入完成：");
   console.log(`  用户：1 教师 + ${students.length} 学生（密码 ${DEMO_PASSWORD}）`);
   console.log(`  班级：2（排水231班 ${class231.length} 人 / 排水232班 4 人）`);
@@ -699,6 +735,7 @@ async function main() {
   console.log(`  学习事件：${await cnt("SELECT count(*)::int AS count FROM learning_events WHERE user_email = ANY($1)", [demoEmails])}`);
   console.log(`  错题记录：${await cnt("SELECT count(*)::int AS count FROM quiz_results WHERE user_email = ANY($1)", [demoEmails])}`);
   console.log(`  AI 问答存档：${await cnt("SELECT count(*)::int AS count FROM ai_qa_messages WHERE user_email = ANY($1)", [demoEmails])}（含 ${pendingFeedback} 条待审核反馈）`);
+  console.log(`  私信：${await cnt("SELECT count(*)::int AS count FROM direct_messages WHERE student_email = ANY($1) OR teacher_email = ANY($1)", [demoEmails])}`);
   console.log(`知识点关联：${demoNodes.length > 0 ? `使用课程图谱排水网络节点（如 ${demoNodes[0].name}）` : "节点目录缺失，任务未关联知识点"}`);
   console.log(`\n教师登录：${teacher} / ${DEMO_PASSWORD}`);
   console.log(`学生登录：student01@demo.edu.cn / ${DEMO_PASSWORD}（01-12 均可）`);

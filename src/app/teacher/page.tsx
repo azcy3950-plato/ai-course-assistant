@@ -8,8 +8,9 @@ import TasksTab from "./TasksTab";
 import AnalysisTab from "./AnalysisTab";
 import ReviewTab from "./ReviewTab";
 import KnowledgeTab from "./KnowledgeTab";
+import DashboardTab from "./DashboardTab";
 
-type TabKey = "classes" | "tasks" | "analysis" | "review" | "knowledge";
+type TabKey = "dashboard" | "classes" | "tasks" | "analysis" | "review" | "knowledge";
 
 export default function TeacherPage() {
   const { state } = useApp();
@@ -23,7 +24,7 @@ export default function TeacherPage() {
     else setAuthorized(true);
   }, [state.authLoading, state.role, router]);
 
-  const [activeTab, setActiveTab] = useState<TabKey>("classes");
+  const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
 
   if (state.authLoading || !authorized) {
     return <div className="flex items-center justify-center min-h-[60vh] text-[var(--color-text-muted)]">加载中...</div>;
@@ -33,11 +34,12 @@ export default function TeacherPage() {
     <div className="max-w-6xl mx-auto px-4 py-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-[var(--color-text)] mb-1">教学管理</h1>
-        <p className="text-sm text-[var(--color-text-secondary)]">班级与学生、学习任务、学情分析、AI 内容审核与知识库</p>
+        <p className="text-sm text-[var(--color-text-secondary)]">数据仪表盘、班级与学生、学习任务、学情分析、AI 内容审核与知识库</p>
       </div>
 
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
         {[
+          { k: "dashboard" as TabKey, l: "🏠 仪表盘" },
           { k: "classes" as TabKey, l: "🏫 班级" },
           { k: "tasks" as TabKey, l: "📝 任务" },
           { k: "analysis" as TabKey, l: "📊 学情" },
@@ -51,6 +53,7 @@ export default function TeacherPage() {
         ))}
       </div>
 
+      {activeTab === "dashboard" && <DashboardTab />}
       {activeTab === "classes" && <ClassesTab />}
       {activeTab === "tasks" && <TasksTab />}
       {activeTab === "analysis" && <AnalysisTab />}
