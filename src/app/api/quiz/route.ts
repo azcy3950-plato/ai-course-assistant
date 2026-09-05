@@ -146,7 +146,15 @@ export async function POST(req: NextRequest) {
       const ref = rows[0];
       if (!ref) return NextResponse.json({ error: "题目不存在" }, { status: 404 });
       const studentAnswer = String(body.studentAnswer || "");
-      const isCorrect = studentAnswer === ref.correct_answer;
+      // 兼容两种存量格式：correct_answer 为字母(A-D)或全文文本（seed 老数据）
+      let isCorrect = false;
+      if (/^[A-D]$/.test(ref.correct_answer || "")) {
+        isCorrect = studentAnswer === ref.correct_answer;
+      } else {
+        const idx = /^[A-D]$/.test(studentAnswer) ? studentAnswer.charCodeAt(0) - 65 : -1;
+        const chosenText = idx >= 0 && Array.isArray(ref.options) ? ref.options[idx] : studentAnswer;
+        isCorrect = String(chosenText).trim() === String(ref.correct_answer).trim();
+      }
       await pool.query(
         "INSERT INTO quiz_results (user_email, question, correct_answer, student_answer, is_correct, topic, options, explanation) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
         [me, q, ref.correct_answer, studentAnswer, isCorrect, ref.topic,

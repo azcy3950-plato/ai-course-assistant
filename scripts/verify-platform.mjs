@@ -51,7 +51,7 @@ async function main() {
     await page.goto(BASE + "/teacher", { waitUntil: "domcontentloaded" });
     await sleep(2500);
     await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("学情分析"));
+      const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("学情"));
       if (btn) btn.click();
     });
     await sleep(2500);
@@ -96,7 +96,12 @@ async function main() {
     await nameInput.fill("学生01测");
     await page.click('button:has-text("保存")');
     await sleep(1500);
-    const navName = await page.evaluate(() => document.body.innerText.includes("学生01测"));
+    const navName = await page.evaluate(() => {
+      try {
+        const u = JSON.parse(localStorage.getItem("aicourse-user") || "{}");
+        return u.name === "学生01测";
+      } catch { return false; }
+    });
     record("改名后导航栏立即刷新", navName);
     await nameInput.fill("学生01");
     await page.click('button:has-text("保存")');
@@ -230,7 +235,11 @@ async function main() {
     await login(page, "teacher@demo.edu.cn", "Demo123456");
     const token = await tokenOf(page);
     const sid = await page.evaluate(async (t) => {
-      const r = await fetch("/api/tasks/2", { headers: { Authorization: "Bearer " + t } });
+      const list = await fetch("/api/tasks", { headers: { Authorization: "Bearer " + t } });
+      const tasks = await list.json();
+      const sim = tasks.find((x) => x.type === "SIMULATION");
+      if (!sim) return 0;
+      const r = await fetch(`/api/tasks/${sim.id}`, { headers: { Authorization: "Bearer " + t } });
       const d = await r.json();
       const pending = (d.submissions || []).find((x) => x.status === "pending");
       return pending ? pending.id : 0;
