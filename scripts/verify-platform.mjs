@@ -20,11 +20,17 @@ function record(name, ok, detail = "") {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function login(page, email, password) {
-  await page.goto(BASE + "/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', email);
-  await page.fill('input[type="password"]', password);
-  await page.click('button[type="submit"]');
-  await sleep(2500);
+  // 本地到 VPS 链路有间歇抖动：登录请求偶发失败时不校验就继续会导致整块用例 401。
+  // 登录后校验 localStorage 令牌，失败重试最多 3 次。
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.goto(BASE + "/login", { waitUntil: "domcontentloaded" });
+    await page.fill('input[type="email"]', email);
+    await page.fill('input[type="password"]', password);
+    await page.click('button[type="submit"]');
+    await sleep(2500);
+    const tok = await page.evaluate(() => localStorage.getItem("aicourse-token") || "");
+    if (tok) return;
+  }
 }
 
 async function tokenOf(page) {
@@ -453,6 +459,7 @@ async function main() {
       const out = {};
       const tr = await fetch("/api/tasks", { headers: { Authorization: "Bearer " + t } });
       const tasks = await tr.json();
+      if (!Array.isArray(tasks)) { out.error = "tasks 非数组"; return out; }
       const practice = tasks.find((x) => x.type === "PRACTICE");
       out.practiceNoAnswer = practice ? (practice.questions || []).every((q) => !("answer" in q) && !("explanation" in q)) : null;
       const submitted = tasks.find((x) => x.effective_status === "SUBMITTED" && x.type !== "PRACTICE");
@@ -478,6 +485,7 @@ async function main() {
       const out = {};
       const tr = await fetch("/api/tasks", { headers: { Authorization: "Bearer " + t } });
       const tasks = await tr.json();
+      if (!Array.isArray(tasks)) { out.error = "tasks 非数组"; return out; }
       const practice = tasks.find((x) => x.type === "PRACTICE");
       if (practice) {
         const comp = await fetch(`/api/tasks/${practice.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ action: "complete", note: "直接完成" }) });
