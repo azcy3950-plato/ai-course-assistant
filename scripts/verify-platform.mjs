@@ -24,6 +24,9 @@ async function login(page, email, password) {
   // 登录后校验 localStorage 令牌，失败重试最多 3 次。
   for (let attempt = 0; attempt < 3; attempt++) {
     await page.goto(BASE + "/login", { waitUntil: "domcontentloaded" });
+    // 清掉同一 context 其他页面留下的会话：否则登录页检测到已登录会自动跳首页，登录动作落空
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(BASE + "/login", { waitUntil: "domcontentloaded" });
     await page.fill('input[type="email"]', email);
     await page.fill('input[type="password"]', password);
     await page.click('button[type="submit"]');
@@ -440,13 +443,17 @@ async function main() {
   {
     // admin 仪表盘自洽（requireTeacher 放行 admin 后不再是"加载失败"）
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    await login(page, "admin@demo.edu.cn", "Demo123456");
-    const token = await tokenOf(page);
-    const dash = await page.evaluate(async (t) => {
-      const r = await fetch("/api/dashboard", { headers: { Authorization: "Bearer " + t } });
-      const d = await r.json();
-      return { status: r.status, classCount: (d.stats || {}).classCount };
-    }, token);
+    // 401 可能是登录未生效（网络抖动），整流程重试
+    let dash = { status: 0, classCount: undefined };
+    for (let attempt = 0; attempt < 3 && dash.status !== 200; attempt++) {
+      await login(page, "admin@demo.edu.cn", "Demo123456");
+      const token = await tokenOf(page);
+      dash = await page.evaluate(async (t) => {
+        const r = await fetch("/api/dashboard", { headers: { Authorization: "Bearer " + t } });
+        const d = await r.json();
+        return { status: r.status, classCount: (d.stats || {}).classCount };
+      }, token);
+    }
     record("admin 访问仪表盘 API 自洽（空数据 200）", dash.status === 200 && dash.classCount === 0, `HTTP ${dash.status} classCount=${dash.classCount}`);
     await page.close();
   }
