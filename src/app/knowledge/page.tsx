@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useChat } from '@/contexts/ChatContext';
 import { useApp, getAuthToken } from '@/contexts/AppContext';
 import { useLearning } from '@/contexts/LearningContext';
@@ -12,7 +13,8 @@ import QuizPanel from '@/components/QuizPanel';
 import { Reference } from '@/types';
 
 export default function KnowledgePage() {
-  const { state: chatState, createConversation, setActive, addMessage, deleteConversation, updateTitle, updateLastMessage, getActiveConversation } = useChat();
+  const router = useRouter();
+  const { state: chatState, createConversation, setActive, addMessage, deleteConversation, updateTitle, removeLastMessage, updateLastMessage, getActiveConversation } = useChat();
   const { state: appState } = useApp();
   const { addRecord } = useLearning();
 
@@ -29,6 +31,12 @@ export default function KnowledgePage() {
   const sourcePanelRef = useRef<HTMLDivElement>(null);
 
   const activeConv = getActiveConversation();
+
+  // 登录守卫：未登录重定向（此前无守卫，未登录看到完整 UI 且提问得到误导性错误）
+  useEffect(() => {
+    if (appState.authLoading) return;
+    if (!appState.role) router.replace("/login?redirect=" + encodeURIComponent("/knowledge"));
+  }, [appState.authLoading, appState.role, router]);
 
   // Auto-create conversation if none exists
   useEffect(() => {
@@ -117,13 +125,12 @@ export default function KnowledgePage() {
       if (msgs[i].role === 'user') { lastUserMsg = msgs[i].content; break; }
     }
     if (!lastUserMsg) return;
-    // Remove last AI message
-    const updatedMessages = msgs.slice(0, -1);
-    activeConv.messages = updatedMessages;
-    chatState.conversations = chatState.conversations.map(c => c.id === activeConv.id ? { ...c, messages: updatedMessages } : c);
+    // 移除最后一条 AI 消息：走 reducer（此前直接改写 state 对象绕过 dispatch，
+    // React 不感知变更，并发渲染下旧回答残留且污染 localStorage 持久化）
+    removeLastMessage(activeConv.id);
     // Re-send
     handleSend(lastUserMsg);
-  }, [activeConv, loading, handleSend, chatState.conversations]);
+  }, [activeConv, loading, handleSend, removeLastMessage]);
 
   const handleReferenceClick = useCallback((refId: number) => {
     setHighlightedRef(prev => prev === refId ? null : refId);

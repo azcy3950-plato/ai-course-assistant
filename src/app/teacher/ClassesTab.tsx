@@ -9,6 +9,7 @@ export default function ClassesTab() {
   const router = useRouter();
   const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -16,11 +17,15 @@ export default function ClassesTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const r = await fetch("/api/classes", { headers: { Authorization: "Bearer " + getAuthToken() } });
       if (r.ok) setClasses(await r.json());
+      else setError("加载失败，请重试");
     } catch (e) {
       console.error(e);
+      // 网络失败曾静默显示"还没有班级"空态；现在如实提示
+      setError("网络错误，加载失败");
     } finally {
       setLoading(false);
     }
@@ -102,6 +107,12 @@ export default function ClassesTab() {
 
       {loading ? (
         <div className="p-10 text-center text-sm text-[var(--color-text-muted)]">加载中...</div>
+      ) : error ? (
+        <div className="bg-white rounded-xl border border-red-200 p-10 text-center">
+          <div className="text-3xl mb-3">⚠️</div>
+          <p className="text-sm text-red-600 mb-4">{error}</p>
+          <button onClick={load} className="px-4 py-2 text-sm rounded-lg border border-[var(--color-border)] hover:bg-gray-50">重试</button>
+        </div>
       ) : classes.length === 0 ? (
         <div className="bg-white rounded-xl border border-[var(--color-border)] p-12 text-center">
           <div className="text-4xl mb-3">🏫</div>

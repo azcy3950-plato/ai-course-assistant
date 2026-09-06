@@ -16,7 +16,14 @@ export default function MessageThreadPage() {
   const { state } = useApp();
   const router = useRouter();
   const params = useParams();
-  const peerEmail = decodeURIComponent(String(params?.email || ""));
+  // 畸形百分号编码会抛 URIError 白屏；解析失败按空处理并显示无效地址
+  let peerEmail = "";
+  try {
+    peerEmail = decodeURIComponent(String(params?.email || ""));
+  } catch {
+    peerEmail = "";
+  }
+  const invalidPeer = !peerEmail;
   const [authorized, setAuthorized] = useState(false);
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState("");
@@ -84,6 +91,15 @@ export default function MessageThreadPage() {
 
   if (state.authLoading || !authorized) {
     return <div className="flex items-center justify-center min-h-[60vh] text-[var(--color-text-muted)]">加载中...</div>;
+  }
+
+  if (invalidPeer) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center">
+        <p className="text-sm text-[var(--color-text-muted)] mb-4">地址无效</p>
+        <Link href="/messages" className="text-sm text-[var(--color-primary)] hover:underline">返回私信列表</Link>
+      </div>
+    );
   }
 
   const messages = data?.messages || [];

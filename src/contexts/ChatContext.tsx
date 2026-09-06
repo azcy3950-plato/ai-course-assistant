@@ -14,6 +14,7 @@ type ChatAction =
   | { type: 'ADD_MESSAGE'; payload: { conversationId: string; message: Message } }
   | { type: 'DELETE_CONVERSATION'; payload: string }
   | { type: 'UPDATE_TITLE'; payload: { id: string; title: string } }
+  | { type: 'REMOVE_LAST_MESSAGE'; payload: { conversationId: string } }
   | { type: 'UPDATE_LAST_MESSAGE'; payload: { conversationId: string; content: string; references?: Reference[] } };
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
@@ -58,6 +59,15 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           c.id === action.payload.id ? { ...c, title: action.payload.title } : c
         ),
       };
+    case 'REMOVE_LAST_MESSAGE':
+      return {
+        ...state,
+        conversations: state.conversations.map(c =>
+          c.id === action.payload.conversationId
+            ? { ...c, messages: c.messages.slice(0, -1), updatedAt: Date.now() }
+            : c
+        ),
+      };
     case 'UPDATE_LAST_MESSAGE':
       return {
         ...state,
@@ -84,6 +94,7 @@ interface ChatContextValue {
   addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => void;
   deleteConversation: (id: string) => void;
   updateTitle: (id: string, title: string) => void;
+  removeLastMessage: (conversationId: string) => void;
   updateLastMessage: (conversationId: string, content: string, references?: Reference[]) => void;
   getActiveConversation: () => Conversation | undefined;
 }
@@ -141,6 +152,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const removeLastMessage = useCallback((conversationId: string) => {
+    dispatch({ type: 'REMOVE_LAST_MESSAGE', payload: { conversationId } });
+  }, []);
+
   const deleteConversation = useCallback((id: string) => {
     dispatch({ type: 'DELETE_CONVERSATION', payload: id });
   }, []);
@@ -166,6 +181,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         addMessage,
         deleteConversation,
         updateTitle,
+        removeLastMessage,
         updateLastMessage,
         getActiveConversation,
       }}

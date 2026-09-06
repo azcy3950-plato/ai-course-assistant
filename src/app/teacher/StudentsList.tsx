@@ -17,7 +17,7 @@ export default function StudentsList() {
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [busyEmail, setBusyEmail] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,9 +41,9 @@ export default function StudentsList() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` },
         body: JSON.stringify({ email, name: editName.trim() }),
       });
-      if (res.ok) { setEditingEmail(null); setMsg("姓名已更新"); await load(); }
-      else setMsg("更新失败");
-    } catch { setMsg("网络错误"); }
+      if (res.ok) { setEditingEmail(null); setMsg({ ok: true, text: "姓名已更新" }); await load(); }
+      else setMsg({ ok: false, text: "更新失败" });
+    } catch { setMsg({ ok: false, text: "网络错误" }); }
     setBusyEmail(null);
   };
 
@@ -53,7 +53,7 @@ export default function StudentsList() {
         <h3 className="text-sm font-bold text-[var(--color-text)]">👥 学生统计（全部班级）</h3>
         <button onClick={load} className="text-xs text-[var(--color-primary)] hover:underline">🔄 刷新</button>
       </div>
-      {msg && <p className="text-xs text-green-600 mb-2">{msg}</p>}
+      {msg && <p className={`text-xs mb-2 ${msg.ok ? "text-green-600" : "text-red-500"}`}>{msg.text}</p>}
       <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-sm text-[var(--color-text-muted)]">加载中…</div>

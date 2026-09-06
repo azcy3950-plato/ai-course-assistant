@@ -22,7 +22,13 @@ export default function StudentDetailPage() {
   const { state } = useApp();
   const router = useRouter();
   const params = useParams();
-  const email = decodeURIComponent(String(params.email));
+  // 畸形百分号编码会抛 URIError 白屏；解析失败按原始字符串处理（后续请求自然 404）
+  let email = String(params.email);
+  try {
+    email = decodeURIComponent(email);
+  } catch {
+    // 保留原始值
+  }
 
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);

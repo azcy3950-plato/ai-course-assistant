@@ -24,9 +24,15 @@ const FEEDBACK_REASONS = ["内容错误", "解释不清", "答非所问", "信�
 export default function HistoryPage() {
   const { state } = useApp();
   const router = useRouter();
-  const [tab, setTab] = useState<"events" | "mistakes" | "qa" | "insights" | "favorites">(
-    () => (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "insights" ? "insights" : "events"),
-  );
+  const [tab, setTab] = useState<"events" | "mistakes" | "qa" | "insights" | "favorites">("events");
+
+  // ?tab=insights 等 URL 参数在挂载后读取（初始化器读 window 会造成 hydration mismatch）
+  useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (t === "insights" || t === "events" || t === "mistakes" || t === "qa" || t === "favorites") setTab(t);
+    } catch { /* 忽略 */ }
+  }, []);
   const [records, setRecords] = useState<any[]>([]);
   const [favorites, setFavorites] = useState<any[]>([]);
   const [events, setEvents] = useState<LearningEvent[]>([]);
@@ -47,28 +53,38 @@ export default function HistoryPage() {
   const jsonHeaders = { "Content-Type": "application/json", Authorization: "Bearer " + getAuthToken() };
 
   const loadEvents = useCallback(async () => {
-    const r = await fetch("/api/learning-events", { headers });
-    if (r.ok) setEvents(await r.json());
+    try {
+      const r = await fetch("/api/learning-events", { headers });
+      if (r.ok) setEvents(await r.json());
+    } catch { /* 单个数据源失败不影响整体（此前 unhandled rejection） */ }
   }, []);
   const loadMistakes = useCallback(async () => {
-    const [qRes, cRes] = await Promise.all([
-      fetch("/api/quiz-results", { headers }),
-      fetch("/api/corrections", { headers }),
-    ]);
-    if (qRes.ok) setQuizResults(await qRes.json()); // 保留全量行：错题列表过滤依赖"被正确重做取代"判断
-    if (cRes.ok) setCorrectedIds(new Set((await cRes.json()).ids || []));
+    try {
+      const [qRes, cRes] = await Promise.all([
+        fetch("/api/quiz-results", { headers }),
+        fetch("/api/corrections", { headers }),
+      ]);
+      if (qRes.ok) setQuizResults(await qRes.json()); // 保留全量行：错题列表过滤依赖"被正确重做取代"判断
+      if (cRes.ok) setCorrectedIds(new Set((await cRes.json()).ids || []));
+    } catch { /* 同上 */ }
   }, []);
   const loadQa = useCallback(async () => {
-    const r = await fetch("/api/qa-messages", { headers });
-    if (r.ok) setQaMessages(await r.json());
+    try {
+      const r = await fetch("/api/qa-messages", { headers });
+      if (r.ok) setQaMessages(await r.json());
+    } catch { /* 同上 */ }
   }, []);
   const loadRecords = useCallback(async () => {
-    const r = await fetch("/api/records", { headers });
-    if (r.ok) setRecords(await r.json());
+    try {
+      const r = await fetch("/api/records", { headers });
+      if (r.ok) setRecords(await r.json());
+    } catch { /* 同上 */ }
   }, []);
   const loadFavorites = useCallback(async () => {
-    const r = await fetch("/api/favorites", { headers });
-    if (r.ok) setFavorites((await r.json()).items || []);
+    try {
+      const r = await fetch("/api/favorites", { headers });
+      if (r.ok) setFavorites((await r.json()).items || []);
+    } catch { /* 同上 */ }
   }, []);
 
   useEffect(() => {

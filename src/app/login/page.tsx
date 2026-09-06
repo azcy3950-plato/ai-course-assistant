@@ -8,7 +8,9 @@ import { useApp } from "@/contexts/AppContext";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams?.get("redirect") ?? "/";
+  // 开放重定向防护：仅接受站内相对路径（以 / 开头且非 //）
+  const rawRedirect = searchParams?.get("redirect") ?? "/";
+  const redirectTo = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/";
   const { state, login } = useApp();
 
   const [identifier, setIdentifier] = useState("");

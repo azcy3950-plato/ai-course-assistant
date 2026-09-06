@@ -59,6 +59,7 @@ export default function KnowledgeTab() {
 
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList?.length) return;
+    if (uploading) return; // 上传进行中禁止再拖入，防并发上传共享 progress 状态错乱
     const file = fileList[0];
     if (file.size > 200 * 1024 * 1024) { alert("文件不能超过 200MB"); return; }
 

@@ -26,11 +26,13 @@ export default function TasksPage() {
   const [feedback, setFeedback] = useState<TeacherFeedbackItem[]>([]);
   const [graph, setGraph] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const headers = { Authorization: "Bearer " + getAuthToken() };
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const [tRes, fRes, gRes] = await Promise.all([
         fetch("/api/tasks", { headers }),
@@ -40,8 +42,11 @@ export default function TasksPage() {
       if (tRes.ok) setTasks(await tRes.json());
       if (fRes.ok) setFeedback(await fRes.json());
       if (gRes.ok) setGraph(await gRes.json());
+      if (!tRes.ok) setError("加载失败，请重试");
     } catch (e) {
       console.error(e);
+      // 网络失败曾静默显示"暂无任务"空态，误导用户；现在如实提示
+      setError("网络错误，加载失败");
     } finally {
       setLoading(false);
     }
@@ -87,6 +92,14 @@ export default function TasksPage() {
         <h1 className="text-2xl font-bold text-[var(--color-text)] mb-1">我的任务</h1>
         <p className="text-sm text-[var(--color-text-secondary)]">老师布置的学习任务、提交状态与教师反馈</p>
       </div>
+
+      {error && !loading && (
+        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 flex items-center gap-3">
+          <span className="text-xl">⚠️</span>
+          <div className="flex-1 text-sm text-red-800">{error}</div>
+          <button onClick={load} className="px-4 py-2 text-sm rounded-lg border border-red-300 text-red-700 hover:bg-red-100 shrink-0">重试</button>
+        </div>
+      )}
 
       {revision > 0 && (
         <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 flex items-center gap-3">
