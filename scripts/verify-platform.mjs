@@ -92,7 +92,8 @@ async function main() {
     // ── 6. profile 改名同步导航栏 ──
     await page.goto(BASE + "/profile", { waitUntil: "domcontentloaded" });
     await sleep(2000);
-    const nameInput = page.locator('input').first();
+    // 第一个 input 是 Navbar 搜索框，必须按 placeholder 定位姓名输入框
+    const nameInput = page.locator('input[placeholder="姓名"]');
     await nameInput.fill("学生01测");
     await page.click('button:has-text("保存")');
     // 轮询等待 PATCH 完成并写入 localStorage（跨网延迟下固定 sleep 会误报）
@@ -379,7 +380,7 @@ async function main() {
   }
   {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    await login(page, "teacherEmpty@demo.edu.cn", "Demo123456");
+    await login(page, "teacherempty@demo.edu.cn", "Demo123456");
     await page.goto(BASE + "/teacher", { waitUntil: "domcontentloaded" });
     await sleep(3500);
     const text = await page.evaluate(() => document.body.innerText);

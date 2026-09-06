@@ -1060,7 +1060,7 @@ export async function addDirectMessage(input: {
 export async function markDirectMessagesRead(studentEmail: string, teacherEmail: string, readerEmail: string) {
   const { rowCount } = await pool.query(
     `UPDATE direct_messages SET read_at = now()
-     WHERE student_email = $1 AND teacher_email = $2 AND sender_email = $3 AND read_at IS NULL`,
+     WHERE student_email = $1 AND teacher_email = $2 AND sender_email <> $3 AND read_at IS NULL`,
     [studentEmail, teacherEmail, readerEmail],
   );
   return rowCount ?? 0;

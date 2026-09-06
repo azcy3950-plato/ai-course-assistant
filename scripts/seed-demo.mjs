@@ -263,11 +263,14 @@ async function main() {
     ["admin@demo.edu.cn", pwHash, "管理员", "admin"],
   );
   // 空数据教师账号：无班级无任务，用于验收仪表盘/消息页全空态
+  // 注意：邮箱必须全小写——登录会把标识符规范化为小写再查库
   await pool.query(
     `INSERT INTO users (email, password_hash, name, role) VALUES ($1,$2,$3,$4)
      ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role = EXCLUDED.role`,
-    ["teacherEmpty@demo.edu.cn", pwHash, "空数据老师", "teacher"],
+    ["teacherempty@demo.edu.cn", pwHash, "空数据老师", "teacher"],
   );
+  // 清理早期误入的驼峰大小写同名账号（登录规范化为小写后查不到它）
+  await pool.query("DELETE FROM users WHERE email = $1", ["teacherEmpty@demo.edu.cn"]).catch(() => {});
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'").catch(() => {});
   for (let i = 0; i < 12; i++) {
     await pool.query(
