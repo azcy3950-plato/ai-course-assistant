@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
     const withEmail = req.nextUrl.searchParams.get("with");
     if (withEmail) {
       const { resp: authResp, pair } = await authorizeDmPair(req, withEmail);
-      if (authResp || !pair) return authResp;
+      if (authResp) return authResp;
+      if (!pair) return NextResponse.json({ error: "无法确认会话关系" }, { status: 403 });
       const [messages, peerName] = await Promise.all([
         getDirectMessages(pair.studentEmail, pair.teacherEmail),
         getUserName(pair.studentEmail === auth.email ? pair.teacherEmail : pair.studentEmail),
@@ -52,7 +53,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     await ensureLearningSchema();
     const { resp: authResp, pair } = await authorizeDmPair(req, String(body.with || ""));
-    if (authResp || !pair) return authResp;
+    if (authResp) return authResp;
+    if (!pair) return NextResponse.json({ error: "无法确认会话关系" }, { status: 403 });
 
     const text = String(body.body || "").trim();
     if (!text || text.length > 2000)

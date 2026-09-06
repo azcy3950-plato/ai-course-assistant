@@ -11,7 +11,8 @@ export async function PUT(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     await ensureLearningSchema();
     const { resp: authResp, pair } = await authorizeDmPair(req, String(body.with || ""));
-    if (authResp || !pair) return authResp;
+    if (authResp) return authResp;
+    if (!pair) return NextResponse.json({ error: "无法确认会话关系" }, { status: 403 });
     const marked = await markDirectMessagesRead(pair.studentEmail, pair.teacherEmail, auth.email);
     return NextResponse.json({ ok: true, marked });
   } catch (err: any) {
