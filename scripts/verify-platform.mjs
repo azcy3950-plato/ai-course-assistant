@@ -382,9 +382,15 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await login(page, "teacherempty@demo.edu.cn", "Demo123456");
     await page.goto(BASE + "/teacher", { waitUntil: "domcontentloaded" });
-    await sleep(3500);
-    const text = await page.evaluate(() => document.body.innerText);
-    record("空数据教师仪表盘显示整页空态", text.includes("暂无班级与学生"), "");
+    // 轮询等待仪表盘数据返回（冷启动/网络波动下固定 sleep 会误报）
+    let text = "";
+    let sawEmpty = false;
+    for (let i = 0; i < 16; i++) {
+      await sleep(500);
+      text = await page.evaluate(() => document.body.innerText);
+      if (text.includes("暂无班级与学生")) { sawEmpty = true; break; }
+    }
+    record("空数据教师仪表盘显示整页空态", sawEmpty, text.slice(0, 80).replace(/\s+/g, " "));
     await page.close();
   }
 
