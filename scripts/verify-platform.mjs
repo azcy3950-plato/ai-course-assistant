@@ -66,6 +66,18 @@ async function main() {
     await sleep(2500);
     const hasQuizLink = await page.evaluate(() => document.body.innerText.includes("阶段测验总览"));
     record("教师学情分析「阶段测验总览」入口", hasQuizLink);
+    // 新默认「仅真实学生」：演示教师无真实学生 → 0 个知识点
+    const realNodeCount = await page.evaluate(() => {
+      const m = document.body.innerText.match(/(\d+) 个知识点有学习数据/);
+      return m ? Number(m[1]) : 0;
+    });
+    record("学情分析默认剔除演示账号（0 知识点）", realNodeCount === 0, `${realNodeCount} 个知识点`);
+    // 切到「含演示账号」后应有数据
+    await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("含演示账号"));
+      if (btn) btn.click();
+    });
+    await sleep(2500);
     // 按知识点行数（取「个知识点有学习数据」前的数字）
     const nodeCount = await page.evaluate(() => {
       const m = document.body.innerText.match(/(\d+) 个知识点有学习数据/);
@@ -334,16 +346,24 @@ async function main() {
     }, [ttoken, tag + " 教师回复"]);
     record("教师回复私信成功", replyRes.status === 200, `HTTP ${replyRes.status}`);
 
-    // 教师仪表盘 payload 结构
+    // 教师仪表盘 payload 结构（默认「仅真实学生」→ 演示教师 0 人）
     const dash = await tpage.evaluate(async (t) => {
       const r = await fetch("/api/dashboard", { headers: { Authorization: "Bearer " + t } });
       const d = await r.json();
       return { status: r.status, classCount: d.stats?.classCount, studentCount: d.stats?.studentCount,
-        trendLen: (d.trend || []).length, weakLen: (d.weakStudents || []).length, error: d.error || "" };
+        trendLen: (d.trend || []).length, weakLen: (d.weakStudents || []).length, scope: d.scope, error: d.error || "" };
     }, ttoken);
-    record("仪表盘 payload：班级≥2 学生=12", dash.status === 200 && dash.classCount >= 2 && dash.studentCount === 12, `${dash.classCount} 班 ${dash.studentCount} 人`);
-    record("仪表盘 trend 恰 14 条", dash.trendLen === 14, `${dash.trendLen} 条`);
-    record("仪表盘薄弱学生 ≤5", dash.weakLen <= 5, `${dash.weakLen} 人`);
+    record("仪表盘默认剔除演示账号（0 人）", dash.status === 200 && dash.studentCount === 0 && dash.scope === "real", `${dash.scope} ${dash.studentCount} 人`);
+    // 含演示账号 → 12 名学生 + 14 天趋势
+    const dashAll = await tpage.evaluate(async (t) => {
+      const r = await fetch("/api/dashboard?scope=all", { headers: { Authorization: "Bearer " + t } });
+      const d = await r.json();
+      return { status: r.status, classCount: d.stats?.classCount, studentCount: d.stats?.studentCount,
+        trendLen: (d.trend || []).length, weakLen: (d.weakStudents || []).length, scope: d.scope, error: d.error || "" };
+    }, ttoken);
+    record("仪表盘 payload：班级≥2 学生=12", dashAll.status === 200 && dashAll.classCount >= 2 && dashAll.studentCount === 12, `${dashAll.classCount} 班 ${dashAll.studentCount} 人`);
+    record("仪表盘 trend 恰 14 条", dashAll.trendLen === 14, `${dashAll.trendLen} 条`);
+    record("仪表盘薄弱学生 ≤5", dashAll.weakLen <= 5, `${dashAll.weakLen} 人`);
 
     // ── 学生侧：未读增加 → 打开会话归零 → 对方消息已读 ──
     const unreadAfter = await page.evaluate(async (t) => {
