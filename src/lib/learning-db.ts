@@ -349,11 +349,11 @@ export async function canTeacherViewStudent(teacherEmail: string, studentEmail: 
 }
 
 /** 教师负责班级下的全部学生邮箱 */
-export async function listTeacherStudentEmails(teacherEmail: string): Promise<string[]> {
+export async function listTeacherStudentEmails(teacherEmail: string, includeDemo = true): Promise<string[]> {
   const { rows } = await pool.query(
     `SELECT DISTINCT m.user_email FROM classes c JOIN class_members m ON m.class_id = c.id
-     WHERE c.teacher_email = $1`,
-    [teacherEmail],
+     WHERE c.teacher_email = $1 AND ($2::boolean OR m.user_email NOT LIKE '%@demo.edu.cn')`,
+    [teacherEmail, includeDemo],
   );
   return rows.map((r) => r.user_email);
 }
@@ -401,19 +401,19 @@ const EFFECTIVE_STATUS_SQL = `CASE
     ELSE st.status END`;
 
 /** 教师视角任务列表（含进度统计） */
-export async function listTeacherTasks(teacherEmail: string) {
+export async function listTeacherTasks(teacherEmail: string, includeDemo = true) {
   const { rows } = await pool.query(
     `SELECT t.*, c.name AS class_name,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id) AS total,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status = 'COMPLETED') AS done,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status = 'SUBMITTED') AS submitted,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status = 'REVISION_REQUIRED') AS revision,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status IN ('TODO','IN_PROGRESS') AND (t.deadline IS NULL OR t.deadline >= now())) AS in_progress,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status IN ('TODO','IN_PROGRESS') AND t.deadline IS NOT NULL AND t.deadline < now()) AS overdue
+        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')) AS total,
+        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status = 'COMPLETED' AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')) AS done,
+        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status = 'SUBMITTED' AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')) AS submitted,
+        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status = 'REVISION_REQUIRED' AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')) AS revision,
+        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status IN ('TODO','IN_PROGRESS') AND (t.deadline IS NULL OR t.deadline >= now()) AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')) AS in_progress,
+        (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status IN ('TODO','IN_PROGRESS') AND t.deadline IS NOT NULL AND t.deadline < now() AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')) AS overdue
      FROM tasks t LEFT JOIN classes c ON c.id = t.class_id
      WHERE t.teacher_email = $1
      ORDER BY t.created_at DESC`,
-    [teacherEmail],
+    [teacherEmail, includeDemo],
   );
   return rows;
 }
@@ -754,8 +754,8 @@ export async function addAiVersion(input: { messageId: number; content: string; 
 
 // ─── 学情分析 ───
 /** 按知识点聚合：学习人数、平均掌握度、练习正确率、相关任务数 */
-export async function nodeAnalysis(teacherEmail: string) {
-  const studentEmails = await listTeacherStudentEmails(teacherEmail);
+export async function nodeAnalysis(teacherEmail: string, includeDemo = true) {
+  const studentEmails = await listTeacherStudentEmails(teacherEmail, includeDemo);
   if (studentEmails.length === 0) return [];
 
   // 运行时进度表存的节点 id 来自课程图谱（内存图谱），不是 knowledge_graph_nodes（历史远程同步表）。
@@ -807,8 +807,8 @@ export async function nodeAnalysis(teacherEmail: string) {
 }
 
 /** 某知识点下的学生明细（掌握度 + 错题数） */
-export async function nodeStudentDetail(nodeId: string, teacherEmail: string) {
-  const studentEmails = await listTeacherStudentEmails(teacherEmail);
+export async function nodeStudentDetail(nodeId: string, teacherEmail: string, includeDemo = true) {
+  const studentEmails = await listTeacherStudentEmails(teacherEmail, includeDemo);
   if (studentEmails.length === 0) return [];
   const { rows } = await pool.query(
     `SELECT p.user_email, u.name, p.mastery, p.quiz_correct, p.quiz_total, p.study_count, p.last_studied_at
@@ -833,7 +833,7 @@ export async function taskErrorSummary(taskId: number) {
 }
 
 /** 教师全部学生概览（按学生视角的学情分析） */
-export async function teacherStudentsOverview(teacherEmail: string) {
+export async function teacherStudentsOverview(teacherEmail: string, includeDemo = true) {
   const { rows } = await pool.query(
     `SELECT m.user_email, u.name, string_agg(DISTINCT c.name, '、') AS class_names,
         (SELECT count(*)::int FROM student_tasks st JOIN tasks t2 ON t2.id = st.task_id
@@ -845,10 +845,10 @@ export async function teacherStudentsOverview(teacherEmail: string) {
         (SELECT max(e.created_at) FROM learning_events e WHERE e.user_email = m.user_email) AS last_active
      FROM classes c JOIN class_members m ON m.class_id = c.id
      LEFT JOIN users u ON u.email = m.user_email
-     WHERE c.teacher_email = $1
+     WHERE c.teacher_email = $1 AND ($2::boolean OR m.user_email NOT LIKE '%@demo.edu.cn')
      GROUP BY m.user_email, u.name
      ORDER BY u.name ASC NULLS LAST`,
-    [teacherEmail],
+    [teacherEmail, includeDemo],
   );
   return rows;
 }
@@ -1111,7 +1111,7 @@ export async function ensureAnalyticsIndexes(): Promise<void> {
 }
 
 /** 任务维度总览（student_tasks 行口径：total/done/submitted/revision/overdue） */
-export async function dashboardTaskStats(teacherEmail: string) {
+export async function dashboardTaskStats(teacherEmail: string, includeDemo = true) {
   const { rows } = await pool.query(
     `SELECT count(*)::int AS total,
             count(*) FILTER (WHERE st.status = 'COMPLETED')::int AS done,
@@ -1120,27 +1120,27 @@ export async function dashboardTaskStats(teacherEmail: string) {
             count(*) FILTER (WHERE st.status IN ('TODO','IN_PROGRESS') AND t.deadline IS NOT NULL AND t.deadline < now())::int AS overdue
      FROM tasks t
      JOIN student_tasks st ON st.task_id = t.id
-     WHERE t.teacher_email = $1`,
-    [teacherEmail],
+     WHERE t.teacher_email = $1 AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')`,
+    [teacherEmail, includeDemo],
   );
   return rows[0] ?? { total: 0, done: 0, submitted: 0, revision: 0, overdue: 0 };
 }
 
 /** 待批阅提交数（submission 层独立查询，防与任务 join 行数放大） */
-export async function dashboardPendingSubmissions(teacherEmail: string) {
+export async function dashboardPendingSubmissions(teacherEmail: string, includeDemo = true) {
   const { rows } = await pool.query(
     `SELECT count(*)::int AS pending
      FROM task_submissions s
      JOIN tasks t ON t.id = s.task_id
-     WHERE t.teacher_email = $1 AND s.status = 'pending'`,
-    [teacherEmail],
+     WHERE t.teacher_email = $1 AND s.status = 'pending' AND ($2::boolean OR s.user_email NOT LIKE '%@demo.edu.cn')`,
+    [teacherEmail, includeDemo],
   );
   return rows[0]?.pending ?? 0;
 }
 
 /** 近 N 天活跃学生数（多源并集去重：事件/小测/问答/提交/图谱进度/登录） */
-export async function dashboardActiveStudents(teacherEmail: string, days = 7) {
-  const emails = await listTeacherStudentEmails(teacherEmail);
+export async function dashboardActiveStudents(teacherEmail: string, days = 7, includeDemo = true) {
+  const emails = await listTeacherStudentEmails(teacherEmail, includeDemo);
   if (emails.length === 0) return 0;
   const { rows } = await pool.query(
     `SELECT count(*)::int AS active FROM (
@@ -1162,8 +1162,8 @@ export async function dashboardActiveStudents(teacherEmail: string, days = 7) {
 }
 
 /** 近 N 天按日趋势（generate_series 补 0 桶；返回 MM-DD 字符串标签，前端直显不重解析） */
-export async function dashboardTrend(teacherEmail: string, days = 14) {
-  const emails = await listTeacherStudentEmails(teacherEmail);
+export async function dashboardTrend(teacherEmail: string, days = 14, includeDemo = true) {
+  const emails = await listTeacherStudentEmails(teacherEmail, includeDemo);
   if (emails.length === 0) return [];
   const { rows } = await pool.query(
     `WITH ds AS (
@@ -1201,7 +1201,7 @@ export async function dashboardTrend(teacherEmail: string, days = 14) {
 }
 
 /** 按班级任务完成度对比（只统计归属本班的任务；教师个人 remedial 任务 class_id=NULL 天然不落班） */
-export async function dashboardClassProgress(teacherEmail: string) {
+export async function dashboardClassProgress(teacherEmail: string, includeDemo = true) {
   const { rows } = await pool.query(
     `SELECT c.id, c.name,
             count(st.task_id)::int AS total,
@@ -1209,18 +1209,18 @@ export async function dashboardClassProgress(teacherEmail: string) {
             count(st.task_id) FILTER (WHERE st.status = 'REVISION_REQUIRED')::int AS revision
      FROM classes c
      LEFT JOIN tasks t ON t.class_id = c.id
-     LEFT JOIN student_tasks st ON st.task_id = t.id
+     LEFT JOIN student_tasks st ON st.task_id = t.id AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')
      WHERE c.teacher_email = $1
      GROUP BY c.id, c.name
      ORDER BY c.created_at ASC`,
-    [teacherEmail],
+    [teacherEmail, includeDemo],
   );
   return rows;
 }
 
 /** 班级范围内小测正确率按 topic 聚合（绕过 /api/quiz-results 教师分支的全表 LIMIT 200 陷阱） */
-export async function dashboardQuizTopicAccuracy(teacherEmail: string) {
-  const emails = await listTeacherStudentEmails(teacherEmail);
+export async function dashboardQuizTopicAccuracy(teacherEmail: string, includeDemo = true) {
+  const emails = await listTeacherStudentEmails(teacherEmail, includeDemo);
   if (emails.length === 0) return [];
   const { rows } = await pool.query(
     `SELECT COALESCE(NULLIF(topic, ''), '未分类') AS topic,
@@ -1236,8 +1236,8 @@ export async function dashboardQuizTopicAccuracy(teacherEmail: string) {
 }
 
 /** 薄弱学生 topK（按平均掌握度升序；有真实进度行才出现，不补 0） */
-export async function dashboardWeakStudents(teacherEmail: string, limit = 5) {
-  const emails = await listTeacherStudentEmails(teacherEmail);
+export async function dashboardWeakStudents(teacherEmail: string, limit = 5, includeDemo = true) {
+  const emails = await listTeacherStudentEmails(teacherEmail, includeDemo);
   if (emails.length === 0) return [];
   const { rows } = await pool.query(
     `SELECT p.user_email, u.name, round(avg(p.mastery), 1) AS avg_mastery,
@@ -1254,8 +1254,8 @@ export async function dashboardWeakStudents(teacherEmail: string, limit = 5) {
 }
 
 /** 最近学习事件时间线（班级范围内） */
-export async function dashboardRecentEvents(teacherEmail: string, limit = 20) {
-  const emails = await listTeacherStudentEmails(teacherEmail);
+export async function dashboardRecentEvents(teacherEmail: string, limit = 20, includeDemo = true) {
+  const emails = await listTeacherStudentEmails(teacherEmail, includeDemo);
   if (emails.length === 0) return [];
   const { rows } = await pool.query(
     `SELECT e.*, u.name AS student_name

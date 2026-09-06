@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthToken } from "@/contexts/AppContext";
 import StudentsList from "./StudentsList";
+import DataScopeNotice from "@/components/DataScopeNotice";
 
 export default function ClassesTab() {
   const router = useRouter();
@@ -77,9 +78,7 @@ export default function ClassesTab() {
 
   return (
     <div>
-      <p className="text-[10px] text-[var(--color-text-muted)] mb-4">
-        注：数据来自真实学习记录与小测；含固定演示账号（student01-12@demo.edu.cn）产生的可复现演示数据
-      </p>
+      <DataScopeNotice compact scope="all" />
 
       <div className="grid grid-cols-2 gap-4 mb-5">
         <div className="bg-white rounded-xl border border-[var(--color-border)] p-4">

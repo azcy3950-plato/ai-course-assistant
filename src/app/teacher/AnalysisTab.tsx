@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { getAuthToken } from "@/contexts/AppContext";
 import { TASK_TYPE_META, formatDeadline } from "@/lib/task-ui";
 import RemedialModal from "./RemedialModal";
+import DataScopeNotice from "@/components/DataScopeNotice";
+import type { DataScope } from "@/components/DataScopeNotice";
 
 export default function AnalysisTab() {
   const router = useRouter();
@@ -15,20 +17,21 @@ export default function AnalysisTab() {
   const [nodeDetail, setNodeDetail] = useState<any[] | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [remedialOpen, setRemedialOpen] = useState(false);
+  const [scope, setScope] = useState<DataScope>("real");
 
   const headers = { Authorization: "Bearer " + getAuthToken() };
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/analysis", { headers });
+      const r = await fetch(`/api/analysis?scope=${scope}`, { headers });
       if (r.ok) setData(await r.json());
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scope]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -43,7 +46,7 @@ export default function AnalysisTab() {
     // 切换知识点时清空勾选，避免上一个知识点的学生残留到"布置补充学习"
     setChecked(new Set());
     try {
-      const r = await fetch(`/api/analysis?nodeId=${encodeURIComponent(nodeId)}`, { headers });
+      const r = await fetch(`/api/analysis?nodeId=${encodeURIComponent(nodeId)}&scope=${scope}`, { headers });
       if (r.ok) setNodeDetail((await r.json()).nodeDetail || []);
     } catch (e) {
       console.error(e);
@@ -63,9 +66,7 @@ export default function AnalysisTab() {
 
   return (
     <div>
-      <p className="text-[10px] text-[var(--color-text-muted)] mb-4">
-        数据来自真实学习记录与测验结果；含固定演示账号（student01-12@demo.edu.cn）产生的可复现演示数据
-      </p>
+      <DataScopeNotice scope={scope} onScopeChange={(next) => { setScope(next); setExpandedNode(null); setNodeDetail(null); setChecked(new Set()); }} />
 
       <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
         {[
