@@ -395,6 +395,112 @@ async function main() {
     await page.close();
   }
 
+  // ── 修 bug 轮回归用例 ──
+  {
+    // 越权矩阵 + 修复项（教师侧）
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(page, "teacher@demo.edu.cn", "Demo123456");
+    const token = await tokenOf(page);
+    const res = await page.evaluate(async (t) => {
+      const out = {};
+      const s1 = await fetch("/api/students?email=" + encodeURIComponent("student13@demo.edu.cn"), { headers: { Authorization: "Bearer " + t } });
+      out.studentDetail = s1.status;
+      const s2 = await fetch("/api/students", { headers: { Authorization: "Bearer " + t } });
+      const d2 = await s2.json();
+      out.studentListLen = (d2.students || []).length;
+      const s3 = await fetch("/api/admin/student", { method: "PUT", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ email: "student13@demo.edu.cn", password: "Hack12345" }) });
+      out.adminStudentPut = s3.status;
+      const s4 = await fetch("/api/admin/student?email=" + encodeURIComponent("student13@demo.edu.cn"), { method: "DELETE", headers: { Authorization: "Bearer " + t } });
+      out.adminStudentDelete = s4.status;
+      const s5 = await fetch("/api/quiz-results", { headers: { Authorization: "Bearer " + t } });
+      const d5 = await s5.json();
+      const demoEmails = new Set(Array.from({ length: 12 }, (_, i) => `student${String(i + 1).padStart(2, "0")}@demo.edu.cn`));
+      out.quizAllOwn = Array.isArray(d5) && d5.every((x) => demoEmails.has(x.user_email));
+      const s6 = await fetch("/api/tasks/abc", { headers: { Authorization: "Bearer " + t } });
+      out.nanId = s6.status;
+      const s7 = await fetch("/api/documents-status", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ fileKey: "verify-doc-" + Date.now(), fileName: "验收文档.pdf", status: "UPLOADING" }) });
+      out.docStatus = s7.status;
+      return out;
+    }, token);
+    record("越权：教师查非本班学生详情被拒 403", res.studentDetail === 403, `HTTP ${res.studentDetail}`);
+    record("学生名册仅本班（12 人）", res.studentListLen === 12, `${res.studentListLen} 人`);
+    record("越权：教师改非本班学生密码被拒 403", res.adminStudentPut === 403, `HTTP ${res.adminStudentPut}`);
+    record("越权：教师删非本班学生被拒 403", res.adminStudentDelete === 403, `HTTP ${res.adminStudentDelete}`);
+    record("小测结果仅本班学生", res.quizAllOwn === true, "");
+    record("非法任务 id 返回 400", res.nanId === 400, `HTTP ${res.nanId}`);
+    record("文档状态上报修复（此前必 500）", res.docStatus === 200, `HTTP ${res.docStatus}`);
+    await page.close();
+  }
+  {
+    // admin 仪表盘自洽（requireTeacher 放行 admin 后不再是"加载失败"）
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(page, "admin@demo.edu.cn", "Demo123456");
+    const token = await tokenOf(page);
+    const dash = await page.evaluate(async (t) => {
+      const r = await fetch("/api/dashboard", { headers: { Authorization: "Bearer " + t } });
+      const d = await r.json();
+      return { status: r.status, classCount: (d.stats || {}).classCount };
+    }, token);
+    record("admin 访问仪表盘 API 自洽（空数据 200）", dash.status === 200 && dash.classCount === 0, `HTTP ${dash.status} classCount=${dash.classCount}`);
+    await page.close();
+  }
+  {
+    // 学生侧数据与流程防线（student03：有 SUBMITTED 仿真任务）
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(page, "student03@demo.edu.cn", "Demo123456");
+    const token = await tokenOf(page);
+    const res = await page.evaluate(async (t) => {
+      const out = {};
+      const tr = await fetch("/api/tasks", { headers: { Authorization: "Bearer " + t } });
+      const tasks = await tr.json();
+      const practice = tasks.find((x) => x.type === "PRACTICE");
+      out.practiceNoAnswer = practice ? (practice.questions || []).every((q) => !("answer" in q) && !("explanation" in q)) : null;
+      const submitted = tasks.find((x) => x.effective_status === "SUBMITTED" && x.type !== "PRACTICE");
+      if (submitted) {
+        const dup = await fetch(`/api/tasks/${submitted.id}/submissions`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ judgment: "x", explanation: "x" }) });
+        out.dupSubmit = dup.status;
+      }
+      const ev = await fetch("/api/learning-events", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ type: "TASK_COMPLETED", title: "伪造", summary: "x" }) });
+      out.fakeEvent = ev.status;
+      return out;
+    }, token);
+    record("练习答案/解析对学生列表遮罩", res.practiceNoAnswer === true, String(res.practiceNoAnswer));
+    record("已提交任务重复 POST 被拒 400", res.dupSubmit === 400, res.dupSubmit === undefined ? "无 SUBMITTED 任务" : `HTTP ${res.dupSubmit}`);
+    record("伪造 TASK_COMPLETED 事件被拒 400", res.fakeEvent === 400, `HTTP ${res.fakeEvent}`);
+    await page.close();
+  }
+  {
+    // 学生侧防线（student04：练习任务 TODO，验证类型限定与缺参判分）
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await login(page, "student04@demo.edu.cn", "Demo123456");
+    const token = await tokenOf(page);
+    const res = await page.evaluate(async (t) => {
+      const out = {};
+      const tr = await fetch("/api/tasks", { headers: { Authorization: "Bearer " + t } });
+      const tasks = await tr.json();
+      const practice = tasks.find((x) => x.type === "PRACTICE");
+      if (practice) {
+        const comp = await fetch(`/api/tasks/${practice.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ action: "complete", note: "直接完成" }) });
+        out.practiceComplete = comp.status;
+        const subNoAns = await fetch(`/api/tasks/${practice.id}/submissions`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({}) });
+        out.subNoAns = subNoAns.status;
+      }
+      return out;
+    }, token);
+    record("PRACTICE 直接标完成被拒 400", res.practiceComplete === 400, `HTTP ${res.practiceComplete}`);
+    record("PRACTICE 缺 answers 提交不再 500", res.subNoAns === 200, `HTTP ${res.subNoAns}`);
+    await page.close();
+  }
+  {
+    // 未登录访问 /knowledge 重定向登录页
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(BASE + "/knowledge", { waitUntil: "domcontentloaded" });
+    await sleep(2500);
+    const url = page.url();
+    record("未登录访问知识问答重定向登录页", url.includes("/login"), url.slice(0, 60));
+    await page.close();
+  }
+
   // 移动视口冒烟
   {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
