@@ -380,15 +380,19 @@ async function main() {
   }
   {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    await login(page, "teacherempty@demo.edu.cn", "Demo123456");
-    await page.goto(BASE + "/teacher", { waitUntil: "domcontentloaded" });
-    // 轮询等待仪表盘数据返回（冷启动/网络波动下固定 sleep 会误报）
+    // 本地到 VPS 链路有间歇抖动：登录请求偶发失败会被 /teacher 守卫踢回登录页，
+    // 检测到登录页特征就重新登录重试（最多 3 轮），真正的空态回归仍会如实失败。
     let text = "";
     let sawEmpty = false;
-    for (let i = 0; i < 16; i++) {
-      await sleep(500);
-      text = await page.evaluate(() => document.body.innerText);
-      if (text.includes("暂无班级与学生")) { sawEmpty = true; break; }
+    for (let attempt = 0; attempt < 3 && !sawEmpty; attempt++) {
+      await login(page, "teacherempty@demo.edu.cn", "Demo123456");
+      await page.goto(BASE + "/teacher", { waitUntil: "domcontentloaded" });
+      for (let i = 0; i < 12; i++) {
+        await sleep(500);
+        text = await page.evaluate(() => document.body.innerText);
+        if (text.includes("暂无班级与学生")) { sawEmpty = true; break; }
+        if (text.includes("忘记密码")) break; // 被踢回登录页 → 重登
+      }
     }
     record("空数据教师仪表盘显示整页空态", sawEmpty, text.slice(0, 80).replace(/\s+/g, " "));
     await page.close();
