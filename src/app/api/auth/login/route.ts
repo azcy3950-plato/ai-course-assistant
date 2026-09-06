@@ -6,6 +6,28 @@ import { ensureAuthSchema, normalizeIdentifier, maskIdentifier, auditEvent } fro
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+// ─── 登录失败节流（内存实现，pm2 restart 即重置；与验证码限流同模式） ───
+// 防在线暴力破解：同一 IP+账号 15 分钟内失败 ≥10 次 → 429；单次失败响应前延迟 500ms。
+// 成功登录不受影响（E2E 大量成功登录不会被误伤）。
+const loginFailures = new Map<string, { count: number; windowStart: number }>();
+const FAIL_WINDOW_MS = 15 * 60 * 1000;
+const FAIL_MAX = 10;
+
+function checkLoginThrottle(key: string): boolean {
+  const now = Date.now();
+  const rec = loginFailures.get(key);
+  if (!rec) return false;
+  if (now - rec.windowStart > FAIL_WINDOW_MS) { loginFailures.delete(key); return false; }
+  return rec.count >= FAIL_MAX;
+}
+
+function recordLoginFailure(key: string) {
+  const now = Date.now();
+  const rec = loginFailures.get(key);
+  if (!rec || now - rec.windowStart > FAIL_WINDOW_MS) loginFailures.set(key, { count: 1, windowStart: now });
+  else rec.count += 1;
+}
+
 /**
  * 邮箱登录（兼容旧前端传 email 字段）。
  * 短信/手机号通道已于 2026-08 停用：账号体系收敛为邮箱唯一标识。
@@ -26,9 +48,17 @@ export async function POST(req: NextRequest) {
     }
     const { identifier, type } = normalized;
 
+    const clientIp = (req.headers.get("x-forwarded-for") || "").split(",")[0]?.trim() || "unknown";
+    const throttleKey = `${clientIp}|${identifier}`;
+    if (checkLoginThrottle(throttleKey)) {
+      return NextResponse.json({ error: "登录失败次数过多，请 15 分钟后再试" }, { status: 429 });
+    }
+
     await ensureAuthSchema();
     const { rows } = await pool.query("SELECT * FROM users WHERE email = $1 OR phone = $1 LIMIT 1", [identifier]);
     if (rows.length === 0) {
+      recordLoginFailure(throttleKey);
+      await new Promise((r) => setTimeout(r, 500));
       await auditEvent("LOGIN_FAILED", maskIdentifier(identifier, type), "account_not_found");
       return NextResponse.json({ error: "账号或密码错误" }, { status: 401 });
     }
@@ -39,10 +69,13 @@ export async function POST(req: NextRequest) {
     }
     const valid = await compare(password, user.password_hash);
     if (!valid) {
+      recordLoginFailure(throttleKey);
+      await new Promise((r) => setTimeout(r, 500));
       await auditEvent("LOGIN_FAILED", maskIdentifier(identifier, type), "wrong_password");
       return NextResponse.json({ error: "账号或密码错误" }, { status: 401 });
     }
 
+    loginFailures.delete(throttleKey);
     await pool.query("UPDATE users SET last_login = now() WHERE id = $1", [user.id]);
     await auditEvent("LOGIN_SUCCESS", maskIdentifier(identifier, type));
 

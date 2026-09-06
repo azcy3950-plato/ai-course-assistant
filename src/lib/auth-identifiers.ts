@@ -294,15 +294,19 @@ export async function consumeVerificationCode(
   if (row.attempt_count >= 5) return false;
 
   if (row.code_hash !== hashCode(identifier, code)) {
-    const next = Number(row.attempt_count) + 1;
+    // 原子自增：并发错误尝试各自 +1（此前用应用侧 next 覆盖，并发下少计，5 次锁定可被绕过）
     await authPool.query(
-      "UPDATE verification_codes SET attempt_count = $2, consumed_at = CASE WHEN $2 >= 5 THEN now() ELSE consumed_at END WHERE id = $1",
-      [row.id, next],
+      "UPDATE verification_codes SET attempt_count = attempt_count + 1, consumed_at = CASE WHEN attempt_count + 1 >= 5 THEN now() ELSE consumed_at END WHERE id = $1 AND consumed_at IS NULL",
+      [row.id],
     );
     return false;
   }
-  await authPool.query("UPDATE verification_codes SET consumed_at = now() WHERE id = $1", [row.id]);
-  return true;
+  // 一次性消费：加 AND consumed_at IS NULL 并按 rowCount 判定，防并发双花（同一码注册+重置各用一次）
+  const { rowCount } = await authPool.query(
+    "UPDATE verification_codes SET consumed_at = now() WHERE id = $1 AND consumed_at IS NULL",
+    [row.id],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 /** 验证成功后为找回密码签发 10 分钟短期 reset token */

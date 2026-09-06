@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest) {
     await ensureLearningSchema();
     if (body.all === true) {
       await markAllNotificationsRead(auth.email);
-    } else if (body.id) {
+    } else if (body.id && Number.isFinite(Number(body.id))) {
       await markNotificationRead(Number(body.id), auth.email);
     } else {
       return NextResponse.json({ error: "缺少参数" }, { status: 400 });

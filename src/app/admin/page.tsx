@@ -9,6 +9,8 @@ function maskEmail(email: string): string {
   return `${u.slice(0, 1)}***@${d}`;
 }
 
+let searchSeq = 0; // 模块级请求序号（单页单实例足够）
+
 export default function AdminPage() {
   const { state } = useApp();
   const router = useRouter();
@@ -20,10 +22,13 @@ export default function AdminPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    // 请求序号：丢弃过期响应，防快速输入时乱序覆盖新结果
+    const seq = ++searchSeq;
     try {
       const r = await fetch(`/api/admin/users?q=${encodeURIComponent(q)}`, {
         headers: { Authorization: "Bearer " + getAuthToken() },
       });
+      if (seq !== searchSeq) return; // 已有更新的查询发出，丢弃本次结果
       if (r.ok) setUsers((await r.json()).users || []);
       else if (r.status === 403) router.replace("/");
     } catch (e) { /* 静默 */ }
@@ -31,7 +36,12 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
-  useEffect(() => { if (state.role === "admin") load(); }, [state.role, load]);
+  // 300ms 防抖：停止输入后才查询（此前每击键一次 DB 查询）
+  useEffect(() => {
+    if (state.role !== "admin") return;
+    const t = setTimeout(load, 300);
+    return () => clearTimeout(t);
+  }, [state.role, load]);
 
   useEffect(() => {
     if (state.authLoading) return;

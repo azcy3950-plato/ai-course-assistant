@@ -199,6 +199,19 @@ async function ensureSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_notifications_email ON notifications(user_email, created_at DESC);
 
+    -- 与 src/lib/knowledge-graph.ts 一致的学情进度表（运行时懒建；seed 自包含需复刻，否则全新库 seed 崩溃）
+    CREATE TABLE IF NOT EXISTS student_node_progress (
+      user_email text NOT NULL,
+      node_id text NOT NULL,
+      question_count integer NOT NULL DEFAULT 0,
+      study_count integer NOT NULL DEFAULT 0,
+      quiz_correct integer NOT NULL DEFAULT 0,
+      quiz_total integer NOT NULL DEFAULT 0,
+      last_studied_at timestamptz,
+      mastery numeric(5,2) NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_email, node_id)
+    );
+
     CREATE TABLE IF NOT EXISTS favorites (
       id SERIAL PRIMARY KEY,
       user_email TEXT NOT NULL,
@@ -704,10 +717,10 @@ async function main() {
   await pool.query("DELETE FROM favorites WHERE user_email = ANY($1)", [demoEmails]).catch(() => {});
   await pool.query(
     `INSERT INTO notifications (user_email, type, title, body, link, created_at) VALUES
-     ($1,'REVISION_REQUIRED','任务需要修改：下垫面方案比较','教师评语：结论对但解释不足，请补充机理分析后重新提交','/tasks/2', now() - interval '5 hours'),
-     ($1,'TEACHER_FEEDBACK','教师已批阅：城市排水系统基础','已通过，继续保持','/tasks/1', now() - interval '2 days'),
-     ($2,'SUBMISSION_RECEIVED','学生提交：下垫面方案比较','student02@demo.edu.cn 第 1 版提交','/teacher/tasks/2', now() - interval '2 days')`,
-    [students[1], teacher],
+     ($1,'REVISION_REQUIRED','任务需要修改：下垫面方案比较','教师评语：结论对但解释不足，请补充机理分析后重新提交',$3, now() - interval '5 hours'),
+     ($1,'TEACHER_FEEDBACK','教师已批阅：城市排水系统基础','已通过，继续保持',$4, now() - interval '2 days'),
+     ($2,'SUBMISSION_RECEIVED','学生提交：下垫面方案比较','student02@demo.edu.cn 第 1 版提交',$5, now() - interval '2 days')`,
+    [students[1], teacher, `/tasks/${tk2}`, `/tasks/${tk1}`, `/teacher/tasks/${tk2}`],
   ).catch(() => {});
   await pool.query(
     `INSERT INTO favorites (user_email, ref_type, ref_id, note, in_review) VALUES

@@ -82,6 +82,8 @@ function SignupForm() {
     setLoading(false);
     if (result.error) {
       setError(result.error);
+      // 注册成功但自动登录失败 → 引导去登录页（此时已注册，直接注册会撞"邮箱已注册"）
+      if (result.error === "注册成功，请登录") router.push("/login");
     } else {
       router.push(redirectTo);
     }

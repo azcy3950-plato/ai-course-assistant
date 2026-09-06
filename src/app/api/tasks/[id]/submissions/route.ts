@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth-server";
+import { getObjectSize, deleteObject } from "@/lib/oss";
 import {
   addNotification,
   addTaskAttachment,
@@ -110,16 +111,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
 
     // 附件：预签名上传后客户端提交元数据，服务端登记（≤5 个/提交，单文件 ≤10MB）
+    // 大小以 OSS HeadObject 回读为准（客户端声明值可伪造），超限删除对象并跳过登记
     if (Array.isArray(body.attachments)) {
       for (const att of body.attachments.slice(0, 5)) {
         const key = String(att?.fileKey || "");
         if (!key.startsWith("task-attachments/")) continue;
-        if (Number(att?.fileSize) > 10 * 1024 * 1024) continue;
+        const realSize = await getObjectSize(key).catch(() => null);
+        if (realSize === null) continue; // 对象不存在（上传未完成）→ 不登记
+        if (realSize > 10 * 1024 * 1024) {
+          await deleteObject(key);
+          continue;
+        }
         await addTaskAttachment({
           submissionId: submission.id,
           fileKey: key,
           fileName: String(att.fileName || key).slice(0, 255),
-          fileSize: Number(att.fileSize || 0),
+          fileSize: realSize,
           mime: String(att.mime || "").slice(0, 100),
           uploadedBy: auth.email,
         }).catch(() => {});

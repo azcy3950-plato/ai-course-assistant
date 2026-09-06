@@ -8,7 +8,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   try {
     await ensureLearningSchema();
-    const data = await listClassStudents(Number(id), auth.email);
+    const classId = Number(id);
+    if (!Number.isFinite(classId)) return NextResponse.json({ error: "班级不存在" }, { status: 400 });
+    const data = await listClassStudents(classId, auth.email);
     if (!data) return NextResponse.json({ error: "班级不存在或无权访问" }, { status: 404 });
     return NextResponse.json(data);
   } catch (err: any) {
@@ -22,7 +24,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params;
   try {
     await ensureLearningSchema();
-    const ok = await deleteClass(Number(id), auth.email);
+    const classId = Number(id);
+    if (!Number.isFinite(classId)) return NextResponse.json({ error: "班级不存在" }, { status: 400 });
+    const ok = await deleteClass(classId, auth.email);
     if (!ok) return NextResponse.json({ error: "班级不存在或无权删除" }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (err: any) {

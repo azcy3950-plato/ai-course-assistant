@@ -15,7 +15,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "无效的批阅状态" }, { status: 400 });
     }
     await ensureLearningSchema();
-    const result: any = await addTeacherFeedback(Number(id), auth.email, String(content).trim(), status);
+    const submissionId = Number(id);
+    if (!Number.isFinite(submissionId)) return NextResponse.json({ error: "提交不存在" }, { status: 400 });
+    const result: any = await addTeacherFeedback(submissionId, auth.email, String(content).trim(), status);
     if (!result) return NextResponse.json({ error: "提交不存在" }, { status: 404 });
     if (result.error) return NextResponse.json({ error: result.error }, { status: 403 });
 
@@ -41,7 +43,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       link: `/tasks/${result.submission.task_id}`,
     }).catch(() => {});
     if (!(result as any).duplicated) await logAudit({ operatorEmail: auth.email, action: "FEEDBACK_SUBMIT", targetType: "submission", targetId: String(result.submission.id), detail: status });
-    return NextResponse.json({ ok: true, feedback: result.feedback });
+    // duplicated 标识供验收断言：同状态重复批阅不再插行（事务内幂等）
+    return NextResponse.json({ ok: true, feedback: result.feedback, duplicated: !!(result as any).duplicated });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

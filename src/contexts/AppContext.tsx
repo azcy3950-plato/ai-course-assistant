@@ -120,8 +120,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         localStorage.setItem(TOKEN_KEY, loginData.token);
         localStorage.setItem(USER_KEY, JSON.stringify(loginData.user));
         setState({ role: loginData.user.role, userName: loginData.user.name, authLoading: false });
+        return { error: null };
       }
-      return { error: null };
+      // 注册成功但自动登录失败：如实告知，避免用户被当作已登录跳向受保护页后被弹回
+      return { error: "注册成功，请登录" };
     } catch {
       return { error: "网络错误，请重试" };
     }

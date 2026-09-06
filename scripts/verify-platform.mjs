@@ -259,15 +259,12 @@ async function main() {
         });
         return { status: r.status, body: await r.json().catch(() => ({})) };
       };
-      await post();
+      const first = await post();
       const second = await post();
-      const fbCount = await page.evaluate(async (t) => {
-        const r = await fetch("/api/tasks/2", { headers: { Authorization: "Bearer " + t } });
-        const d = await r.json();
-        const sub = (d.submissions || []).find((x) => x.id === Number("${sid}"));
-        return sub ? 1 : 0;
-      }, token).catch(() => 0);
-      record("批阅幂等：同状态重复 POST 不产生第二条评语", second.status === 200, `第二次 HTTP ${second.status}`);
+      // 断言：第一次真实插入（duplicated=false），第二次命中幂等（duplicated=true），未产生重复行
+      record("批阅幂等：同状态重复 POST 不产生第二条评语",
+        first.status === 200 && first.body.duplicated === false && second.status === 200 && second.body.duplicated === true,
+        `第一次 dup=${first.body.duplicated} 第二次 dup=${second.body.duplicated}`);
     }
     await page.close();
   }

@@ -1,23 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { requireUser } from "@/lib/auth-server";
 import crypto from "crypto";
 import { pool, ensureLearningSchema } from "@/lib/learning-db";
+import { s3, BUCKET } from "@/lib/oss";
 
 /**
  * 任务提交附件（学生上传 / 教师与学生下载）。
- * 仅允许 task-attachments/ 前缀，单文件 ≤10MB（服务端提示，前端同样限制）。
+ * 仅允许 task-attachments/ 前缀，单文件 ≤10MB。
+ * 注意：预签名 PUT 无法约束实际大小，真实大小在提交登记时 HeadObject 回读校验（见 submissions 路由）。
  */
-const s3 = new S3Client({
-  region: "oss-cn-beijing",
-  endpoint: process.env.OSS_ENDPOINT,
-  credentials: {
-    accessKeyId: process.env.OSS_ACCESS_KEY!,
-    secretAccessKey: process.env.OSS_SECRET_KEY!,
-  },
-});
-const BUCKET = process.env.OSS_BUCKET!;
 
 const ALLOWED_TYPES = ["application/pdf", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/png", "image/jpeg", "image/gif", "image/webp"];
 

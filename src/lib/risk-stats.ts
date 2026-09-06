@@ -26,7 +26,7 @@ export function computeRiskStats(
       const meta = nodeMetas?.find((n) => n.id === id);
       const depths = nd?.depth;
       const depth = (depths && dynStep < depths.length) ? depths[dynStep] : 0;
-      if (meta && depth > (meta.maxD || 99)) overflowNodes.push(id);
+      if (meta && depth > (meta.maxD ?? 99)) overflowNodes.push(id);
     });
   }
   return { fullPipes, overflowNodes };

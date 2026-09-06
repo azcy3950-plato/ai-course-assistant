@@ -291,14 +291,21 @@ export async function deleteClass(id: number, teacherEmail: string) {
 }
 
 export async function addClassMember(classId: number, teacherEmail: string, userEmail: string) {
-  const cls = await getClass(classId);
-  if (!cls || cls.teacher_email !== teacherEmail) return { error: "无权操作该班级" };
   const exists = await pool.query("SELECT 1 FROM users WHERE email = $1", [userEmail]);
   if (exists.rowCount === 0) return { error: "该邮箱对应的学生账号不存在" };
-  await pool.query(
-    "INSERT INTO class_members (class_id, user_email) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-    [classId, userEmail],
+  // 原子 INSERT..SELECT：归属校验与插入一步完成（此前 check-then-act 有删班竞态窗口 → FK 500）
+  const { rowCount } = await pool.query(
+    `INSERT INTO class_members (class_id, user_email)
+     SELECT c.id, $2 FROM classes c
+     WHERE c.id = $1 AND c.teacher_email = $3
+     ON CONFLICT DO NOTHING`,
+    [classId, userEmail, teacherEmail],
   );
+  if (!rowCount) {
+    const cls = await getClass(classId);
+    if (cls && cls.teacher_email === teacherEmail) return { ok: true }; // 已是班级成员
+    return { error: "无权操作该班级" };
+  }
   return { ok: true };
 }
 
@@ -356,6 +363,12 @@ export async function createTask(input: TaskInput) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // 非法 deadline 字符串此前 toISOString 抛 RangeError → 500；解析失败按无截止处理（路由层已先行校验）
+    let deadline: string | null = null;
+    if (input.deadline) {
+      const d = new Date(input.deadline);
+      deadline = isNaN(d.getTime()) ? null : d.toISOString();
+    }
     const { rows } = await client.query(
       `INSERT INTO tasks (title, description, type, teacher_email, class_id, target_emails, knowledge_node_ids, questions, observe_items, prompt_questions, deadline)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
@@ -363,7 +376,7 @@ export async function createTask(input: TaskInput) {
         input.title, input.description, input.type, input.teacherEmail, input.classId,
         input.targetEmails, input.knowledgeNodeIds, JSON.stringify(input.questions),
         input.observeItems, input.promptQuestions,
-        input.deadline ? new Date(input.deadline).toISOString() : null,
+        deadline,
       ],
     );
     const task = rows[0];
@@ -554,18 +567,21 @@ export async function addTeacherFeedback(submissionId: number, teacherEmail: str
   const task = await getTask(submission.task_id);
   if (!task || task.teacher_email !== teacherEmail) return { error: "无权批阅该提交" };
 
-  // 幂等：同一提交已存在同状态批阅（双击/重试）→ 直接返回已有，不重复插行/发通知/记事件
-  const existing = await pool.query(
-    "SELECT * FROM teacher_feedback WHERE submission_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT 1",
-    [submissionId, status],
-  );
-  if (existing.rows[0]) {
-    return { feedback: existing.rows[0], submission, duplicated: true };
-  }
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // 锁定提交行串行化并发批阅：幂等检查必须在事务内，否则 check-then-act 竞态产生重复反馈行
+    const locked = await client.query("SELECT id FROM task_submissions WHERE id = $1 FOR UPDATE", [submissionId]);
+    if (!locked.rows.length) { await client.query("ROLLBACK"); return null; }
+    // 幂等：同一提交已存在同状态批阅（双击/重试）→ 直接返回已有，不重复插行/发通知/记事件
+    const existing = await client.query(
+      "SELECT * FROM teacher_feedback WHERE submission_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT 1",
+      [submissionId, status],
+    );
+    if (existing.rows[0]) {
+      await client.query("ROLLBACK");
+      return { feedback: existing.rows[0], submission, duplicated: true };
+    }
     const { rows } = await client.query(
       "INSERT INTO teacher_feedback (submission_id, teacher_email, content, status) VALUES ($1,$2,$3,$4) RETURNING *",
       [submissionId, teacherEmail, content, status],
@@ -698,7 +714,8 @@ export async function addAiVersion(input: { messageId: number; content: string; 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const msg = await client.query("SELECT * FROM ai_qa_messages WHERE id = $1", [input.messageId]);
+    // 锁定消息行串行化版本号计算，防并发修正拿到相同 version 撞 UNIQUE(message_id, version)
+    const msg = await client.query("SELECT * FROM ai_qa_messages WHERE id = $1 FOR UPDATE", [input.messageId]);
     const message = msg.rows[0];
     if (!message) {
       await client.query("ROLLBACK");

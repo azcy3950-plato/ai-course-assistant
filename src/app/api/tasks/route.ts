@@ -42,7 +42,15 @@ export async function POST(req: NextRequest) {
 
     // 确定目标学生：指定班级 → 班级全体成员；指定名单 → 逐个校验归属
     let targetEmails: string[] = [];
-    let classId: number | null = body.classId ? Number(body.classId) : null;
+    const rawClassId = body.classId ? Number(body.classId) : null;
+    let classId: number | null = null;
+    if (rawClassId !== null && !Number.isFinite(rawClassId)) {
+      return NextResponse.json({ error: "班级参数无效" }, { status: 400 });
+    }
+    classId = rawClassId;
+    if (body.deadline && isNaN(new Date(String(body.deadline)).getTime())) {
+      return NextResponse.json({ error: "截止时间格式无效" }, { status: 400 });
+    }
     if (classId) {
       const cls = await getClass(classId);
       if (!cls || cls.teacher_email !== auth.email) {
