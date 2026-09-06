@@ -13,7 +13,7 @@ import { logAudit } from "@/lib/audit";
 
 /** 教师 AI 内容审核：待处理队列 + 版本修正（保留 V1 原回答，写入 V(n+1) 修正版） */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
     const body = await req.json().catch(() => ({}));

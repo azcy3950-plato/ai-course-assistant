@@ -22,7 +22,7 @@ import {
  * 所有统计限定在教师负责班级的学生范围内；无数据显示空数组/0，前端按空态呈现。
  */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();

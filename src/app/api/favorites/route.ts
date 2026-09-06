@@ -10,7 +10,7 @@ import {
 
 /** 收藏与待复习（仅操作自己的数据） */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     const { refType, refId, note, inReview } = await req.json().catch(() => ({}));
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     const { id, inReview } = await req.json().catch(() => ({}));
@@ -57,7 +57,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     const { id } = await req.json().catch(() => ({}));

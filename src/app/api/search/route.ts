@@ -9,7 +9,7 @@ import { pool, ensureLearningSchema } from "@/lib/learning-db";
  * 教师：学生（姓名或邮箱前缀，限自己班级）/ 任务 / 知识点。
  */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   const q = (req.nextUrl.searchParams.get("q") || "").trim();
   if (!q) return NextResponse.json({ nodes: [], tasks: [], students: [], qa: [] });

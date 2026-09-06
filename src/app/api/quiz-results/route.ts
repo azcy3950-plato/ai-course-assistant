@@ -1,39 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
-import { verify as jwtVerify } from "jsonwebtoken";
+import { requireUser } from "@/lib/auth-server";
+import { ensureLearningSchema, canTeacherViewStudent, listTeacherStudentEmails } from "@/lib/learning-db";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-// 严格鉴权:解析 JWT 邮箱与角色,无效即 401
-function getUser(req: NextRequest): { email: string; role: string } | null {
-  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!token || !jwtSecret) return null;
-  try {
-    const payload = jwtVerify(token, jwtSecret) as { email?: string; role?: string };
-    if (!payload.email) return null;
-    return { email: payload.email, role: payload.role || "student" };
-  } catch {
-    return null;
-  }
-}
-
 export async function GET(req: NextRequest) {
-  const user = getUser(req);
-  if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
+  const { auth, resp } = await requireUser(req);
+  if (resp) return resp;
   try {
+    await ensureLearningSchema();
     const sp = new URL(req.url).searchParams;
     const requested = sp.get("email") || "";
     let rows;
-    if (user.role === "teacher") {
-      // 教师可查全部(或指定学生)的小测结果
-      const { rows: r } = requested
-        ? await pool.query("SELECT * FROM quiz_results WHERE user_email = $1 ORDER BY created_at DESC LIMIT 200", [requested])
-        : await pool.query("SELECT * FROM quiz_results ORDER BY created_at DESC LIMIT 200");
-      rows = r;
+    if (auth.role === "teacher" || auth.role === "admin") {
+      if (requested) {
+        // 指定学生：admin 全局放行；教师仅限本班学生
+        if (auth.role !== "admin") {
+          const allowed = await canTeacherViewStudent(auth.email, requested.trim().toLowerCase());
+          if (!allowed) return NextResponse.json({ error: "该学生不在您的班级中" }, { status: 403 });
+        }
+        const { rows: r } = await pool.query(
+          "SELECT * FROM quiz_results WHERE user_email = $1 ORDER BY created_at DESC LIMIT 200",
+          [requested.trim().toLowerCase()],
+        );
+        rows = r;
+      } else if (auth.role === "admin") {
+        const { rows: r } = await pool.query("SELECT * FROM quiz_results ORDER BY created_at DESC LIMIT 200");
+        rows = r;
+      } else {
+        // 教师不传 email：仅本班学生范围（此前查全校，跨班数据泄漏）
+        const myStudents = await listTeacherStudentEmails(auth.email);
+        if (myStudents.length === 0) {
+          rows = [];
+        } else {
+          const { rows: r } = await pool.query(
+            "SELECT * FROM quiz_results WHERE user_email = ANY($1) ORDER BY created_at DESC LIMIT 200",
+            [myStudents],
+          );
+          rows = r;
+        }
+      }
     } else {
       // 学生只能查自己的
-      const { rows: r } = await pool.query("SELECT * FROM quiz_results WHERE user_email = $1 ORDER BY created_at DESC LIMIT 200", [user.email]);
+      const { rows: r } = await pool.query(
+        "SELECT * FROM quiz_results WHERE user_email = $1 ORDER BY created_at DESC LIMIT 200",
+        [auth.email],
+      );
       rows = r;
     }
     return NextResponse.json(rows);

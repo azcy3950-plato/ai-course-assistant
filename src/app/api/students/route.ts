@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verify } from "jsonwebtoken";
 import { Pool } from "pg";
+import { requireTeacher } from "@/lib/auth-server";
 import { ensureKnowledgeGraphSchema } from "@/lib/knowledge-graph";
 import { buildAllNetworks } from "@/lib/knowledge-map-builder";
 import {
@@ -8,27 +8,26 @@ import {
   listStudentTasks,
   listLearningEvents,
   listFeedbackForStudent,
+  canTeacherViewStudent,
+  listTeacherStudentEmails,
 } from "@/lib/learning-db";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-function getTeacher(req: NextRequest): { email: string; role: string } | null {
-  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!token || !jwtSecret) return null;
-  try {
-    const payload = verify(token, jwtSecret) as { email?: string; role?: string };
-    return payload.email && payload.role === "teacher" ? { email: payload.email, role: "teacher" } : null;
-  } catch { return null; }
-}
-
-// 教师查看真实学生列表(users 表)与学习聚合(learning_records / quiz_results)；
+// 教师查看学生列表与学习聚合；归属校验：教师仅限本班学生（admin 全局放行，账号管理职责）。
 // 单学生详情额外包含任务、学习事件、提交批阅与薄弱知识点（教学平台外围功能）
 export async function GET(req: NextRequest) {
+  const { auth, resp } = await requireTeacher(req);
+  if (resp) return resp;
   try {
-    if (!getTeacher(req)) return NextResponse.json({ error: "仅教师可访问" }, { status: 403 });
+    await ensureLearningSchema();
     const emailParam = req.nextUrl.searchParams.get("email")?.trim().toLowerCase() || "";
     if (emailParam) {
+      // 归属校验：admin 放行；教师只能看本班学生
+      if (auth.role !== "admin") {
+        const allowed = await canTeacherViewStudent(auth.email, emailParam);
+        if (!allowed) return NextResponse.json({ error: "该学生不在您的班级中" }, { status: 403 });
+      }
       // 单学生详情:统计 + 问答记录 + 测验结果 + 任务/事件/提交/薄弱知识点
       await Promise.all([ensureLearningSchema(), ensureKnowledgeGraphSchema().catch(() => {})]);
       const { rows: userRows } = await pool.query(
@@ -95,18 +94,41 @@ export async function GET(req: NextRequest) {
         weakNodes,
       });
     }
-    const { rows } = await pool.query(
-      `SELECT
-         u.id, u.email, u.name, u.role, u.created_at,
-         (SELECT count(*) FROM learning_records lr WHERE lr.user_email = u.email) AS query_count,
-         (SELECT count(*) FROM quiz_results qr WHERE qr.user_email = u.email) AS quiz_total,
-         (SELECT count(*) FROM quiz_results qr WHERE qr.user_email = u.email AND qr.is_correct) AS quiz_correct,
-         (SELECT count(*) FROM learning_records lr WHERE lr.user_email = u.email AND lr.has_references) AS guided_count,
-         (SELECT max(created_at) FROM learning_records lr WHERE lr.user_email = u.email) AS last_active
-       FROM users u
-       WHERE u.role = 'student'
-       ORDER BY last_active DESC NULLS LAST, u.created_at DESC`,
-    );
+    // 教师仅能列出本班学生；admin 全局
+    let rows;
+    if (auth.role === "admin") {
+      ({ rows } = await pool.query(
+        `SELECT
+           u.id, u.email, u.name, u.role, u.created_at,
+           (SELECT count(*) FROM learning_records lr WHERE lr.user_email = u.email) AS query_count,
+           (SELECT count(*) FROM quiz_results qr WHERE qr.user_email = u.email) AS quiz_total,
+           (SELECT count(*) FROM quiz_results qr WHERE qr.user_email = u.email AND qr.is_correct) AS quiz_correct,
+           (SELECT count(*) FROM learning_records lr WHERE lr.user_email = u.email AND lr.has_references) AS guided_count,
+           (SELECT max(created_at) FROM learning_records lr WHERE lr.user_email = u.email) AS last_active
+         FROM users u
+         WHERE u.role = 'student'
+         ORDER BY last_active DESC NULLS LAST, u.created_at DESC`,
+      ));
+    } else {
+      const myStudents = await listTeacherStudentEmails(auth.email);
+      if (myStudents.length === 0) {
+        rows = [];
+      } else {
+        ({ rows } = await pool.query(
+          `SELECT
+             u.id, u.email, u.name, u.role, u.created_at,
+             (SELECT count(*) FROM learning_records lr WHERE lr.user_email = u.email) AS query_count,
+             (SELECT count(*) FROM quiz_results qr WHERE qr.user_email = u.email) AS quiz_total,
+             (SELECT count(*) FROM quiz_results qr WHERE qr.user_email = u.email AND qr.is_correct) AS quiz_correct,
+             (SELECT count(*) FROM learning_records lr WHERE lr.user_email = u.email AND lr.has_references) AS guided_count,
+             (SELECT max(created_at) FROM learning_records lr WHERE lr.user_email = u.email) AS last_active
+           FROM users u
+           WHERE u.role = 'student' AND u.email = ANY($1)
+           ORDER BY last_active DESC NULLS LAST, u.created_at DESC`,
+          [myStudents],
+        ));
+      }
+    }
     const students = rows.map((r) => ({
       id: r.id,
       email: r.email,

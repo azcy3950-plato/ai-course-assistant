@@ -5,7 +5,7 @@ import { logAudit } from "@/lib/audit";
 
 /** 教师批阅提交：写评语 + 通过 / 要求修改 */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   const { id } = await params;
   try {

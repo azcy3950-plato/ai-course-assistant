@@ -4,7 +4,7 @@ import { ensureLearningSchema, unreadDirectMessageCount } from "@/lib/learning-d
 
 /** Navbar 信封角标专用轻端点（与收件箱 GET 分离，避免每 60s 跑会话聚合） */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();

@@ -11,7 +11,7 @@ import {
 
 /** 学情分析（真实数据库聚合，不做大屏）：按知识点 / 按学生 / 按任务三个视角 */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
     await Promise.all([ensureLearningSchema(), ensureKnowledgeGraphSchema().catch(() => {})]);

@@ -3,7 +3,7 @@ import { requireTeacher } from "@/lib/auth-server";
 import { ensureLearningSchema, listClassStudents, deleteClass } from "@/lib/learning-db";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   const { id } = await params;
   try {
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   const { id } = await params;
   try {

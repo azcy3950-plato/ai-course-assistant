@@ -4,7 +4,7 @@ import { pool, ensureLearningSchema, getQaMessage, listAiVersions } from "@/lib/
 
 /** 单条问答详情：原回答 + 版本历史 + 反馈状态（仅本人） */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   const { id } = await params;
   try {

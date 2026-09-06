@@ -22,7 +22,7 @@ const BUCKET = process.env.OSS_BUCKET!;
 const ALLOWED_TYPES = ["application/pdf", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/png", "image/jpeg", "image/gif", "image/webp"];
 
 export async function POST(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     const { fileName, fileType, fileSize } = await req.json().catch(() => ({}));
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   const key = req.nextUrl.searchParams.get("key") || "";
   if (!key.startsWith("task-attachments/")) {

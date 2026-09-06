@@ -5,7 +5,7 @@ import { logAudit } from "@/lib/audit";
 
 /** 知识库文档解析状态（教师）：列表 / 更新 / 删除 */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
     const body = await req.json().catch(() => ({}));
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
     const { fileKey } = await req.json().catch(() => ({}));

@@ -15,12 +15,13 @@ import {
 } from "@/lib/learning-db";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   const { id } = await params;
   try {
     await ensureLearningSchema();
     const taskId = Number(id);
+    if (!Number.isFinite(taskId)) return NextResponse.json({ error: "任务不存在" }, { status: 400 });
     const task = await getTask(taskId);
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
     if (auth.role === "teacher") {
@@ -41,13 +42,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   const { id } = await params;
   try {
     const body = await req.json().catch(() => ({}));
     await ensureLearningSchema();
     const taskId = Number(id);
+    if (!Number.isFinite(taskId)) return NextResponse.json({ error: "任务不存在" }, { status: 400 });
     const task = await getTask(taskId);
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
 
@@ -55,11 +57,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const st = await getStudentTask(taskId, auth.email);
     if (!st) return NextResponse.json({ error: "你未被分配该任务" }, { status: 403 });
 
+    // 防双击：已提交且未被要求修改时拒绝再次提交（练习任务除外——允许重新作答）
+    if (st.status === "SUBMITTED" && task.type !== "PRACTICE") {
+      return NextResponse.json({ error: "已提交，等待教师批阅" }, { status: 400 });
+    }
+    // 截止校验：超期不可提交（OVERDUE 仅作展示，行为上强制）
+    if (task.deadline && new Date(task.deadline).getTime() < Date.now()) {
+      return NextResponse.json({ error: "已超过截止时间，无法提交" }, { status: 400 });
+    }
+
     // 练习任务：服务端判分（客户端提交选项，正确答案不暴露给学生）
     let answers: any[] = Array.isArray(body.answers) ? body.answers : [];
     const questions = (task.questions || []) as any[];
     if (task.type === "PRACTICE") {
-      answers = body.answers.map((a: any, i: number) => {
+      // 用已 sanitize 的 answers 判分（此前读 body.answers，缺参时 undefined.map 抛 500）
+      answers = answers.map((a: any, i: number) => {
         const q = questions[a.index ?? i];
         const correct = q ? String(a.studentAnswer).trim() === String(q.answer).trim() : false;
         return {

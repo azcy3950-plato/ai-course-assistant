@@ -40,6 +40,8 @@ export default function AnalysisTab() {
     }
     setExpandedNode(nodeId);
     setNodeDetail(null);
+    // 切换知识点时清空勾选，避免上一个知识点的学生残留到"布置补充学习"
+    setChecked(new Set());
     try {
       const r = await fetch(`/api/analysis?nodeId=${encodeURIComponent(nodeId)}`, { headers });
       if (r.ok) setNodeDetail((await r.json()).nodeDetail || []);

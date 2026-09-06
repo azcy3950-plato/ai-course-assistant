@@ -5,7 +5,7 @@ import { authorizeDmPair } from "@/lib/dm-auth";
 
 /** 打开会话时标记"对端发给我的"消息为已读 */
 export async function PUT(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     const body = await req.json().catch(() => ({}));

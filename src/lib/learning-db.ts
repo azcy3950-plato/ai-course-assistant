@@ -1,5 +1,6 @@
 import { Pool, type PoolClient } from "pg";
 import { buildAllNetworks } from "./knowledge-map-builder";
+import { maskQuestions } from "./task-ui";
 
 /**
  * 教学平台外围功能数据层：班级、学习任务、学生提交、教师反馈、
@@ -199,6 +200,10 @@ async function initSchema() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS idx_attachments_submission ON task_attachments(submission_id);
+      -- 提交唯一性（task_id,user_email,version）：防并发/重试产生重复提交行；先清存量重复（保留最新）
+      DELETE FROM task_submissions a USING task_submissions b
+        WHERE a.task_id = b.task_id AND a.user_email = b.user_email AND a.version = b.version AND a.id < b.id;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_submissions_unique ON task_submissions(task_id, user_email, version);
 
       CREATE TABLE IF NOT EXISTS document_status (
         id SERIAL PRIMARY KEY,
@@ -211,6 +216,10 @@ async function initSchema() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+      -- upsertDocumentStatus 依赖 (file_key) 唯一约束；先清存量重复（保留最新行）再建索引
+      DELETE FROM document_status a USING document_status b
+        WHERE a.file_key = b.file_key AND a.id < b.id;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_document_status_file_key ON document_status(file_key);
 
       CREATE TABLE IF NOT EXISTS audit_log (
         id SERIAL PRIMARY KEY,
@@ -306,11 +315,14 @@ export async function listClassStudents(classId: number, teacherEmail: string) {
   if (!cls || cls.teacher_email !== teacherEmail) return null;
   const { rows } = await pool.query(
     `SELECT m.user_email, u.name,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.user_email = m.user_email) AS task_total,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.user_email = m.user_email AND st.status = 'COMPLETED') AS task_done,
+        (SELECT count(*)::int FROM student_tasks st JOIN tasks t2 ON t2.id = st.task_id
+          WHERE st.user_email = m.user_email AND t2.teacher_email = c.teacher_email) AS task_total,
+        (SELECT count(*)::int FROM student_tasks st JOIN tasks t2 ON t2.id = st.task_id
+          WHERE st.user_email = m.user_email AND st.status = 'COMPLETED' AND t2.teacher_email = c.teacher_email) AS task_done,
         (SELECT count(*)::int FROM quiz_results q WHERE q.user_email = m.user_email AND q.is_correct = false) AS quiz_wrong,
         (SELECT max(e.created_at) FROM learning_events e WHERE e.user_email = m.user_email) AS last_active
      FROM class_members m
+     JOIN classes c ON c.id = m.class_id
      LEFT JOIN users u ON u.email = m.user_email
      WHERE m.class_id = $1
      ORDER BY u.name ASC NULLS LAST`,
@@ -393,7 +405,7 @@ export async function listTeacherTasks(teacherEmail: string) {
   return rows;
 }
 
-/** 学生视角任务列表（含最近一次教师反馈） */
+/** 学生视角任务列表（含最近一次教师反馈）；questions 对答案/解析遮罩，防列表接口泄露判分数据 */
 export async function listStudentTasks(email: string) {
   const { rows } = await pool.query(
     `SELECT t.*, c.name AS class_name, st.status, st.started_at, st.completed_at,
@@ -412,7 +424,7 @@ export async function listStudentTasks(email: string) {
      ORDER BY st.updated_at DESC`,
     [email],
   );
-  return rows;
+  return rows.map((r) => ({ ...r, questions: maskQuestions(r.questions) }));
 }
 
 export async function getTask(id: number) {
@@ -473,6 +485,11 @@ export async function createSubmission(taskId: number, email: string, input: Sub
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // 锁定该学生的任务行，串行化并发提交，避免版本号竞态产生重复行
+    await client.query(
+      "SELECT 1 FROM student_tasks WHERE task_id = $1 AND user_email = $2 FOR UPDATE",
+      [taskId, email],
+    );
     const ver = await client.query(
       "SELECT COALESCE(max(version), 0)::int + 1 AS v FROM task_submissions WHERE task_id = $1 AND user_email = $2",
       [taskId, email],
@@ -802,8 +819,10 @@ export async function taskErrorSummary(taskId: number) {
 export async function teacherStudentsOverview(teacherEmail: string) {
   const { rows } = await pool.query(
     `SELECT m.user_email, u.name, string_agg(DISTINCT c.name, '、') AS class_names,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.user_email = m.user_email) AS task_total,
-        (SELECT count(*)::int FROM student_tasks st WHERE st.user_email = m.user_email AND st.status = 'COMPLETED') AS task_done,
+        (SELECT count(*)::int FROM student_tasks st JOIN tasks t2 ON t2.id = st.task_id
+          WHERE st.user_email = m.user_email AND t2.teacher_email = $1) AS task_total,
+        (SELECT count(*)::int FROM student_tasks st JOIN tasks t2 ON t2.id = st.task_id
+          WHERE st.user_email = m.user_email AND st.status = 'COMPLETED' AND t2.teacher_email = $1) AS task_done,
         (SELECT count(*)::int FROM quiz_results q WHERE q.user_email = m.user_email AND q.is_correct = false) AS quiz_wrong,
         (SELECT count(*)::int FROM quiz_results q WHERE q.user_email = m.user_email) AS quiz_total,
         (SELECT max(e.created_at) FROM learning_events e WHERE e.user_email = m.user_email) AS last_active
@@ -1131,19 +1150,24 @@ export async function dashboardTrend(teacherEmail: string, days = 14) {
   if (emails.length === 0) return [];
   const { rows } = await pool.query(
     `WITH ds AS (
-       SELECT generate_series((now() - make_interval(days => $2::int - 1))::date, now()::date, interval '1 day')::date AS day
+       SELECT generate_series((((now() AT TIME ZONE 'Asia/Shanghai')::date) - make_interval(days => $2::int - 1))::date,
+                              (now() AT TIME ZONE 'Asia/Shanghai')::date, interval '1 day')::date AS day
      ), acts AS (
        SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS day, user_email FROM learning_events
-         WHERE user_email = ANY($1) AND created_at >= now() - make_interval(days => $2::int - 1)
+         WHERE user_email = ANY($1)
+           AND created_at >= ((now() AT TIME ZONE 'Asia/Shanghai')::date - make_interval(days => $2::int - 1)) AT TIME ZONE 'Asia/Shanghai'
        UNION ALL
        SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS day, user_email FROM quiz_results
-         WHERE user_email = ANY($1) AND created_at >= now() - make_interval(days => $2::int - 1)
+         WHERE user_email = ANY($1)
+           AND created_at >= ((now() AT TIME ZONE 'Asia/Shanghai')::date - make_interval(days => $2::int - 1)) AT TIME ZONE 'Asia/Shanghai'
        UNION ALL
        SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS day, user_email FROM ai_qa_messages
-         WHERE user_email = ANY($1) AND created_at >= now() - make_interval(days => $2::int - 1)
+         WHERE user_email = ANY($1)
+           AND created_at >= ((now() AT TIME ZONE 'Asia/Shanghai')::date - make_interval(days => $2::int - 1)) AT TIME ZONE 'Asia/Shanghai'
        UNION ALL
        SELECT (submitted_at AT TIME ZONE 'Asia/Shanghai')::date AS day, user_email FROM task_submissions
-         WHERE user_email = ANY($1) AND submitted_at >= now() - make_interval(days => $2::int - 1)
+         WHERE user_email = ANY($1)
+           AND submitted_at >= ((now() AT TIME ZONE 'Asia/Shanghai')::date - make_interval(days => $2::int - 1)) AT TIME ZONE 'Asia/Shanghai'
      )
      SELECT to_char(ds.day, 'MM-DD') AS day,
             COALESCE(a.events, 0)::int AS events,

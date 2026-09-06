@@ -4,7 +4,7 @@ import { ensureLearningSchema, addQaMessage, listQaMessages } from "@/lib/learni
 
 /** 学生自己的 AI 问答存档（知识问答页每次回答后由前端写入一条） */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     const { question, answer, references } = await req.json().catch(() => ({}));

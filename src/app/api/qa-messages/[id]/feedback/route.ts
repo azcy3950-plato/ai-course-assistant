@@ -6,7 +6,7 @@ const VALID_REASONS = new Set(["内容错误", "解释不清", "答非所问", "
 
 /** 学生对 AI 回答提交错误反馈（进入教师审核队列） */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   const { id } = await params;
   try {

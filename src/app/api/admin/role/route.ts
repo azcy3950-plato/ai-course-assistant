@@ -5,7 +5,7 @@ import { logAudit } from "@/lib/audit";
 
 /** Admin 专属：授予/取消教师角色（普通教师 403） */
 export async function POST(req: NextRequest) {
-  const { auth, resp } = requireAdmin(req);
+  const { auth, resp } = await requireAdmin(req);
   if (resp) return resp;
   try {
     const { email, role } = await req.json().catch(() => ({}));

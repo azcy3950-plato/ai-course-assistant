@@ -4,7 +4,7 @@ import { ensureLearningSchema, listFeedbackForStudent } from "@/lib/learning-db"
 
 /** 学生统一查看收到的全部教师反馈 */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();

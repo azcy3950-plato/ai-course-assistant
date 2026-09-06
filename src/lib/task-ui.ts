@@ -31,3 +31,12 @@ export function formatDeadline(iso: string | null | undefined): string {
   if (isNaN(d.getTime())) return "无截止时间";
   return d.toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
 }
+
+/** 对学生遮罩练习答案：选项保留，正确答案与解析隐藏（服务端判分数据不进学生端） */
+export function maskQuestions(questions: any[]) {
+  if (!Array.isArray(questions)) return [];
+  return questions.map((q) => {
+    const { answer, explanation, ...rest } = q;
+    return rest;
+  });
+}

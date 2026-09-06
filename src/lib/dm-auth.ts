@@ -18,7 +18,7 @@ export interface DmAuthResult {
  * 注：平台账号均邮箱注册（手机号注册用户 JWT email 回退为手机号，暂不在私信范围内）。
  */
 export async function authorizeDmPair(req: NextRequest, withEmail: string): Promise<DmAuthResult> {
-  const auth = verifyUser(req);
+  const auth = await verifyUser(req);
   if (!auth.ok) return { auth, resp: unauthorized(), pair: null };
   if (auth.role !== "student" && auth.role !== "teacher")
     return { auth, resp: forbidden(), pair: null };

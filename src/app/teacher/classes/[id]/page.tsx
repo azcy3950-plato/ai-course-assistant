@@ -19,6 +19,15 @@ export default function ClassDetailPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [addEmail, setAddEmail] = useState("");
   const [busy, setBusy] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
+
+  // 角色守卫：非教师（admin 视为只读教师）重定向，避免此前"永久加载中"
+  useEffect(() => {
+    if (state.authLoading) return;
+    if (!state.role) router.replace("/login?redirect=" + encodeURIComponent("/teacher/classes/" + id));
+    else if (state.role !== "teacher" && state.role !== "admin") router.replace("/");
+    else setAuthorized(true);
+  }, [state.authLoading, state.role, router, id]);
 
   const headers = { "Content-Type": "application/json", Authorization: "Bearer " + getAuthToken() };
 
@@ -40,7 +49,7 @@ export default function ClassDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  useEffect(() => { if (state.role === "teacher") load(); }, [state.role, load]);
+  useEffect(() => { if (authorized) load(); }, [authorized, load]);
 
   const addMember = async () => {
     if (!addEmail.trim()) { alert("请输入学生注册邮箱"); return; }

@@ -28,6 +28,15 @@ export default function StudentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
+
+  // 角色守卫：非教师（admin 视为只读教师）重定向，避免此前"永久加载中"
+  useEffect(() => {
+    if (state.authLoading) return;
+    if (!state.role) router.replace("/login?redirect=" + encodeURIComponent("/teacher/students/" + email));
+    else if (state.role !== "teacher" && state.role !== "admin") router.replace("/");
+    else setAuthorized(true);
+  }, [state.authLoading, state.role, router, email]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,7 +58,7 @@ export default function StudentDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email]);
 
-  useEffect(() => { if (state.role === "teacher") load(); }, [state.role, load]);
+  useEffect(() => { if (authorized) load(); }, [authorized, load]);
 
   if (state.authLoading || loading) {
     return <div className="flex items-center justify-center min-h-[60vh] text-[var(--color-text-muted)]">加载中...</div>;

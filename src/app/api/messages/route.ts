@@ -13,7 +13,7 @@ import { authorizeDmPair } from "@/lib/dm-auth";
 
 // ─── 收件箱 ───
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
 
 // ─── 发私信 ───
 export async function POST(req: NextRequest) {
-  const { auth, resp } = requireUser(req);
+  const { auth, resp } = await requireUser(req);
   if (resp) return resp;
   try {
     const body = await req.json().catch(() => ({}));

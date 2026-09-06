@@ -1,28 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verify } from "jsonwebtoken";
 import { hash } from "bcryptjs";
 import { Pool } from "pg";
+import { requireTeacher } from "@/lib/auth-server";
+import { ensureLearningSchema, canTeacherViewStudent } from "@/lib/learning-db";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-function getTeacher(req: NextRequest): { email: string } | null {
-  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!token || !jwtSecret) return null;
-  try {
-    const payload = verify(token, jwtSecret) as { email?: string; role?: string };
-    return payload.email && payload.role === "teacher" ? { email: payload.email } : null;
-  } catch { return null; }
-}
-
-// 教师管理学生账号:改名(PATCH)/重置密码(PUT)/删除(DELETE);仅可操作 role=student 账号
+// 教师管理学生账号:改名(PATCH)/重置密码(PUT)/删除(DELETE);仅可操作 role=student 账号。
+// 归属校验：教师只能操作本班学生（canTeacherViewStudent）；admin 保留全局权限（账号管理职责）。
 export async function PATCH(req: NextRequest) {
+  const { auth, resp } = await requireTeacher(req);
+  if (resp) return resp;
   try {
-    if (!getTeacher(req)) return NextResponse.json({ error: "仅教师可操作" }, { status: 403 });
     const body = await req.json().catch(() => ({}));
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const name = typeof body.name === "string" ? body.name.trim() : "";
     if (!email || !name || name.length > 30) return NextResponse.json({ error: "参数无效" }, { status: 400 });
+    const allowed = await ensureStudentAccess(auth, email);
+    if (allowed) return allowed;
     const { rows } = await pool.query(
       "UPDATE users SET name = $1 WHERE email = $2 AND role = 'student' RETURNING id, email, name",
       [name, email],
@@ -36,12 +31,15 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const { auth, resp } = await requireTeacher(req);
+  if (resp) return resp;
   try {
-    if (!getTeacher(req)) return NextResponse.json({ error: "仅教师可操作" }, { status: 403 });
     const body = await req.json().catch(() => ({}));
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const newPassword = typeof body.password === "string" ? body.password : "";
     if (!email || newPassword.length < 6) return NextResponse.json({ error: "邮箱无效或新密码不足 6 位" }, { status: 400 });
+    const allowed = await ensureStudentAccess(auth, email);
+    if (allowed) return allowed;
     const passwordHash = await hash(newPassword, 10);
     const { rows } = await pool.query(
       "UPDATE users SET password_hash = $1 WHERE email = $2 AND role = 'student' RETURNING id, email",
@@ -56,10 +54,13 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const { auth, resp } = await requireTeacher(req);
+  if (resp) return resp;
   try {
-    if (!getTeacher(req)) return NextResponse.json({ error: "仅教师可操作" }, { status: 403 });
     const email = req.nextUrl.searchParams.get("email")?.trim().toLowerCase() || "";
     if (!email) return NextResponse.json({ error: "缺少邮箱参数" }, { status: 400 });
+    const allowed = await ensureStudentAccess(auth, email);
+    if (allowed) return allowed;
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -84,4 +85,16 @@ export async function DELETE(req: NextRequest) {
     console.error('[admin/student] DELETE:', err?.message || err);
     return NextResponse.json({ error: "服务器错误" }, { status: 500 });
   }
+}
+
+/** 归属校验：admin 全局放行；教师仅限本班学生。返回 null 表示通过，否则返回应回给客户端的 403 */
+async function ensureStudentAccess(
+  auth: { email: string; role: string | null },
+  studentEmail: string,
+): Promise<NextResponse | null> {
+  await ensureLearningSchema().catch(() => {});
+  if (auth.role === "admin") return null;
+  const ok = await canTeacherViewStudent(auth.email, studentEmail).catch(() => false);
+  if (!ok) return NextResponse.json({ error: "该学生不在您的班级中" }, { status: 403 });
+  return null;
 }

@@ -24,6 +24,15 @@ export default function TeacherTaskDetailPage() {
   const [feedbackBusy, setFeedbackBusy] = useState<Set<string>>(new Set());
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
+
+  // 角色守卫：非教师（admin 视为只读教师）重定向，避免此前"永久加载中"
+  useEffect(() => {
+    if (state.authLoading) return;
+    if (!state.role) router.replace("/login?redirect=" + encodeURIComponent("/teacher/tasks/" + id));
+    else if (state.role !== "teacher" && state.role !== "admin") router.replace("/");
+    else setAuthorized(true);
+  }, [state.authLoading, state.role, router, id]);
 
   const headers = { "Content-Type": "application/json", Authorization: "Bearer " + getAuthToken() };
 
@@ -49,7 +58,7 @@ export default function TeacherTaskDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  useEffect(() => { if (state.role === "teacher") load(); }, [state.role, load]);
+  useEffect(() => { if (authorized) load(); }, [authorized, load]);
 
   const effectiveStatus = (st: any): string => {
     if (["TODO", "IN_PROGRESS"].includes(st.status) && task?.deadline && new Date(task.deadline) < new Date()) return "OVERDUE";

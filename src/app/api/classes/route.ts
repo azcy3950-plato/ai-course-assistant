@@ -3,7 +3,7 @@ import { requireTeacher, unauthorized } from "@/lib/auth-server";
 import { ensureLearningSchema, listClasses, createClass } from "@/lib/learning-db";
 
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { auth, resp } = requireTeacher(req);
+  const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
     const { name } = await req.json().catch(() => ({}));

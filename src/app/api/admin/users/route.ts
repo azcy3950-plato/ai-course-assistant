@@ -5,7 +5,7 @@ import { logAudit } from "@/lib/audit";
 
 /** Admin 专属：账号管理（列表/删除）。删除为软删：status='disabled'，登录与接口均拒绝。 */
 export async function GET(req: NextRequest) {
-  const { auth, resp } = requireAdmin(req);
+  const { auth, resp } = await requireAdmin(req);
   if (resp) return resp;
   try {
     await ensureLearningSchema();
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const { auth, resp } = requireAdmin(req);
+  const { auth, resp } = await requireAdmin(req);
   if (resp) return resp;
   try {
     const { email } = await req.json().catch(() => ({}));
