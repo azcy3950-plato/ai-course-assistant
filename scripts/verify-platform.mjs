@@ -95,13 +95,18 @@ async function main() {
     const nameInput = page.locator('input').first();
     await nameInput.fill("学生01测");
     await page.click('button:has-text("保存")');
-    await sleep(1500);
-    const navName = await page.evaluate(() => {
-      try {
-        const u = JSON.parse(localStorage.getItem("aicourse-user") || "{}");
-        return u.name === "学生01测";
-      } catch { return false; }
-    });
+    // 轮询等待 PATCH 完成并写入 localStorage（跨网延迟下固定 sleep 会误报）
+    let navName = false;
+    for (let i = 0; i < 10; i++) {
+      await sleep(500);
+      navName = await page.evaluate(() => {
+        try {
+          const u = JSON.parse(localStorage.getItem("aicourse-user") || "{}");
+          return u.name === "学生01测";
+        } catch { return false; }
+      });
+      if (navName) break;
+    }
     record("改名后导航栏立即刷新", navName);
     await nameInput.fill("学生01");
     await page.click('button:has-text("保存")');
@@ -247,7 +252,7 @@ async function main() {
     record("存在待批提交", sid > 0, `submission=${sid}`);
     if (sid > 0) {
       const post = async () => {
-        const r = await fetch(`/api/submissions/${sid}/feedback`, {
+        const r = await fetch(BASE + `/api/submissions/${sid}/feedback`, {
           method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
           body: JSON.stringify({ content: "收口测试评语", status: "passed" }),
         });
