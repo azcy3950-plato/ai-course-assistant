@@ -12,10 +12,10 @@ function LandingPage() {
       <div className="mt-20 mb-8">
         <span className="text-6xl">🎓</span>
         <h1 className="text-3xl font-bold text-[var(--color-text)] mt-4 mb-3">
-          AI 课程助教
+          基规智学
         </h1>
         <p className="text-[var(--color-text-secondary)] mb-8 max-w-xl mx-auto leading-relaxed">
-          城市排水与内涝防治智能教学平台 — 统一知识库智能体、引导思考智能体、电子沙盘三位一体
+          《基础设施规划》AI 教学平台 — 城市排水与内涝防治为当前仿真实践专题
         </p>
         <div className="flex gap-4 justify-center">
           <Link
@@ -38,6 +38,12 @@ function LandingPage() {
 
 // Student module cards
 const studentModules = [
+  {
+    href: '/tasks', icon: '📋', title: '我的任务',
+    desc: '查看教师发布的学习、练习、引导和仿真任务，按截止时间完成与修改',
+    color: 'from-cyan-500 to-blue-600', bgColor: 'bg-cyan-50',
+    features: ['任务状态', '截止提醒', '教师反馈'],
+  },
   {
     href: '/knowledge',
     icon: '📚',
@@ -65,31 +71,34 @@ const studentModules = [
     bgColor: 'bg-purple-50',
     features: ['地图可视化', '参数调节模拟', '时间轴回放'],
   },
+  {
+    href: '/history', icon: '📖', title: '学习档案',
+    desc: '回看问答、小测、引导学习和仿真实践记录，定位待复习知识点',
+    color: 'from-amber-500 to-orange-600', bgColor: 'bg-amber-50',
+    features: ['学习时间线', '错题记录', '个人学情'],
+  },
 ];
 
 // Teacher module cards
 const teacherModules = [
   {
-    href: '/teacher',
-    icon: '📤',
-    title: '资料管理',
-    desc: '上传教材、PPT、案例和文献，管理知识库内容',
+    href: '/teacher?tab=dashboard',
+    icon: '🏠',
+    title: '教学仪表盘',
+    desc: '查看班级、任务、活跃度、逾期项目和近期学习动态',
     color: 'from-orange-500 to-red-500',
     bgColor: 'bg-orange-50',
   },
   {
-    href: '/teacher',
-    icon: '📊',
-    title: '学生统计',
-    desc: '查看学生使用情况、学习进度和沙盘实验数据',
+    href: '/teacher?tab=analysis',
+    icon: '📊', title: '学情分析',
+    desc: '按知识点、学生和任务分析掌握情况并布置补充学习',
     color: 'from-teal-500 to-cyan-600',
     bgColor: 'bg-teal-50',
   },
   {
-    href: '/sandbox',
-    icon: '⚙️',
-    title: '沙盘管理',
-    desc: '配置沙盘数据、导入地形和管网图层',
+    href: '/teacher?tab=review', icon: '🛡️', title: 'AI 审核与知识库',
+    desc: '审核学生反馈、抽检 AI 回答、保留修正版本并维护课程资料',
     color: 'from-indigo-500 to-blue-600',
     bgColor: 'bg-indigo-50',
   },
@@ -238,12 +247,12 @@ export default function HomePage() {
       {/* Welcome subtitle */}
       <p className="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-6 text-center">
           {isStudent
-            ? '选择下方模块开始学习。AI 助教将帮助你掌握城市排水与内涝防治的核心知识。'
-            : '管理课程资料、知识库和沙盘数据，查看学生学习情况。'}
+            ? '选择下方模块开始学习。当前电子沙盘以城市排水与内涝防治为实践专题。'
+            : '管理《基础设施规划》课程任务、知识资源与学生学习过程。'}
         </p>
 
       {/* Module Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
         {modules.map((mod, i) => (
           <Link
             key={i}

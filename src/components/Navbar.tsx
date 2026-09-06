@@ -177,7 +177,7 @@ export default function Navbar() {
         <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 shrink-0">
             <span className="text-xl">🎓</span>
-            <span className="font-bold text-lg text-[var(--color-text)] hidden sm:inline">AI 课程助教</span>
+            <span className="font-bold text-lg text-[var(--color-text)] hidden sm:inline">基规智学</span>
           </Link>
           <div className="flex items-center gap-2">
             <Link href="/login" className="px-3 py-2 rounded-lg text-sm font-medium text-[var(--color-text-secondary)] hover:bg-gray-100 transition-colors">登录</Link>
@@ -196,7 +196,7 @@ export default function Navbar() {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 shrink-0">
           <span className="text-xl">🎓</span>
-          <span className="font-bold text-lg text-[var(--color-text)] hidden md:inline">AI 课程助教</span>
+          <span className="font-bold text-lg text-[var(--color-text)] hidden md:inline">基规智学</span>
         </Link>
 
         {/* Nav Links */}

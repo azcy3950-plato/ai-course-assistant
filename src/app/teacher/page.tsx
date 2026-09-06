@@ -26,6 +26,11 @@ export default function TeacherPage() {
 
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
 
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab") as TabKey | null;
+    if (requested && ["dashboard", "classes", "tasks", "analysis", "review", "knowledge"].includes(requested)) setActiveTab(requested);
+  }, []);
+
   if (state.authLoading || !authorized) {
     return <div className="flex items-center justify-center min-h-[60vh] text-[var(--color-text-muted)]">加载中...</div>;
   }
@@ -33,8 +38,8 @@ export default function TeacherPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--color-text)] mb-1">教学管理</h1>
-        <p className="text-sm text-[var(--color-text-secondary)]">数据仪表盘、班级与学生、学习任务、学情分析、AI 内容审核与知识库</p>
+        <h1 className="text-2xl font-bold text-[var(--color-text)] mb-1">《基础设施规划》教学管理</h1>
+        <p className="text-sm text-[var(--color-text-secondary)]">覆盖班级、任务、学情诊断、AI 内容审核和课程知识库；城市排水与内涝防治为当前仿真实践专题</p>
       </div>
 
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
