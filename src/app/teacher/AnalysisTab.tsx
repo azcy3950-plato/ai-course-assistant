@@ -21,7 +21,7 @@ export default function AnalysisTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/analysis `, { headers });
+      const r = await fetch(`/api/analysis`, { headers });
       if (r.ok) setData(await r.json());
     } catch (e) {
       console.error(e);
@@ -107,7 +107,7 @@ export default function AnalysisTab() {
                       <div className="w-40 shrink-0 hidden md:block">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 bg-gray-100 rounded-full h-2">
-                            <div className={`h-2 rounded-full ${masteryColor(mastery)}`} style={{ width: `${Math.min(100, mastery)}%`}} />
+                            <div className={`h-2 rounded-full ${masteryColor(mastery)}`} style={{ width: `${Math.min(100, mastery)}%` }} />
                           </div>
                           <span className="text-[10px] text-[var(--color-text-muted)] w-12 text-right">{mastery}%</span>
                         </div>
@@ -149,7 +149,7 @@ export default function AnalysisTab() {
                                       })} className="accent-[var(--color-primary)]" />
                                     <span className="text-xs font-medium w-20 truncate">{d.name || d.user_email.split("@")[0]}</span>
                                     <div className="flex-1 bg-gray-100 rounded-full h-1.5 max-w-[160px]">
-                                      <div className={`h-1.5 rounded-full ${masteryColor(m)}`} style={{ width: `${Math.min(100, m)}%`}} />
+                                      <div className={`h-1.5 rounded-full ${masteryColor(m)}`} style={{ width: `${Math.min(100, m)}%` }} />
                                     </div>
                                     <span className="text-[10px] text-[var(--color-text-muted)] w-24">掌握 {m}% · 练习 {d.quiz_correct}/{d.quiz_total}</span>
                                     <button onClick={() => router.push(`/teacher/students/${encodeURIComponent(d.user_email)}`)}
