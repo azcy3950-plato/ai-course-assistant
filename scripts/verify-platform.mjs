@@ -444,7 +444,7 @@ async function main() {
       out.adminStudentPut = s3.status;
       const s4 = await fetch("/api/admin/student?email=" + encodeURIComponent("student13@demo.edu.cn"), { method: "DELETE", headers: { Authorization: "Bearer " + t } });
       out.adminStudentDelete = s4.status;
-      const s5 = await fetch("/api/quiz-results", { headers: { Authorization: "Bearer " + t } });
+      const s5 = await fetch("/api/quiz-results?scope=all", { headers: { Authorization: "Bearer " + t } });
       const d5 = await s5.json();
       const demoEmails = new Set(Array.from({ length: 12 }, (_, i) => `student${String(i + 1).padStart(2, "0")}@demo.edu.cn`));
       out.quizAllOwn = Array.isArray(d5) && d5.every((x) => demoEmails.has(x.user_email));

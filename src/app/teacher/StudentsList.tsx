@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthToken } from "@/contexts/AppContext";
+import DataScopeNotice, { type DataScope } from "@/components/DataScopeNotice";
 
 function maskEmail(email: string): string {
   const [u, d] = String(email).split("@");
@@ -18,17 +19,18 @@ export default function StudentsList() {
   const [editName, setEditName] = useState("");
   const [busyEmail, setBusyEmail] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [scope, setScope] = useState<DataScope>("real");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/students", {
+      const res = await fetch(`/api/students?scope=${scope}`, {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` },
       });
       if (res.ok) setStudents((await res.json()).students || []);
     } catch (e) { /* 静默 */ }
     setLoading(false);
-  }, []);
+  }, [scope]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -49,6 +51,7 @@ export default function StudentsList() {
 
   return (
     <div className="mt-6">
+      <DataScopeNotice scope={scope} onScopeChange={setScope} />
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-bold text-[var(--color-text)]">👥 学生统计（全部班级）</h3>
         <button onClick={load} className="text-xs text-[var(--color-primary)] hover:underline">🔄 刷新</button>

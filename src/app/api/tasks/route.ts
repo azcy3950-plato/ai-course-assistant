@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
   if (resp) return resp;
   try {
     await ensureLearningSchema();
-    const rows = auth.role === "teacher" ? await listTeacherTasks(auth.email) : await listStudentTasks(auth.email);
+    const includeDemo = req.nextUrl.searchParams.get("scope") === "all";
+    const rows = auth.role === "teacher" ? await listTeacherTasks(auth.email, includeDemo) : await listStudentTasks(auth.email);
     return NextResponse.json(rows);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

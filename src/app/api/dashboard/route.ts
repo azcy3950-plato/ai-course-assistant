@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     ensureAnalyticsIndexes().catch(() => {});
 
     const [classes, studentEmails, taskStats, pending, classProgress] = await Promise.all([
-      listClasses(auth.email),
+      listClasses(auth.email, includeDemo),
       listTeacherStudentEmails(auth.email, includeDemo),
       dashboardTaskStats(auth.email, includeDemo),
       dashboardPendingSubmissions(auth.email, includeDemo),

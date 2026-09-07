@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthToken } from "@/contexts/AppContext";
 import { TASK_TYPE_META, formatDeadline } from "@/lib/task-ui";
+import DataScopeNotice, { type DataScope } from "@/components/DataScopeNotice";
 
 const TASK_TYPES = [
   { k: "KNOWLEDGE", l: "📚 知识学习任务", hint: "关联知识点，学生去知识问答学习" },
@@ -22,6 +23,8 @@ export default function TasksTab() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [scope, setScope] = useState<DataScope>("real");
+  const [error, setError] = useState("");
 
   // 表单
   const [title, setTitle] = useState("");
@@ -38,21 +41,22 @@ export default function TasksTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const [tRes, cRes, gRes] = await Promise.all([
-        fetch("/api/tasks", { headers: { Authorization: "Bearer " + getAuthToken() } }),
+        fetch(`/api/tasks?scope=${scope}`, { headers: { Authorization: "Bearer " + getAuthToken() } }),
         fetch("/api/classes", { headers: { Authorization: "Bearer " + getAuthToken() } }),
         fetch("/api/knowledge-graph", { headers: { Authorization: "Bearer " + getAuthToken() } }),
       ]);
-      if (tRes.ok) setTasks(await tRes.json());
+      if (tRes.ok) setTasks(await tRes.json()); else throw new Error("任务列表加载失败");
       if (cRes.ok) setClasses(await cRes.json());
       if (gRes.ok) setGraphNodes((await gRes.json()).nodes || []);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      console.error(e); setError(e?.message || "网络错误，加载失败");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scope]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -98,6 +102,7 @@ export default function TasksTab() {
 
   return (
     <div>
+      <DataScopeNotice scope={scope} onScopeChange={setScope} />
       <div className="flex items-center justify-between mb-5">
         <div>
           <p className="text-xs text-[var(--color-text-muted)]">共 {tasks.length} 个任务</p>
@@ -230,7 +235,12 @@ export default function TasksTab() {
         </div>
       )}
 
-      {loading ? (
+      {error && !loading ? (
+        <div className="bg-white rounded-xl border border-red-200 p-10 text-center">
+          <div className="text-3xl mb-3">⚠️</div><p className="text-sm text-red-600 mb-4">{error}</p>
+          <button onClick={load} className="px-4 py-2 text-sm rounded-lg border border-red-300 text-red-700 hover:bg-red-50">重试</button>
+        </div>
+      ) : loading ? (
         <div className="p-10 text-center text-sm text-[var(--color-text-muted)]">加载中...</div>
       ) : tasks.length === 0 ? (
         <div className="bg-white rounded-xl border border-[var(--color-border)] p-12 text-center">

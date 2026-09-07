@@ -27,6 +27,7 @@ export default function KnowledgePage() {
   // 阶段检测：生成后提示学生，可立即或稍后进行（不再强制弹窗）
   const [pendingQuiz, setPendingQuiz] = useState<{ token: string; questions: any[] } | null>(null);
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [taskContext, setTaskContext] = useState<{ id: string; title: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const sourcePanelRef = useRef<HTMLDivElement>(null);
 
@@ -37,6 +38,13 @@ export default function KnowledgePage() {
     if (appState.authLoading) return;
     if (!appState.role) router.replace("/login?redirect=" + encodeURIComponent("/knowledge"));
   }, [appState.authLoading, appState.role, router]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("taskId");
+    const title = params.get("taskTitle");
+    if (id && title) setTaskContext({ id, title });
+  }, []);
 
   // Auto-create conversation if none exists
   useEffect(() => {

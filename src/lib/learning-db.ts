@@ -263,11 +263,11 @@ export function ensureLearningSchema(): Promise<void> {
 }
 
 // ─── 班级 ───
-export async function listClasses(teacherEmail: string) {
+export async function listClasses(teacherEmail: string, includeDemo = true) {
   const { rows } = await pool.query(
-    `SELECT c.*, (SELECT count(*)::int FROM class_members m WHERE m.class_id = c.id) AS member_count
+    `SELECT c.*, (SELECT count(*)::int FROM class_members m WHERE m.class_id = c.id AND ($2::boolean OR m.user_email NOT LIKE '%@demo.edu.cn')) AS member_count
      FROM classes c WHERE c.teacher_email = $1 ORDER BY c.created_at ASC`,
-    [teacherEmail],
+    [teacherEmail, includeDemo],
   );
   return rows;
 }
@@ -317,7 +317,7 @@ export async function removeClassMember(classId: number, teacherEmail: string, u
 }
 
 /** 班级学生列表 + 每人的任务/错题/最近活动聚合 */
-export async function listClassStudents(classId: number, teacherEmail: string) {
+export async function listClassStudents(classId: number, teacherEmail: string, includeDemo = true) {
   const cls = await getClass(classId);
   if (!cls || cls.teacher_email !== teacherEmail) return null;
   const { rows } = await pool.query(
@@ -331,9 +331,9 @@ export async function listClassStudents(classId: number, teacherEmail: string) {
      FROM class_members m
      JOIN classes c ON c.id = m.class_id
      LEFT JOIN users u ON u.email = m.user_email
-     WHERE m.class_id = $1
+     WHERE m.class_id = $1 AND ($2::boolean OR m.user_email NOT LIKE '%@demo.edu.cn')
      ORDER BY u.name ASC NULLS LAST`,
-    [classId],
+    [classId, includeDemo],
   );
   return { cls, students: rows };
 }
@@ -458,11 +458,11 @@ export async function getStudentTask(taskId: number, email: string) {
   return rows[0] || null;
 }
 
-export async function listTaskTargets(taskId: number) {
+export async function listTaskTargets(taskId: number, includeDemo = true) {
   const { rows } = await pool.query(
     `SELECT st.*, u.name FROM student_tasks st LEFT JOIN users u ON u.email = st.user_email
-     WHERE st.task_id = $1 ORDER BY u.name ASC NULLS LAST`,
-    [taskId],
+     WHERE st.task_id = $1 AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn') ORDER BY u.name ASC NULLS LAST`,
+    [taskId, includeDemo],
   );
   return rows;
 }
@@ -528,7 +528,7 @@ export async function createSubmission(taskId: number, email: string, input: Sub
   }
 }
 
-export async function listTaskSubmissions(taskId: number) {
+export async function listTaskSubmissions(taskId: number, includeDemo = true) {
   const { rows } = await pool.query(
     `SELECT s.*, u.name AS student_name,
         f.content AS feedback_content, f.status AS feedback_status, f.created_at AS feedback_at
@@ -538,8 +538,8 @@ export async function listTaskSubmissions(taskId: number) {
         SELECT content, status, created_at FROM teacher_feedback
         WHERE submission_id = s.id ORDER BY created_at DESC LIMIT 1
      ) f ON true
-     WHERE s.task_id = $1 ORDER BY s.submitted_at DESC`,
-    [taskId],
+     WHERE s.task_id = $1 AND ($2::boolean OR s.user_email NOT LIKE '%@demo.edu.cn') ORDER BY s.submitted_at DESC`,
+    [taskId, includeDemo],
   );
   return rows;
 }

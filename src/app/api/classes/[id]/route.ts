@@ -10,7 +10,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     await ensureLearningSchema();
     const classId = Number(id);
     if (!Number.isFinite(classId)) return NextResponse.json({ error: "班级不存在" }, { status: 400 });
-    const data = await listClassStudents(classId, auth.email);
+    const includeDemo = req.nextUrl.searchParams.get("scope") === "all";
+    const data = await listClassStudents(classId, auth.email, includeDemo);
     if (!data) return NextResponse.json({ error: "班级不存在或无权访问" }, { status: 404 });
     return NextResponse.json(data);
   } catch (err: any) {

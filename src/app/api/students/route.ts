@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
   try {
     await ensureLearningSchema();
     const emailParam = req.nextUrl.searchParams.get("email")?.trim().toLowerCase() || "";
+    const includeDemo = req.nextUrl.searchParams.get("scope") === "all";
     if (emailParam) {
       // 归属校验：admin 放行；教师只能看本班学生
       if (auth.role !== "admin") {
@@ -110,7 +111,7 @@ export async function GET(req: NextRequest) {
          ORDER BY last_active DESC NULLS LAST, u.created_at DESC`,
       ));
     } else {
-      const myStudents = await listTeacherStudentEmails(auth.email);
+      const myStudents = await listTeacherStudentEmails(auth.email, includeDemo);
       if (myStudents.length === 0) {
         rows = [];
       } else {

@@ -290,7 +290,7 @@ export default function TaskDetailPage() {
           <div className="text-3xl mb-2">📚</div>
           <p className="text-sm text-[var(--color-text-secondary)] mb-4">在知识问答中围绕本任务的知识点提问学习，学完后回来标记完成</p>
           <div className="flex items-center justify-center gap-3">
-            <a href="/knowledge" className="px-5 py-2.5 bg-[var(--color-primary)] text-white rounded-lg text-sm font-medium hover:opacity-90">
+              <a href={`/knowledge?taskId=${task.id}&taskTitle=${encodeURIComponent(task.title)}`} className="px-5 py-2.5 bg-[var(--color-primary)] text-white rounded-lg text-sm font-medium hover:opacity-90">
               前往知识问答学习
             </a>
             {canMarkComplete && (
@@ -309,7 +309,7 @@ export default function TaskDetailPage() {
           <div className="text-3xl mb-2">💡</div>
           <p className="text-sm text-[var(--color-text-secondary)] mb-4">进入引导学习，跟随 AI 苏格拉底式追问完成探究，结束后回来标记完成</p>
           <div className="flex items-center justify-center gap-3">
-            <a href="/guided" className="px-5 py-2.5 bg-[var(--color-primary)] text-white rounded-lg text-sm font-medium hover:opacity-90">
+              <a href={`/guided?taskId=${task.id}&taskTitle=${encodeURIComponent(task.title)}`} className="px-5 py-2.5 bg-[var(--color-primary)] text-white rounded-lg text-sm font-medium hover:opacity-90">
               前往引导学习
             </a>
             {canMarkComplete && (
@@ -387,8 +387,8 @@ export default function TaskDetailPage() {
           <div className="text-3xl mb-2 text-center">🔁</div>
           <p className="text-sm text-[var(--color-text-secondary)] mb-4 text-center">按任务说明完成补充学习后，回来标记完成</p>
           <div className="flex items-center justify-center gap-2 flex-wrap">
-            <a href="/knowledge" className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors">📚 知识问答</a>
-            <a href="/guided" className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors">💡 引导学习</a>
+            <a href={`/knowledge?taskId=${task.id}&taskTitle=${encodeURIComponent(task.title)}`} className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors">📚 知识问答</a>
+            <a href={`/guided?taskId=${task.id}&taskTitle=${encodeURIComponent(task.title)}`} className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors">💡 引导学习</a>
             <a href="/sandbox" className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors">🗺️ 电子沙盘</a>
             {canMarkComplete && (
               <button onClick={() => { setNoteText(""); setNoteOpen(true); }} disabled={busy}
