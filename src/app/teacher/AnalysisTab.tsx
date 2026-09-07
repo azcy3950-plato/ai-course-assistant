@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { getAuthToken } from "@/contexts/AppContext";
 import { TASK_TYPE_META, formatDeadline } from "@/lib/task-ui";
 import RemedialModal from "./RemedialModal";
-import DataScopeNotice from "@/components/DataScopeNotice";
-import type { DataScope } from "@/components/DataScopeNotice";
 
 export default function AnalysisTab() {
   const router = useRouter();
@@ -17,21 +15,20 @@ export default function AnalysisTab() {
   const [nodeDetail, setNodeDetail] = useState<any[] | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [remedialOpen, setRemedialOpen] = useState(false);
-  const [scope, setScope] = useState<DataScope>("real");
 
   const headers = { Authorization: "Bearer " + getAuthToken() };
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/analysis?scope=${scope}`, { headers });
+      const r = await fetch(`/api/analysis `, { headers });
       if (r.ok) setData(await r.json());
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -46,7 +43,7 @@ export default function AnalysisTab() {
     // 切换知识点时清空勾选，避免上一个知识点的学生残留到"布置补充学习"
     setChecked(new Set());
     try {
-      const r = await fetch(`/api/analysis?nodeId=${encodeURIComponent(nodeId)}&scope=${scope}`, { headers });
+      const r = await fetch(`/api/analysis?nodeId=${encodeURIComponent(nodeId)}`, { headers });
       if (r.ok) setNodeDetail((await r.json()).nodeDetail || []);
     } catch (e) {
       console.error(e);
@@ -66,7 +63,6 @@ export default function AnalysisTab() {
 
   return (
     <div>
-      <DataScopeNotice scope={scope} onScopeChange={(next) => { setScope(next); setExpandedNode(null); setNodeDetail(null); setChecked(new Set()); }} />
 
       <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
         {[
@@ -111,7 +107,7 @@ export default function AnalysisTab() {
                       <div className="w-40 shrink-0 hidden md:block">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 bg-gray-100 rounded-full h-2">
-                            <div className={`h-2 rounded-full ${masteryColor(mastery)}`} style={{ width: `${Math.min(100, mastery)}%` }} />
+                            <div className={`h-2 rounded-full ${masteryColor(mastery)}`} style={{ width: `${Math.min(100, mastery)}%`}} />
                           </div>
                           <span className="text-[10px] text-[var(--color-text-muted)] w-12 text-right">{mastery}%</span>
                         </div>
@@ -153,7 +149,7 @@ export default function AnalysisTab() {
                                       })} className="accent-[var(--color-primary)]" />
                                     <span className="text-xs font-medium w-20 truncate">{d.name || d.user_email.split("@")[0]}</span>
                                     <div className="flex-1 bg-gray-100 rounded-full h-1.5 max-w-[160px]">
-                                      <div className={`h-1.5 rounded-full ${masteryColor(m)}`} style={{ width: `${Math.min(100, m)}%` }} />
+                                      <div className={`h-1.5 rounded-full ${masteryColor(m)}`} style={{ width: `${Math.min(100, m)}%`}} />
                                     </div>
                                     <span className="text-[10px] text-[var(--color-text-muted)] w-24">掌握 {m}% · 练习 {d.quiz_correct}/{d.quiz_total}</span>
                                     <button onClick={() => router.push(`/teacher/students/${encodeURIComponent(d.user_email)}`)}
@@ -230,7 +226,7 @@ export default function AnalysisTab() {
                   </div>
                   <div className="flex items-center gap-4 mt-3">
                     <div className="flex-1 bg-gray-100 rounded-full h-2.5">
-                      <div className="bg-[var(--color-primary)] h-2.5 rounded-full" style={{ width: `${total > 0 ? Math.round((done / total) * 100) : 0}%` }} />
+                      <div className="bg-[var(--color-primary)] h-2.5 rounded-full" style={{ width: `${total > 0 ? Math.round((done / total) * 100) : 0}%`}} />
                     </div>
                     <span className="text-xs text-[var(--color-text-secondary)] shrink-0">{done}/{total} 完成 · 待批 {t.submitted} · 需修改 {t.revision} · 逾期 {t.overdue}</span>
                   </div>

@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthToken } from "@/contexts/AppContext";
 import StudentsList from "./StudentsList";
-import DataScopeNotice, { type DataScope } from "@/components/DataScopeNotice";
 
 export default function ClassesTab() {
   const router = useRouter();
@@ -13,7 +12,6 @@ export default function ClassesTab() {
   const [error, setError] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [scope, setScope] = useState<DataScope>("real");
 
   const headers = { "Content-Type": "application/json", Authorization: "Bearer " + getAuthToken() };
 
@@ -21,7 +19,7 @@ export default function ClassesTab() {
     setLoading(true);
     setError("");
     try {
-      const r = await fetch(`/api/classes?scope=${scope}`, { headers: { Authorization: "Bearer " + getAuthToken() } });
+      const r = await fetch(`/api/classes `, { headers: { Authorization: "Bearer " + getAuthToken() } });
       if (r.ok) setClasses(await r.json());
       else setError("加载失败，请重试");
     } catch (e) {
@@ -31,7 +29,7 @@ export default function ClassesTab() {
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -79,7 +77,6 @@ export default function ClassesTab() {
 
   return (
     <div>
-      <DataScopeNotice compact scope={scope} onScopeChange={setScope} />
 
       <div className="grid grid-cols-2 gap-4 mb-5">
         <div className="bg-white rounded-xl border border-[var(--color-border)] p-4">

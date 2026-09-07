@@ -8,8 +8,6 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area, LineChart, Line,
 } from "recharts";
-import DataScopeNotice from "@/components/DataScopeNotice";
-import type { DataScope } from "@/components/DataScopeNotice";
 
 const EVENT_META: Record<string, string> = {
   KNOWLEDGE_COMPLETED: "📚",
@@ -40,12 +38,11 @@ export default function DashboardTab() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [scope, setScope] = useState<DataScope>("real");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/dashboard?scope=${scope}`, { headers: { Authorization: "Bearer " + getAuthToken() } });
+      const r = await fetch(`/api/dashboard `, { headers: { Authorization: "Bearer " + getAuthToken() } });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "加载失败");
       setData(d);
@@ -55,7 +52,7 @@ export default function DashboardTab() {
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -104,7 +101,6 @@ export default function DashboardTab() {
 
   return (
     <div>
-      <DataScopeNotice scope={scope} onScopeChange={setScope} />
 
       {/* 统计卡 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">

@@ -25,25 +25,24 @@ export async function GET(req: NextRequest) {
   const { auth, resp } = await requireTeacher(req);
   if (resp) return resp;
   try {
-    const includeDemo = req.nextUrl.searchParams.get("scope") === "all";
     await ensureLearningSchema();
     await ensureKnowledgeGraphSchema().catch(() => {});
     ensureAnalyticsIndexes().catch(() => {});
 
     const [classes, studentEmails, taskStats, pending, classProgress] = await Promise.all([
-      listClasses(auth.email, includeDemo),
-      listTeacherStudentEmails(auth.email, includeDemo),
-      dashboardTaskStats(auth.email, includeDemo),
-      dashboardPendingSubmissions(auth.email, includeDemo),
-      dashboardClassProgress(auth.email, includeDemo),
+      listClasses(auth.email),
+      listTeacherStudentEmails(auth.email),
+      dashboardTaskStats(auth.email),
+      dashboardPendingSubmissions(auth.email),
+      dashboardClassProgress(auth.email),
     ]);
     const [active7d, trend, quizTopics, weakStudents, recentEvents, tasks] = await Promise.all([
-      dashboardActiveStudents(auth.email, 7, includeDemo),
-      dashboardTrend(auth.email, 14, includeDemo),
-      dashboardQuizTopicAccuracy(auth.email, includeDemo),
-      dashboardWeakStudents(auth.email, 5, includeDemo),
-      dashboardRecentEvents(auth.email, 20, includeDemo),
-      listTeacherTasks(auth.email, includeDemo),
+      dashboardActiveStudents(auth.email, 7),
+      dashboardTrend(auth.email, 14),
+      dashboardQuizTopicAccuracy(auth.email),
+      dashboardWeakStudents(auth.email, 5),
+      dashboardRecentEvents(auth.email, 20),
+      listTeacherTasks(auth.email),
     ]);
 
     const overdueTasks = tasks
@@ -72,7 +71,6 @@ export async function GET(req: NextRequest) {
       weakStudents,
       overdueTasks,
       recentEvents: recentEvents.slice(0, 15),
-      scope: includeDemo ? "all" : "real",
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

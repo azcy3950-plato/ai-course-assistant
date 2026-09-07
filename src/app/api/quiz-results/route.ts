@@ -30,8 +30,7 @@ export async function GET(req: NextRequest) {
         rows = r;
       } else {
         // 教师不传 email：仅本班学生范围（此前查全校，跨班数据泄漏）
-        const includeDemo = sp.get("scope") === "all";
-        const myStudents = await listTeacherStudentEmails(auth.email, includeDemo);
+        const myStudents = await listTeacherStudentEmails(auth.email);
         if (myStudents.length === 0) {
           rows = [];
         } else {

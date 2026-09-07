@@ -7,8 +7,7 @@ export async function GET(req: NextRequest) {
   if (resp) return resp;
   try {
     await ensureLearningSchema();
-    const includeDemo = req.nextUrl.searchParams.get("scope") === "all";
-    const classes = await listClasses(auth.email, includeDemo);
+    const classes = await listClasses(auth.email);
     return NextResponse.json(classes);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

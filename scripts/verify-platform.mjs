@@ -346,24 +346,16 @@ async function main() {
     }, [ttoken, tag + " 教师回复"]);
     record("教师回复私信成功", replyRes.status === 200, `HTTP ${replyRes.status}`);
 
-    // 教师仪表盘 payload 结构（默认「仅真实学生」→ 演示教师 0 人）
+    // 教师仪表盘 payload 结构
     const dash = await tpage.evaluate(async (t) => {
       const r = await fetch("/api/dashboard", { headers: { Authorization: "Bearer " + t } });
       const d = await r.json();
       return { status: r.status, classCount: d.stats?.classCount, studentCount: d.stats?.studentCount,
-        trendLen: (d.trend || []).length, weakLen: (d.weakStudents || []).length, scope: d.scope, error: d.error || "" };
+        trendLen: (d.trend || []).length, weakLen: (d.weakStudents || []).length, error: d.error || "" };
     }, ttoken);
-    record("仪表盘默认剔除演示账号（0 人）", dash.status === 200 && dash.studentCount === 0 && dash.scope === "real", `${dash.scope} ${dash.studentCount} 人`);
-    // 含演示账号 → 12 名学生 + 14 天趋势
-    const dashAll = await tpage.evaluate(async (t) => {
-      const r = await fetch("/api/dashboard?scope=all", { headers: { Authorization: "Bearer " + t } });
-      const d = await r.json();
-      return { status: r.status, classCount: d.stats?.classCount, studentCount: d.stats?.studentCount,
-        trendLen: (d.trend || []).length, weakLen: (d.weakStudents || []).length, scope: d.scope, error: d.error || "" };
-    }, ttoken);
-    record("仪表盘 payload：班级≥2 学生=12", dashAll.status === 200 && dashAll.classCount >= 2 && dashAll.studentCount === 12, `${dashAll.classCount} 班 ${dashAll.studentCount} 人`);
-    record("仪表盘 trend 恰 14 条", dashAll.trendLen === 14, `${dashAll.trendLen} 条`);
-    record("仪表盘薄弱学生 ≤5", dashAll.weakLen <= 5, `${dashAll.weakLen} 人`);
+    record("仪表盘 payload：班级≥2 学生=12", dash.status === 200 && dash.classCount >= 2 && dash.studentCount === 12, `${dash.classCount} 班 ${dash.studentCount} 人`);
+    record("仪表盘 trend 恰 14 条", dash.trendLen === 14, `${dash.trendLen} 条`);
+    record("仪表盘薄弱学生 ≤5", dash.weakLen <= 5, `${dash.weakLen} 人`);
 
     // ── 学生侧：未读增加 → 打开会话归零 → 对方消息已读 ──
     const unreadAfter = await page.evaluate(async (t) => {
@@ -444,7 +436,7 @@ async function main() {
       out.adminStudentPut = s3.status;
       const s4 = await fetch("/api/admin/student?email=" + encodeURIComponent("student13@demo.edu.cn"), { method: "DELETE", headers: { Authorization: "Bearer " + t } });
       out.adminStudentDelete = s4.status;
-      const s5 = await fetch("/api/quiz-results?scope=all", { headers: { Authorization: "Bearer " + t } });
+      const s5 = await fetch("/api/quiz-results", { headers: { Authorization: "Bearer " + t } });
       const d5 = await s5.json();
       const demoEmails = new Set(Array.from({ length: 12 }, (_, i) => `student${String(i + 1).padStart(2, "0")}@demo.edu.cn`));
       out.quizAllOwn = Array.isArray(d5) && d5.every((x) => demoEmails.has(x.user_email));

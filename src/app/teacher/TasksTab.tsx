@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthToken } from "@/contexts/AppContext";
 import { TASK_TYPE_META, formatDeadline } from "@/lib/task-ui";
-import DataScopeNotice, { type DataScope } from "@/components/DataScopeNotice";
 
 const TASK_TYPES = [
   { k: "KNOWLEDGE", l: "📚 知识学习任务", hint: "关联知识点，学生去知识问答学习" },
@@ -23,7 +22,6 @@ export default function TasksTab() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [scope, setScope] = useState<DataScope>("real");
   const [error, setError] = useState("");
 
   // 表单
@@ -44,7 +42,7 @@ export default function TasksTab() {
     setError("");
     try {
       const [tRes, cRes, gRes] = await Promise.all([
-        fetch(`/api/tasks?scope=${scope}`, { headers: { Authorization: "Bearer " + getAuthToken() } }),
+        fetch(`/api/tasks `, { headers: { Authorization: "Bearer " + getAuthToken() } }),
         fetch("/api/classes", { headers: { Authorization: "Bearer " + getAuthToken() } }),
         fetch("/api/knowledge-graph", { headers: { Authorization: "Bearer " + getAuthToken() } }),
       ]);
@@ -56,7 +54,7 @@ export default function TasksTab() {
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -102,7 +100,6 @@ export default function TasksTab() {
 
   return (
     <div>
-      <DataScopeNotice scope={scope} onScopeChange={setScope} />
       <div className="flex items-center justify-between mb-5">
         <div>
           <p className="text-xs text-[var(--color-text-muted)]">共 {tasks.length} 个任务</p>
@@ -265,7 +262,7 @@ export default function TasksTab() {
                 </div>
                 <div className="flex items-center gap-4 mt-3">
                   <div className="flex-1 bg-gray-100 rounded-full h-2.5">
-                    <div className="bg-[var(--color-primary)] h-2.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    <div className="bg-[var(--color-primary)] h-2.5 rounded-full transition-all" style={{ width: `${pct}%`}} />
                   </div>
                   <span className="text-xs text-[var(--color-text-secondary)] shrink-0">{done}/{total} 完成</span>
                 </div>

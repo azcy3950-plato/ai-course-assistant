@@ -27,9 +27,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (auth.role === "teacher") {
       if (task.teacher_email !== auth.email) return NextResponse.json({ error: "无权查看该任务" }, { status: 403 });
-      const includeDemo = req.nextUrl.searchParams.get("scope") === "all";
       const [targets, submissions, attachments] = await Promise.all([
-        listTaskTargets(taskId, includeDemo), listTaskSubmissions(taskId, includeDemo), listTaskAttachments(taskId),
+        listTaskTargets(taskId), listTaskSubmissions(taskId), listTaskAttachments(taskId),
       ]);
       return NextResponse.json({ task, targets, submissions, attachments });
     }

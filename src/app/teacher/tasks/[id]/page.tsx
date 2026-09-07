@@ -6,7 +6,6 @@ import { useApp } from "@/contexts/AppContext";
 import { getAuthToken } from "@/contexts/AppContext";
 import { TASK_TYPE_META, TASK_STATUS_META, formatDate, formatDeadline } from "@/lib/task-ui";
 import RemedialModal from "../../RemedialModal";
-import DataScopeNotice, { type DataScope } from "@/components/DataScopeNotice";
 
 export default function TeacherTaskDetailPage() {
   const { state } = useApp();
@@ -26,7 +25,6 @@ export default function TeacherTaskDetailPage() {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
   const [authorized, setAuthorized] = useState(false);
-  const [scope, setScope] = useState<DataScope>("real");
 
   // 角色守卫：非教师（admin 视为只读教师）重定向，避免此前"永久加载中"
   useEffect(() => {
@@ -41,7 +39,7 @@ export default function TeacherTaskDetailPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/tasks/${id}?scope=${scope}`, { headers: { Authorization: "Bearer " + getAuthToken() } });
+      const r = await fetch(`/api/tasks/${id} `, { headers: { Authorization: "Bearer " + getAuthToken() } });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         setError(d.error || "加载失败");
@@ -58,7 +56,7 @@ export default function TeacherTaskDetailPage() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, scope]);
+  }, [id]);
 
   useEffect(() => { if (authorized) load(); }, [authorized, load]);
 
@@ -76,7 +74,7 @@ export default function TeacherTaskDetailPage() {
       rows.push([
         t.name || t.user_email.split("@")[0],
         TASK_STATUS_META[es as keyof typeof TASK_STATUS_META]?.label || es,
-        latest ? `V${latest.version}` : "",
+        latest ? `V${latest.version}`: "",
         latest ? new Date(latest.submitted_at).toLocaleString("zh-CN", { hour12: false }) : "",
         note,
       ]);
@@ -139,7 +137,6 @@ export default function TeacherTaskDetailPage() {
       <button onClick={() => router.push("/teacher")} className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-primary)] mb-4">
         ← 返回教学管理
       </button>
-      <DataScopeNotice scope={scope} onScopeChange={setScope} />
 
       <div className="bg-white rounded-xl border border-[var(--color-border)] p-5 mb-4">
         <div className="flex items-center gap-2 flex-wrap">
