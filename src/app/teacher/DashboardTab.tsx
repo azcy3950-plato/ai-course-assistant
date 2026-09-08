@@ -42,7 +42,7 @@ export default function DashboardTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/dashboard `, { headers: { Authorization: "Bearer " + getAuthToken() } });
+      const r = await fetch(`/api/dashboard`, { headers: { Authorization: "Bearer " + getAuthToken() } });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "加载失败");
       setData(d);

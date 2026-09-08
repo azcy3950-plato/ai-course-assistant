@@ -34,7 +34,7 @@ export default function ClassDetailPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/classes/${id} `, { headers: { Authorization: "Bearer " + getAuthToken() } });
+      const r = await fetch(`/api/classes/${id}`, { headers: { Authorization: "Bearer " + getAuthToken() } });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         setError(d.error || "加载失败");

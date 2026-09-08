@@ -22,7 +22,7 @@ export default function StudentsList() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/students `, {
+      const res = await fetch(`/api/students`, {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}`},
       });
       if (res.ok) setStudents((await res.json()).students || []);

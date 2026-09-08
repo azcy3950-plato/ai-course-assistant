@@ -42,7 +42,7 @@ export default function TasksTab() {
     setError("");
     try {
       const [tRes, cRes, gRes] = await Promise.all([
-        fetch(`/api/tasks `, { headers: { Authorization: "Bearer " + getAuthToken() } }),
+        fetch(`/api/tasks`, { headers: { Authorization: "Bearer " + getAuthToken() } }),
         fetch("/api/classes", { headers: { Authorization: "Bearer " + getAuthToken() } }),
         fetch("/api/knowledge-graph", { headers: { Authorization: "Bearer " + getAuthToken() } }),
       ]);

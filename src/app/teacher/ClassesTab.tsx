@@ -19,7 +19,7 @@ export default function ClassesTab() {
     setLoading(true);
     setError("");
     try {
-      const r = await fetch(`/api/classes `, { headers: { Authorization: "Bearer " + getAuthToken() } });
+      const r = await fetch(`/api/classes`, { headers: { Authorization: "Bearer " + getAuthToken() } });
       if (r.ok) setClasses(await r.json());
       else setError("加载失败，请重试");
     } catch (e) {
