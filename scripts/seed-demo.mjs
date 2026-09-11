@@ -276,25 +276,6 @@ async function main() {
   await pool.query("DELETE FROM student_node_progress WHERE user_email = ANY($1)", [demoEmails]);
   await pool.query("DELETE FROM direct_messages WHERE student_email = ANY($1) OR teacher_email = ANY($1)", [demoEmails]);
 
-  // ── 课程资源演示记录（用于教师端知识库截图与验收） ──
-  // 只写入文档状态表，不伪造 OSS 对象；真实上传后可直接覆盖同名记录。
-  await pool.query("DELETE FROM document_status WHERE file_key LIKE 'uploads/demo-%'");
-  const demoDocs = [
-    ["城市排水系统基础.pdf", "uploads/demo-drainage-basics.pdf",  "READY", 18],
-    ["海绵城市LID设施设计要点.pptx", "uploads/demo-lid-design.pptx", "READY", 12],
-    ["雨水管渠设计计算示例.docx", "uploads/demo-stormwater-calculation.docx", "READY", 9],
-    ["课程知识图谱建设说明.pdf", "uploads/demo-knowledge-graph.pdf", "READY", 7],
-  ];
-  for (const [fileName, fileKey, status, chunkCount] of demoDocs) {
-    await pool.query(
-      `INSERT INTO document_status (file_name, file_key, status, chunk_count, uploaded_by)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (file_key) DO UPDATE SET file_name=EXCLUDED.file_name, status=EXCLUDED.status,
-         chunk_count=EXCLUDED.chunk_count, uploaded_by=EXCLUDED.uploaded_by, updated_at=now()`,
-      [fileName, fileKey, status, chunkCount, teacher],
-    );
-  }
-
   // ── 1. 用户 ──
   const pwHash = await hash(DEMO_PASSWORD, 10);
   await pool.query(
