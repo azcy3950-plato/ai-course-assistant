@@ -991,6 +991,35 @@ export async function listDocumentStatus() {
   return rows;
 }
 
+/** 兼容早期直接写入 document_chunks、未写 document_status 的课程资源。 */
+export async function backfillDocumentStatusFromChunks(uploadedBy = "system") {
+  const { rows: chunks } = await pool.query(
+    `SELECT doc_name, file_url, count(*)::int AS chunk_count
+     FROM document_chunks
+     WHERE doc_name IS NOT NULL AND file_url IS NOT NULL
+     GROUP BY doc_name, file_url
+     ORDER BY max(created_at) DESC
+     LIMIT 200`,
+  );
+  for (const chunk of chunks) {
+    let fileKey = "";
+    try {
+      const url = new URL(String(chunk.file_url));
+      fileKey = url.pathname.replace(/^\/+/, "");
+      for (let i = 0; i < 2 && /%[0-9a-f]{2}/i.test(fileKey); i++) fileKey = decodeURIComponent(fileKey);
+    } catch { /* 保留无效链接之外的其他记录 */ }
+    if (!fileKey.startsWith("uploads/")) continue;
+    await upsertDocumentStatus({
+      fileKey,
+      fileName: String(chunk.doc_name),
+      status: "READY",
+      chunkCount: Number(chunk.chunk_count || 0),
+      uploadedBy,
+    });
+  }
+  return listDocumentStatus();
+}
+
 export async function getDocumentStatus(fileKey: string) {
   const { rows } = await pool.query("SELECT * FROM document_status WHERE file_key = $1", [fileKey]);
   return rows[0] || null;
