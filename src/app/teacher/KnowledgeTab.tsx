@@ -42,8 +42,24 @@ export default function KnowledgeTab() {
         fetch("/api/documents-status", { headers }).catch(() => null),
         fetch("/api/knowledge-graph", { headers }),
       ]);
-      if (fRes.ok) setFiles(await fRes.json());
-      if (dRes && dRes.ok) setDocs((await dRes.json()).items || []);
+      const storageFiles = fRes.ok ? await fRes.json() : [];
+      if (fRes.ok) setFiles(storageFiles);
+      const statusItems = dRes && dRes.ok ? ((await dRes.json()).items || []) : [];
+      // 兼容历史上传：OSS 中已有文件但状态回写中断时，仍展示为待处理资源。
+      const knownKeys = new Set(statusItems.map((d: any) => d.file_key));
+      const orphanFiles = storageFiles
+        .filter((f: any) => f.key && !knownKeys.has(f.key))
+        .map((f: any) => ({
+          file_key: f.key,
+          file_name: f.name,
+          status: "UPLOADING",
+          chunk_count: 0,
+          error: "",
+          uploaded_by: "",
+          created_at: f.lastModified || new Date().toISOString(),
+          updated_at: f.lastModified || new Date().toISOString(),
+        }));
+      setDocs([...statusItems, ...orphanFiles]);
       if (gRes.ok) {
         const d = await gRes.json();
         setGraphCounts({
@@ -79,7 +95,7 @@ export default function KnowledgeTab() {
         body: JSON.stringify({ fileName: file.name, fileType: file.type }),
       });
       if (!urlRes.ok) { alert("获取上传链接失败"); return; }
-      const { uploadUrl, fileKey, contentType } = await urlRes.json();
+      const { uploadUrl, fileKey, fileUrl, contentType } = await urlRes.json();
 
       // 2) 状态：上传中
       await fetch("/api/documents-status", {
@@ -114,7 +130,7 @@ export default function KnowledgeTab() {
       try {
         const pRes = await fetch("/api/process-file", {
           method: "POST", headers,
-          body: JSON.stringify({ fileName: file.name, fileKey }),
+          body: JSON.stringify({ fileName: file.name, fileKey, fileUrl }),
         });
         const pData = await pRes.json().catch(() => ({}));
         if (pRes.ok) {

@@ -84,25 +84,28 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { fileName, fileUrl } = await req.json();
-    if (!fileName || !fileUrl) {
+    const { fileName, fileUrl: requestedFileUrl, fileKey: requestedFileKey } = await req.json();
+    if (!fileName || (!requestedFileUrl && !requestedFileKey)) {
       return NextResponse.json({ error: "参数缺失" }, { status: 400 });
     }
 
     // Download via S3 client (bucket is private)
-    let key = "";
-    try {
-      const urlObj = new URL(fileUrl);
-      key = decodeURIComponent(urlObj.pathname.substring(1));
-    } catch {
-      return NextResponse.json({ error: "无效的文件地址" }, { status: 400 });
+    let key = typeof requestedFileKey === "string" ? requestedFileKey : "";
+    if (!key && requestedFileUrl) {
+      try {
+        const urlObj = new URL(requestedFileUrl);
+        key = decodeURIComponent(urlObj.pathname.substring(1));
+      } catch {
+        return NextResponse.json({ error: "无效的文件地址" }, { status: 400 });
+      }
     }
     // 归属校验:只允许读取 uploads/ 前缀的教师上传对象,防越权读取其他存储
     if (!key.startsWith("uploads/")) {
       return NextResponse.json({ error: "无权访问该文件" }, { status: 403 });
     }
     // 入库链接由服务端按自家 OSS 域名重建（防教师传入外部域名的伪造链接，后续被渲染给学生）
-    const fileUrlSafe = `https://${OSS_BUCKET}.${process.env.OSS_ENDPOINT || "oss-cn-beijing.aliyuncs.com"}/${key}`;
+    const endpointHost = (process.env.OSS_ENDPOINT || "oss-cn-beijing.aliyuncs.com").replace("https://", "").replace("http://", "");
+    const fileUrlSafe = `https://${OSS_BUCKET}.${endpointHost}/${key}`;
     const s3Res = await s3.send(new GetObjectCommand({ Bucket: OSS_BUCKET, Key: key }));
     const bufChunks: Buffer[] = [];
     if (s3Res.Body) {

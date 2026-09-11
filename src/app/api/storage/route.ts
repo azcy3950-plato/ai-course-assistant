@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     if (!fileName || typeof fileName !== "string") return NextResponse.json({ error: "参数缺失" }, { status: 400 });
     const safeName = fileName.replace(/[<>:"/\\|?*]/g, "_");
     // ContentType 白名单:仅允许常见文档/图片类型,防上传 HTML 到公开桶(存储型 XSS 载体)
-    const allowedTypes = ["application/pdf", "text/plain", "text/markdown", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/png", "image/jpeg", "image/gif", "application/octet-stream"];
+    const allowedTypes = ["application/pdf", "text/plain", "text/markdown", "application/msword", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/png", "image/jpeg", "image/gif", "application/octet-stream"];
     const ct = allowedTypes.includes(fileType) ? fileType : "application/octet-stream";
     const fileKey = "uploads/" + Date.now() + "_" + safeName;
     const uploadUrl = await getSignedUrl(
