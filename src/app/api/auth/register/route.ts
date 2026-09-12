@@ -11,7 +11,7 @@ import {
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-/** 注册：手机号或邮箱 + 验证码（先发码后注册），一律注册为学生 */
+/** 注册：仅邮箱 + 验证码（手机号注册已停用），一律注册为学生 */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -19,6 +19,12 @@ export async function POST(req: NextRequest) {
     const code = typeof body.code === "string" ? body.code.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
     const name = typeof body.name === "string" ? body.name.trim() : "";
+
+    // Keep the server-side contract explicit so legacy clients cannot re-enable
+    // the retired phone registration flow.
+    if (body.identifierType && body.identifierType !== "EMAIL") {
+      return NextResponse.json({ error: "目前仅支持邮箱注册" }, { status: 400 });
+    }
 
     const normalized = normalizeIdentifier(raw);
     if (!normalized || normalized.type !== "EMAIL") {
@@ -40,8 +46,7 @@ export async function POST(req: NextRequest) {
     // 重复账号：注册场景允许明确提示
     const dup = await pool.query("SELECT 1 FROM users WHERE email = $1 OR phone = $1 LIMIT 1", [identifier]);
     if ((dup.rowCount ?? 0) > 0) {
-      const label = type === "EMAIL" ? "该邮箱已注册" : "该手机号已注册";
-      return NextResponse.json({ error: `${label}，请直接登录或找回密码` }, { status: 409 });
+      return NextResponse.json({ error: "该邮箱已注册，请直接登录或找回密码" }, { status: 409 });
     }
 
     const verified = await consumeVerificationCode(identifier, type, "REGISTER", code);

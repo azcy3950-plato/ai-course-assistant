@@ -19,7 +19,7 @@ interface AppContextValue {
   darkMode: boolean;
   toggleDarkMode: () => void;
   login: (identifier: string, password: string) => Promise<{ error: string | null }>;
-  signup: (identifier: string, identifierType: 'EMAIL' | 'PHONE', code: string, password: string, name: string, role?: UserRole) => Promise<{ error: string | null }>;
+  signup: (identifier: string, identifierType: 'EMAIL', code: string, password: string, name: string, role?: UserRole) => Promise<{ error: string | null }>;
   sendVerificationCode: (identifier: string, purpose: 'REGISTER' | 'RESET_PASSWORD') => Promise<{ error: string | null; masked?: string; echoCode?: string; retryAfter?: number }>;
   verifyCode: (identifier: string, purpose: 'REGISTER' | 'RESET_PASSWORD', code: string) => Promise<{ error: string | null; resetToken?: string }>;
   resetPassword: (identifier: string, resetToken: string, newPassword: string) => Promise<{ error: string | null }>;
@@ -99,7 +99,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch { return { error: '网络错误，请重试' }; }
   }, []);
 
-  const signup = useCallback(async (identifier: string, identifierType: 'EMAIL' | 'PHONE', code: string, password: string, name: string, role: UserRole = 'student') => {
+  const signup = useCallback(async (identifier: string, identifierType: 'EMAIL', code: string, password: string, name: string, role: UserRole = 'student') => {
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
