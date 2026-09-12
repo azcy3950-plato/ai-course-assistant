@@ -11,6 +11,11 @@ import {
 } from "@/lib/learning-db";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+function toIsoOrNull(value: unknown): string | null {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
 
 // 教师查看学生列表与学习聚合；归属校验：教师仅限本班学生（admin 全局放行，账号管理职责）。
 // 单学生详情额外包含任务、学习事件、提交批阅与薄弱知识点（教学平台外围功能）
@@ -99,9 +104,9 @@ export async function GET(req: NextRequest) {
          (SELECT count(*) FROM learning_events le WHERE le.user_email = COALESCE(u.email, u.phone)) AS event_count,
          (SELECT count(*) FROM student_tasks st WHERE st.user_email = COALESCE(u.email, u.phone)) AS task_count,
          GREATEST(
-           COALESCE((SELECT max(created_at) FROM learning_records lr WHERE lr.user_email = COALESCE(u.email, u.phone)), '-infinity'::timestamptz),
-           COALESCE((SELECT max(created_at) FROM quiz_results qr WHERE qr.user_email = COALESCE(u.email, u.phone)), '-infinity'::timestamptz),
-           COALESCE((SELECT max(created_at) FROM learning_events le WHERE le.user_email = COALESCE(u.email, u.phone)), '-infinity'::timestamptz)
+           (SELECT max(created_at) FROM learning_records lr WHERE lr.user_email = COALESCE(u.email, u.phone)),
+           (SELECT max(created_at) FROM quiz_results qr WHERE qr.user_email = COALESCE(u.email, u.phone)),
+           (SELECT max(created_at) FROM learning_events le WHERE le.user_email = COALESCE(u.email, u.phone))
          ) AS last_active
        FROM users u WHERE u.role = 'student'
        ORDER BY last_active DESC NULLS LAST, u.created_at DESC`,
@@ -110,13 +115,13 @@ export async function GET(req: NextRequest) {
       id: r.id,
       email: r.email,
       name: r.name,
-      createdAt: r.created_at ? new Date(r.created_at).toISOString() : null,
+      createdAt: toIsoOrNull(r.created_at),
       queryCount: Number(r.query_count || 0),
       quizTotal: Number(r.quiz_total || 0),
       quizCorrect: Number(r.quiz_correct || 0),
       quizRate: Number(r.quiz_total || 0) ? Math.round((Number(r.quiz_correct) / Number(r.quiz_total)) * 100) : 0,
       guidedCount: Number(r.guided_count || 0),
-      lastActive: r.last_active ? new Date(r.last_active).toISOString() : null,
+      lastActive: toIsoOrNull(r.last_active),
     }));
     return NextResponse.json({ students });
   } catch (err: any) {
