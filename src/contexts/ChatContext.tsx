@@ -101,12 +101,20 @@ interface ChatContextValue {
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
-const STORAGE_KEY = "aicourse-chat-v1";
+function storageKey(): string {
+  if (typeof window === "undefined") return "aicourse-chat-v1-anonymous";
+  let identity = "anonymous";
+  try {
+    const user = JSON.parse(localStorage.getItem("aicourse-user") || "null");
+    identity = String(user?.email || user?.phone || "anonymous").toLowerCase().replace(/[^a-z0-9_.@+-]/g, "_");
+  } catch { /* 使用匿名隔离空间 */ }
+  return `aicourse-chat-v1-${identity}`;
+}
 
 function loadState(): { conversations: Conversation[]; activeConversationId: string | null } {
   if (typeof window === "undefined") return { conversations: [], activeConversationId: null };
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey());
     if (raw) return JSON.parse(raw);
   } catch (e) {}
   return { conversations: [], activeConversationId: null };
@@ -117,7 +125,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Persist to localStorage
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+    try { localStorage.setItem(storageKey(), JSON.stringify(state)); } catch (e) {}
   }, [state]);
 
   const createConversation = useCallback(() => {

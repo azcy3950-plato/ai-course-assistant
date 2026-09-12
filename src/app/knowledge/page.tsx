@@ -27,6 +27,7 @@ export default function KnowledgePage() {
   // 阶段检测：生成后提示学生，可立即或稍后进行（不再强制弹窗）
   const [pendingQuiz, setPendingQuiz] = useState<{ token: string; questions: any[] } | null>(null);
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [persistenceNotice, setPersistenceNotice] = useState("");
   const [taskContext, setTaskContext] = useState<{ id: string; title: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const sourcePanelRef = useRef<HTMLDivElement>(null);
@@ -60,6 +61,7 @@ export default function KnowledgePage() {
 
   const handleSend = useCallback(async (content: string, options?: { reuseUserMessage?: boolean }) => {
     if (!activeConv) return;
+    setPersistenceNotice("");
 
     // Add user message
     if (!options?.reuseUserMessage) addMessage(activeConv.id, { role: 'user', content });
@@ -98,9 +100,11 @@ export default function KnowledgePage() {
           ...(gc?.highlightNodeIds || []),
           ...((gc?.relatedNodes || []).map((n: any) => n.id)),
         ].filter((x: any) => typeof x === "string").slice(0, 10);
-        await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: gcTopics, has_references: (lastRefs?.length || 0) > 0 }) });
+        const recordRes = await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: gcTopics, has_references: (lastRefs?.length || 0) > 0 }) });
+        if (!recordRes.ok) throw new Error("record");
         // 问答存档（供 AI 历史页与教师内容审核使用）
-        await fetch('/api/qa-messages', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer: fullAnswer, references: lastRefs || [] }) });
+        const qaRes = await fetch('/api/qa-messages', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer: fullAnswer, references: lastRefs || [] }) });
+        if (!qaRes.ok) throw new Error("qa");
         const qr = await fetch('/api/quiz', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         const qd = await qr.json();
         if (qd.needsQuiz && qd.questions?.length) {
@@ -111,7 +115,7 @@ export default function KnowledgePage() {
         } else if (qd.needsQuiz) {
           setQuizNotice('小测服务暂时不可用，稍后再试');
         }
-      } catch (e) { console.error('[knowledge] 持久化失败:', e); }
+      } catch (e) { console.error('[knowledge] 持久化失败:', e); setPersistenceNotice("回答已生成，但学习记录保存失败，请稍后重试"); }
 
       addRecord('knowledge', content.slice(0, 30) + (content.length > 30 ? '...' : ''), `查询了关于"${content.slice(0, 50)}"的内容`);
     } catch (err) {
@@ -276,10 +280,10 @@ export default function KnowledgePage() {
               <button key={q} onClick={() => handleSend(q)} disabled={loading} className="text-xs px-3 py-1.5 bg-blue-50 text-[var(--color-primary)] rounded-full hover:bg-blue-100 transition-colors disabled:opacity-50">{q}</button>
             ))}
           </div>
-          {(quizNotice || pendingQuiz) && (
+          {(persistenceNotice || quizNotice || pendingQuiz) && (
             <div className="px-6 -mt-1 mb-1">
-              <div className="flex items-center gap-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-                <span>📝 {pendingQuiz ? "已为你准备好阶段检测（2 道题），可立即进行" : quizNotice}</span>
+              <div className={`flex items-center gap-3 text-[11px] rounded-lg px-3 py-1.5 ${persistenceNotice ? "text-red-700 bg-red-50 border border-red-200" : "text-amber-700 bg-amber-50 border border-amber-200"}`}>
+                <span>{persistenceNotice ? "⚠️ " + persistenceNotice : "📝 " + (pendingQuiz ? "已为你准备好阶段检测（2 道题），可立即进行" : quizNotice)}</span>
                 {pendingQuiz && (
                   <button onClick={() => setQuizOpen(true)} className="px-2.5 py-0.5 rounded bg-[var(--color-primary)] text-white font-medium shrink-0">立即检测</button>
                 )}

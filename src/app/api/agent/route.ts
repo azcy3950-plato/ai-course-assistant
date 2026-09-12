@@ -410,6 +410,20 @@ export async function POST(req: NextRequest) {
                 }
               }
             }
+            // DeepSeek 可能在最后一个换行前结束，补处理残留 SSE 数据。
+            if (buffer.trim()) {
+              const line = buffer.trim();
+              if (line.startsWith("data: ")) {
+                const data = line.slice(6).trim();
+                if (data !== "[DONE]") {
+                  try {
+                    const parsed = JSON.parse(data);
+                    const content = parsed.choices?.[0]?.delta?.content || "";
+                    if (content) controller.enqueue(encoder.encode(content));
+                  } catch { /* 尾包不完整时安全忽略 */ }
+                }
+              }
+            }
             controller.close();
           } catch (error) {
             controller.error(error);

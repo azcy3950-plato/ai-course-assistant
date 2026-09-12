@@ -15,16 +15,19 @@ export default function AnalysisTab() {
   const [nodeDetail, setNodeDetail] = useState<any[] | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [remedialOpen, setRemedialOpen] = useState(false);
+  const [error, setError] = useState("");
 
   const headers = { Authorization: "Bearer " + getAuthToken() };
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const r = await fetch(`/api/analysis`, { headers });
       if (r.ok) setData(await r.json());
+      else setError((await r.json().catch(() => ({}))).error || "学情数据加载失败");
     } catch (e) {
-      console.error(e);
+      console.error(e); setError("网络错误，学情数据加载失败");
     } finally {
       setLoading(false);
     }
@@ -83,6 +86,8 @@ export default function AnalysisTab() {
 
       {loading ? (
         <div className="p-10 text-center text-sm text-[var(--color-text-muted)]">加载中...</div>
+      ) : error ? (
+        <div className="bg-white rounded-xl border border-red-200 p-10 text-center"><p className="text-sm text-red-600 mb-4">{error}</p><button onClick={load} className="px-4 py-2 text-sm rounded-lg border hover:bg-gray-50">重试</button></div>
       ) : view === "nodes" ? (
         <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
           <div className="px-5 py-3 border-b border-[var(--color-border)] flex items-center justify-between">
