@@ -124,6 +124,32 @@ export default function StudentDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* AI 问答记录：来自 learning_records，保留每次提问的摘要与检索状态 */}
+        <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden md:col-span-2">
+          <div className="px-5 py-3 border-b flex items-center justify-between">
+            <h3 className="text-sm font-bold">💬 AI 问答使用记录</h3>
+            <span className="text-[10px] text-[var(--color-text-muted)]">共 {data.records?.length || 0} 条（最近 200 条）</span>
+          </div>
+          <div className="max-h-[28rem] overflow-y-auto divide-y">
+            {(data.records || []).length === 0 ? (
+              <div className="p-6 text-center text-sm text-[var(--color-text-muted)]">暂无问答记录</div>
+            ) : (data.records || []).map((r: any) => (
+              <div key={r.id} className="px-5 py-3">
+                <div className="flex items-start gap-3">
+                  <span className="text-xs font-semibold text-[var(--color-primary)] shrink-0">问</span>
+                  <p className="text-sm text-[var(--color-text)] whitespace-pre-wrap break-words flex-1">{r.question || "（未记录问题）"}</p>
+                  <span className="text-[10px] text-[var(--color-text-muted)] shrink-0">{formatDate(r.created_at)}</span>
+                </div>
+                {r.answer_summary && <p className="text-xs text-[var(--color-text-secondary)] mt-2 pl-6 whitespace-pre-wrap break-words">答：{r.answer_summary}</p>}
+                <div className="pl-6 mt-1.5 flex flex-wrap gap-2 text-[10px] text-[var(--color-text-muted)]">
+                  {Array.isArray(r.topics) && r.topics.length > 0 && <span>知识点：{r.topics.slice(0, 5).join("、")}</span>}
+                  <span>{r.has_references ? "已关联课程资料" : "未关联课程资料"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* 任务完成情况 */}
         <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
           <div className="px-5 py-3 border-b"><h3 className="text-sm font-bold">📋 任务完成情况</h3></div>

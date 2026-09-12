@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { requireUser } from "@/lib/auth-server";
-import { ensureLearningSchema, canTeacherViewStudent, listTeacherStudentEmails } from "@/lib/learning-db";
+import { ensureLearningSchema, listTeacherStudentEmails } from "@/lib/learning-db";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -15,11 +15,7 @@ export async function GET(req: NextRequest) {
     let rows;
     if (auth.role === "teacher" || auth.role === "admin") {
       if (requested) {
-        // 指定学生：admin 全局放行；教师仅限本班学生
-        if (auth.role !== "admin") {
-          const allowed = await canTeacherViewStudent(auth.email, requested.trim().toLowerCase());
-          if (!allowed) return NextResponse.json({ error: "该学生不在您的班级中" }, { status: 403 });
-        }
+        // 任意教师均可查看全体学生的真实测验记录
         const { rows: r } = await pool.query(
           "SELECT * FROM quiz_results WHERE user_email = $1 ORDER BY created_at DESC LIMIT 200",
           [requested.trim().toLowerCase()],
@@ -29,7 +25,7 @@ export async function GET(req: NextRequest) {
         const { rows: r } = await pool.query("SELECT * FROM quiz_results ORDER BY created_at DESC LIMIT 200");
         rows = r;
       } else {
-        // 教师不传 email：仅本班学生范围（此前查全校，跨班数据泄漏）
+        // 教师不传 email：全体学生范围
         const myStudents = await listTeacherStudentEmails(auth.email);
         if (myStudents.length === 0) {
           rows = [];

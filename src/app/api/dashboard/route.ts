@@ -19,7 +19,7 @@ import {
 
 /**
  * 教师仪表盘（真实数据库聚合，不做大屏）：
- * 所有统计限定在教师负责班级的学生范围内；无数据显示空数组/0，前端按空态呈现。
+ * 学生统计面向全体学生账号；班级任务进度仍按教师可见班级聚合。
  */
 export async function GET(req: NextRequest) {
   const { auth, resp } = await requireTeacher(req);

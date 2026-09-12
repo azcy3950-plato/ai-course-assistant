@@ -38,10 +38,9 @@ export default function ClassesTab() {
       const res = await fetch("/api/students", { headers: { Authorization: "Bearer " + getAuthToken() } });
       if (!res.ok) { alert("导出失败"); return; }
       const students = (await res.json()).students || [];
-      const rows = [["姓名", "邮箱(脱敏)", "问答次数", "小测次数", "正确率%", "最近活跃"]];
+      const rows = [["姓名", "账号邮箱", "问答次数", "引导学习次数", "小测次数", "正确率%", "最近活跃"]];
       for (const st of students) {
-        const [u, d] = String(st.email).split("@");
-        rows.push([st.name, `${u.slice(0, 1)}***@${d}`, st.queryCount, st.quizTotal, st.quizRate, st.lastActive ? new Date(st.lastActive).toLocaleDateString("zh-CN") : ""]);
+        rows.push([st.name, st.email, st.queryCount, st.guidedCount, st.quizTotal, st.quizRate, st.lastActive ? new Date(st.lastActive).toLocaleDateString("zh-CN") : ""]);
       }
       const csv = "\uFEFF" + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });

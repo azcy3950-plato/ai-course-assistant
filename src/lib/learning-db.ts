@@ -338,22 +338,21 @@ export async function listClassStudents(classId: number, teacherEmail: string, i
   return { cls, students: rows };
 }
 
-/** 教师能否查看某学生（必须在自己负责的班级内） */
+/** 教师能否查看某学生；教师端对全部学生账号开放。 */
 export async function canTeacherViewStudent(teacherEmail: string, studentEmail: string): Promise<boolean> {
   const { rowCount } = await pool.query(
-    `SELECT 1 FROM classes c JOIN class_members m ON m.class_id = c.id
-     WHERE c.teacher_email = $1 AND m.user_email = $2 LIMIT 1`,
-    [teacherEmail, studentEmail],
+    `SELECT 1 FROM users WHERE role = 'student' AND (email = $1 OR phone = $1) LIMIT 1`,
+    [studentEmail],
   );
   return (rowCount ?? 0) > 0;
 }
 
-/** 教师负责班级下的全部学生邮箱 */
+/** 教师端可见的全部学生账号（与班级归属无关） */
 export async function listTeacherStudentEmails(teacherEmail: string, includeDemo = true): Promise<string[]> {
   const { rows } = await pool.query(
-    `SELECT DISTINCT m.user_email FROM classes c JOIN class_members m ON m.class_id = c.id
-     WHERE c.teacher_email = $1 AND ($2::boolean OR m.user_email NOT LIKE '%@demo.edu.cn')`,
-    [teacherEmail, includeDemo],
+    `SELECT COALESCE(email, phone) AS user_email FROM users
+     WHERE role = 'student' AND ($1::boolean OR COALESCE(email, phone) NOT LIKE '%@demo.edu.cn')`,
+    [includeDemo],
   );
   return rows.map((r) => r.user_email);
 }

@@ -4,13 +4,14 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/contexts/AppContext";
 import ClassesTab from "./ClassesTab";
+import StudentsList from "./StudentsList";
 import TasksTab from "./TasksTab";
 import AnalysisTab from "./AnalysisTab";
 import ReviewTab from "./ReviewTab";
 import KnowledgeTab from "./KnowledgeTab";
 import DashboardTab from "./DashboardTab";
 
-type TabKey = "dashboard" | "classes" | "tasks" | "analysis" | "review" | "knowledge";
+type TabKey = "dashboard" | "classes" | "students" | "tasks" | "analysis" | "review" | "knowledge";
 
 export default function TeacherPage() {
   const { state } = useApp();
@@ -28,7 +29,7 @@ export default function TeacherPage() {
 
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("tab") as TabKey | null;
-    if (requested && ["dashboard", "classes", "tasks", "analysis", "review", "knowledge"].includes(requested)) setActiveTab(requested);
+    if (requested && ["dashboard", "classes", "students", "tasks", "analysis", "review", "knowledge"].includes(requested)) setActiveTab(requested);
   }, []);
 
   if (state.authLoading || !authorized) {
@@ -46,6 +47,7 @@ export default function TeacherPage() {
         {[
           { k: "dashboard" as TabKey, l: "🏠 仪表盘" },
           { k: "classes" as TabKey, l: "🏫 班级" },
+          { k: "students" as TabKey, l: "👥 全部学生" },
           { k: "tasks" as TabKey, l: "📝 任务" },
           { k: "analysis" as TabKey, l: "📊 学情" },
           { k: "review" as TabKey, l: "🛡️ AI审核" },
@@ -60,6 +62,7 @@ export default function TeacherPage() {
 
       {activeTab === "dashboard" && <DashboardTab />}
       {activeTab === "classes" && <ClassesTab />}
+      {activeTab === "students" && <StudentsList />}
       {activeTab === "tasks" && <TasksTab />}
       {activeTab === "analysis" && <AnalysisTab />}
       {activeTab === "review" && <ReviewTab />}

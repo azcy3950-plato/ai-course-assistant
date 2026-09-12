@@ -4,11 +4,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthToken } from "@/contexts/AppContext";
 
-function maskEmail(email: string): string {
-  const [u, d] = String(email).split("@");
-  return `${u.slice(0, 1)}***@${d}`;
-}
-
 /** 全班学生数据视图（并入"班级"）。教师可改名/查看记录；重置密码与删除账号已收归 Admin。 */
 export default function StudentsList() {
   const router = useRouter();
@@ -50,7 +45,7 @@ export default function StudentsList() {
   return (
     <div className="mt-6">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-[var(--color-text)]">👥 学生统计（全部班级）</h3>
+        <h3 className="text-sm font-bold text-[var(--color-text)]">👥 全部学生账号与真实使用情况</h3>
         <button onClick={load} className="text-xs text-[var(--color-primary)] hover:underline">🔄 刷新</button>
       </div>
       {msg && <p className={`text-xs mb-2 ${msg.ok ? "text-green-600" : "text-red-500"}`}>{msg.text}</p>}
@@ -63,7 +58,7 @@ export default function StudentsList() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b bg-gray-50">
-                {["姓名", "邮箱", "问答", "小测/正确率", "最近活跃", "操作"].map((h) => (
+                {["姓名", "账号邮箱", "问答记录", "引导学习", "小测/正确率", "最近活跃", "操作"].map((h) => (
                   <th key={h} className="px-3 py-2.5 text-left text-xs font-medium text-[var(--color-text-secondary)]">{h}</th>
                 ))}
               </tr></thead>
@@ -87,8 +82,9 @@ export default function StudentsList() {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs text-[var(--color-text-secondary)]">{maskEmail(stu.email)}</td>
+                    <td className="px-3 py-2 text-xs text-[var(--color-text-secondary)] break-all">{stu.email}</td>
                     <td className="px-3 py-2 text-xs">{stu.queryCount}</td>
+                    <td className="px-3 py-2 text-xs">{stu.guidedCount}</td>
                     <td className="px-3 py-2 text-xs">
                       <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${stu.quizRate >= 70 ? "bg-green-100 text-green-700" : stu.quizRate >= 40 ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-500"}`}>
                         {stu.quizTotal} 次 · {stu.quizRate}%
