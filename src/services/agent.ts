@@ -58,7 +58,26 @@ export async function queryKnowledgeAgentStream(
     buffer = "";
     onChunk(fullText);
   }
-  fullText += decoder.decode();
+  // 流结束时仍可能有未遇到换行符的尾部数据，必须纳入最终答案。
+  buffer += decoder.decode();
+  if (buffer) {
+    if (buffer.startsWith("data: ")) {
+      const data = buffer.slice(6).trim();
+      if (data !== "[DONE]") {
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content || "";
+          fullText += content;
+        } catch {
+          // 非完整 SSE JSON 时保留原始片段，避免静默丢失模型输出。
+          fullText += buffer;
+        }
+      }
+    } else {
+      fullText += buffer;
+    }
+    onChunk(fullText);
+  }
   return { answer: fullText, references: refs, graphContext, domain };
 }
 

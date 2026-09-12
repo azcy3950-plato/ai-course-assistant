@@ -58,11 +58,11 @@ export default function KnowledgePage() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConv?.messages]);
 
-  const handleSend = useCallback(async (content: string) => {
+  const handleSend = useCallback(async (content: string, options?: { reuseUserMessage?: boolean }) => {
     if (!activeConv) return;
 
     // Add user message
-    addMessage(activeConv.id, { role: 'user', content });
+    if (!options?.reuseUserMessage) addMessage(activeConv.id, { role: 'user', content });
 
     // Query agent
     setLoading(true);
@@ -115,6 +115,8 @@ export default function KnowledgePage() {
 
       addRecord('knowledge', content.slice(0, 30) + (content.length > 30 ? '...' : ''), `查询了关于"${content.slice(0, 50)}"的内容`);
     } catch (err) {
+      // 移除流式占位消息，避免错误时留下空白 AI 气泡。
+      removeLastMessage(activeConv.id);
       addMessage(activeConv.id, {
         role: 'assistant',
         content: '抱歉，查询时出现了错误。请稍后重试。',
@@ -122,7 +124,7 @@ export default function KnowledgePage() {
     } finally {
       setLoading(false);
     }
-  }, [activeConv, addMessage, addRecord]);
+  }, [activeConv, addMessage, addRecord, removeLastMessage]);
 
   const handleRegenerate = useCallback(async () => {
     if (!activeConv || loading) return;
@@ -137,7 +139,7 @@ export default function KnowledgePage() {
     // React 不感知变更，并发渲染下旧回答残留且污染 localStorage 持久化）
     removeLastMessage(activeConv.id);
     // Re-send
-    handleSend(lastUserMsg);
+    handleSend(lastUserMsg, { reuseUserMessage: true });
   }, [activeConv, loading, handleSend, removeLastMessage]);
 
   const handleReferenceClick = useCallback((refId: number) => {
