@@ -291,7 +291,7 @@ export async function deleteClass(id: number, teacherEmail: string) {
 }
 
 export async function addClassMember(classId: number, teacherEmail: string, userEmail: string) {
-  const exists = await pool.query("SELECT 1 FROM users WHERE email = $1", [userEmail]);
+  const exists = await pool.query("SELECT 1 FROM users WHERE role = 'student' AND (email = $1 OR phone = $1)", [userEmail]);
   if (exists.rowCount === 0) return { error: "该邮箱对应的学生账号不存在" };
   // 原子 INSERT..SELECT：归属校验与插入一步完成（此前 check-then-act 有删班竞态窗口 → FK 500）
   const { rowCount } = await pool.query(
@@ -410,7 +410,7 @@ export async function listTeacherTasks(teacherEmail: string, includeDemo = true)
         (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status IN ('TODO','IN_PROGRESS') AND (t.deadline IS NULL OR t.deadline >= now()) AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')) AS in_progress,
         (SELECT count(*)::int FROM student_tasks st WHERE st.task_id = t.id AND st.status IN ('TODO','IN_PROGRESS') AND t.deadline IS NOT NULL AND t.deadline < now() AND ($2::boolean OR st.user_email NOT LIKE '%@demo.edu.cn')) AS overdue
      FROM tasks t LEFT JOIN classes c ON c.id = t.class_id
-     WHERE t.teacher_email = $1
+     WHERE ($1 = '*' OR t.teacher_email = $1)
      ORDER BY t.created_at DESC`,
     [teacherEmail, includeDemo],
   );
@@ -1034,13 +1034,10 @@ export async function getUserName(email: string): Promise<string | null> {
 /** 学生所在班级的任课教师列表（学生侧发私信的可联系对象 + 授权判据） */
 export async function listStudentTeachers(studentEmail: string) {
   const { rows } = await pool.query(
-    `SELECT DISTINCT c.teacher_email, u.name AS teacher_name
-     FROM classes c
-     JOIN class_members m ON m.class_id = c.id
-     LEFT JOIN users u ON u.email = c.teacher_email
-     WHERE m.user_email = $1
-     ORDER BY u.name ASC NULLS LAST`,
-    [studentEmail],
+    `SELECT email AS teacher_email, name AS teacher_name FROM users
+     WHERE role = 'teacher'
+     ORDER BY name ASC NULLS LAST`,
+    [],
   );
   return rows;
 }

@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     const nodeId = req.nextUrl.searchParams.get("nodeId");
     const [nodes, tasks, students] = await Promise.all([
       nodeAnalysis(auth.email),
-      listTeacherTasks(auth.email),
+      listTeacherTasks(auth.role === "admin" ? "*" : auth.email),
       teacherStudentsOverview(auth.email),
     ]);
     const result: any = { nodes, tasks, students };

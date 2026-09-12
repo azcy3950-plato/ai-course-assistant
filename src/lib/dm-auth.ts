@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUser, unauthorized, forbidden } from "@/lib/auth-server";
-import { canTeacherViewStudent, listStudentTeachers } from "@/lib/learning-db";
+import { listStudentTeachers } from "@/lib/learning-db";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const IDENTIFIER_RE = /^(?:[^\s@]+@[^\s@]+\.[^\s@]+|\+?\d{8,15})$/;
 
 export interface DmAuthResult {
   auth: { ok: boolean; email: string; role: string | null };
@@ -23,15 +23,13 @@ export async function authorizeDmPair(req: NextRequest, withEmail: string): Prom
   if (auth.role !== "student" && auth.role !== "teacher")
     return { auth, resp: forbidden(), pair: null };
   const peer = (withEmail || "").trim().toLowerCase();
-  if (!EMAIL_RE.test(peer))
+  if (!IDENTIFIER_RE.test(peer))
     return { auth, resp: NextResponse.json({ error: "缺少参数" }, { status: 400 }), pair: null };
   if (peer === auth.email.toLowerCase())
     return { auth, resp: NextResponse.json({ error: "不能给自己发送私信" }, { status: 400 }), pair: null };
 
   if (auth.role === "teacher") {
-    const ok = await canTeacherViewStudent(auth.email, peer);
-    if (!ok)
-      return { auth, resp: NextResponse.json({ error: "该学生不在您的班级中" }, { status: 403 }), pair: null };
+    // 教师可与任意已注册学生建立会话，不受班级关系限制。
     return { auth, resp: null, pair: { studentEmail: peer, teacherEmail: auth.email } };
   }
   const teachers = await listStudentTeachers(auth.email);

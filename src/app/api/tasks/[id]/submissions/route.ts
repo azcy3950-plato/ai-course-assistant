@@ -25,8 +25,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!Number.isFinite(taskId)) return NextResponse.json({ error: "任务不存在" }, { status: 400 });
     const task = await getTask(taskId);
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
-    if (auth.role === "teacher") {
-      if (task.teacher_email !== auth.email) return NextResponse.json({ error: "无权查看" }, { status: 403 });
+    if (auth.role === "teacher" || auth.role === "admin") {
+      if (auth.role !== "admin" && task.teacher_email !== auth.email) return NextResponse.json({ error: "无权查看" }, { status: 403 });
       const [subs, atts] = await Promise.all([listTaskSubmissions(taskId), listTaskAttachments(taskId)]);
       return NextResponse.json({ submissions: subs, attachments: atts });
     }
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const task = await getTask(taskId);
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
 
-    if (auth.role === "teacher") return NextResponse.json({ error: "教师不能替学生提交" }, { status: 403 });
+    if (auth.role === "teacher" || auth.role === "admin") return NextResponse.json({ error: "教师不能替学生提交" }, { status: 403 });
     const st = await getStudentTask(taskId, auth.email);
     if (!st) return NextResponse.json({ error: "你未被分配该任务" }, { status: 403 });
 

@@ -65,9 +65,15 @@ export async function DELETE(req: NextRequest) {
     try {
       await client.query("BEGIN");
       // 事务内:先清理子表再删用户(避免部分成功窗口)
-      await client.query("DELETE FROM learning_records WHERE user_email = $1", [email]);
-      await client.query("DELETE FROM quiz_results WHERE user_email = $1", [email]);
-      await client.query("DELETE FROM student_node_progress WHERE user_email = $1", [email]);
+      await client.query("DELETE FROM teacher_feedback WHERE submission_id IN (SELECT id FROM task_submissions WHERE user_email = $1)", [email]);
+      await client.query("DELETE FROM task_attachments WHERE submission_id IN (SELECT id FROM task_submissions WHERE user_email = $1)", [email]);
+      await client.query("DELETE FROM task_submissions WHERE user_email = $1", [email]);
+      await client.query("DELETE FROM student_tasks WHERE user_email = $1", [email]);
+      await client.query("DELETE FROM class_members WHERE user_email = $1", [email]);
+      await client.query("DELETE FROM direct_messages WHERE student_email = $1 OR sender_email = $1", [email]);
+      for (const table of ["practice_corrections", "quiz_results", "learning_events", "ai_qa_messages", "learning_records", "student_node_progress", "notifications", "favorites"]) {
+        await client.query(`DELETE FROM ${table} WHERE user_email = $1`, [email]);
+      }
       const { rows } = await client.query(
         "DELETE FROM users WHERE email = $1 AND role = 'student' RETURNING id, email",
         [email],

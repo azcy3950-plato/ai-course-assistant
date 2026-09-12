@@ -25,8 +25,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const task = await getTask(taskId);
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
 
-    if (auth.role === "teacher") {
-      if (task.teacher_email !== auth.email) return NextResponse.json({ error: "无权查看该任务" }, { status: 403 });
+    if (auth.role === "teacher" || auth.role === "admin") {
+      if (auth.role !== "admin" && task.teacher_email !== auth.email) return NextResponse.json({ error: "无权查看该任务" }, { status: 403 });
       const [targets, submissions, attachments] = await Promise.all([
         listTaskTargets(taskId), listTaskSubmissions(taskId), listTaskAttachments(taskId),
       ]);
@@ -63,8 +63,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!task) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
 
     // 教师：编辑任务基本信息
-    if (auth.role === "teacher") {
-      if (task.teacher_email !== auth.email) return NextResponse.json({ error: "无权修改该任务" }, { status: 403 });
+    if (auth.role === "teacher" || auth.role === "admin") {
+      if (auth.role !== "admin" && task.teacher_email !== auth.email) return NextResponse.json({ error: "无权修改该任务" }, { status: 403 });
       let deadline = task.deadline;
       if ("deadline" in body) {
         if (!body.deadline) {

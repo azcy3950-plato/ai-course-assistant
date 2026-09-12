@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       dashboardQuizTopicAccuracy(auth.email),
       dashboardWeakStudents(auth.email, 5),
       dashboardRecentEvents(auth.email, 20),
-      listTeacherTasks(auth.email),
+      listTeacherTasks(auth.role === "admin" ? "*" : auth.email),
     ]);
 
     const overdueTasks = tasks

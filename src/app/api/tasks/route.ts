@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   if (resp) return resp;
   try {
     await ensureLearningSchema();
-    const rows = auth.role === "teacher" ? await listTeacherTasks(auth.email) : await listStudentTasks(auth.email);
+    const rows = (auth.role === "teacher" || auth.role === "admin") ? await listTeacherTasks(auth.role === "admin" ? "*" : auth.email) : await listStudentTasks(auth.email);
     return NextResponse.json(rows);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     }
     if (classId) {
       const cls = await getClass(classId);
-      if (!cls || cls.teacher_email !== auth.email) {
+      if (!cls || (auth.role !== "admin" && cls.teacher_email !== auth.email)) {
         return NextResponse.json({ error: "班级不存在或无权访问" }, { status: 403 });
       }
       const data = await listClassStudents(classId, auth.email);
