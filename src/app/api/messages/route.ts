@@ -10,6 +10,7 @@ import {
   getUserName,
 } from "@/lib/learning-db";
 import { authorizeDmPair } from "@/lib/dm-auth";
+import { sendDirectMessageEmail, type DmEmailStatus } from "@/lib/dm-email";
 
 // ─── 收件箱 ───
 export async function GET(req: NextRequest) {
@@ -72,7 +73,11 @@ export async function POST(req: NextRequest) {
       dedupeKey: "DM:" + message.id,
     }).catch(() => {});
 
-    return NextResponse.json({ ok: true, message });
+    const emailNotification: DmEmailStatus = auth.role === "teacher"
+      ? await sendDirectMessageEmail({ studentIdentifier: pair.studentEmail, teacherEmail: auth.email, body: text, messageId: message.id })
+      : "not_applicable";
+
+    return NextResponse.json({ ok: true, message, emailNotification });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

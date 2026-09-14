@@ -28,6 +28,7 @@ export default function MessageThreadPage() {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [emailNotice, setEmailNotice] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<any[]>([]);
 
@@ -71,6 +72,7 @@ export default function MessageThreadPage() {
   const send = async (text: string) => {
     if (sending) return;
     setSending(true);
+    setEmailNotice("");
     try {
       const r = await fetch("/api/messages", {
         method: "POST",
@@ -79,6 +81,8 @@ export default function MessageThreadPage() {
       });
       const d = await r.json();
       if (!r.ok) { setError(d.error || "发送失败"); return; }
+      setError("");
+      setEmailNotice(d.emailNotification === "sent" ? "私信已发送，邮件通知已提交。" : d.emailNotification === "failed" ? "私信已发送，但邮件通知暂未成功。无需重复发送私信。" : d.emailNotification === "no_email" ? "私信已发送；对方没有可用的学生邮箱，未发送邮件通知。" : "");
       const next = [...messagesRef.current, d.message];
       messagesRef.current = next;
       setData((prev: any) => (prev ? { ...prev, messages: next } : prev));
@@ -145,6 +149,8 @@ export default function MessageThreadPage() {
       </div>
 
       {/* 输入区（复用全局 ChatInput） */}
+      {emailNotice && <p role="status" className="px-4 py-2 text-xs text-[var(--color-text-muted)]">{emailNotice}</p>}
+      {state.role === "teacher" && <p className="px-4 pt-2 text-xs text-[var(--color-text-muted)]">发送私信时，将同时邮件通知学生。</p>}
       <ChatInput onSend={send} disabled={sending} placeholder="输入你的问题…" />
     </div>
   );

@@ -9,13 +9,16 @@ import nodemailer from "nodemailer";
 
 let transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
 
-function getTransporter() {
+export function getTransporter() {
   if (transporter) return transporter;
   const port = Number(process.env.SMTP_PORT || 465);
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,
     secure: process.env.SMTP_SECURE === "true" || port === 465,
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
     auth: process.env.SMTP_USER
       ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || "" }
       : undefined,
