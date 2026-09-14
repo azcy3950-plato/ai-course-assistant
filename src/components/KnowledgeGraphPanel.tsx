@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KnowledgeGraph, KnowledgeNode } from "@/types";
+import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from "@/types";
 import { computeLayout, type Placed } from "@/lib/graph-layout";
+import { neighborhood, relationExplanation } from "./guided/model";
 
 type Props = { graph: KnowledgeGraph; focusIds?: string[]; selectedNodeId?: string; depth: 1 | 2; mode: "current" | "cumulative"; nodeCategory?: string; relationType?: string; onModeChange: (v: "current" | "cumulative") => void; onDepthChange: (v: 1 | 2) => void; onNodeCategory?: (v: string) => void; onRelationType?: (v: string) => void; onNodeClick: (n: KnowledgeNode) => void; onExpand: (n: KnowledgeNode) => void; onFullscreen: () => void; onCollapsePanel: () => void; onAsk?: (n: KnowledgeNode) => void; onCollapse?: () => void };
 
@@ -52,20 +53,33 @@ export default function KnowledgeGraphPanel(p: Props) {
   const dragRef = useRef<{ startX: number; startY: number; tx: number; ty: number; active: boolean; moved: boolean; nodeId: string | null; baseX: number; baseY: number; dx: number; dy: number; prevDx: number; prevDy: number; lastT: number; vel: { x: number; y: number } }>({ startX: 0, startY: 0, tx: 0, ty: 0, active: false, moved: false, nodeId: null, baseX: 0, baseY: 0, dx: 0, dy: 0, prevDx: 0, prevDy: 0, lastT: 0, vel: { x: 0, y: 0 } });
   const clickTimer = useRef<number | null>(null);
   const [nodeDrag, setNodeDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  const [branch, setBranch] = useState<string[]>([]);
+  const [relation, setRelation] = useState<KnowledgeEdge | null>(null);
+  const animationTimer = useRef<number | null>(null);
+  useEffect(() => { setBranch([]); setRelation(null); setHover(null); }, [p.graph]);
+  useEffect(() => () => {
+    if (clickTimer.current) window.clearTimeout(clickTimer.current);
+    if (animationTimer.current) window.clearTimeout(animationTimer.current);
+  }, []);
+  const branchIds = useMemo(() => branch.length ? neighborhood(p.graph, [branch.at(-1)!], p.depth) : null, [branch, p.graph, p.depth]);
 
   const visible = useMemo(() => {
     // 完整图谱模式:默认显示全部节点;搜索/节点类型/关系类型仍可过滤
     const q = query.trim().toLowerCase();
-    const nodes = p.graph.nodes.filter((n) => (p.nodeCategory === "all" || !p.nodeCategory || (p.nodeCategory === "__other" ? !KIND_META[n.category] : n.category === p.nodeCategory)) && (!q || `${n.name} ${n.description} ${n.keywords.join(" ")}`.toLowerCase().includes(q)));
+    const matches = p.graph.nodes.filter(n => `${n.name} ${n.description} ${n.keywords.join(" ")}`.toLowerCase().includes(q));
+    const searchIds = q ? neighborhood(p.graph, matches.map(n => n.id), 1) : null;
+    const nodes = p.graph.nodes.filter((n) => (!branchIds || branchIds.has(n.id)) && (!searchIds || searchIds.has(n.id)) && (p.nodeCategory === "all" || !p.nodeCategory || (p.nodeCategory === "__other" ? !KIND_META[n.category] : n.category === p.nodeCategory)));
     const nodeIds = new Set(nodes.map((n) => n.id));
     const edges = p.graph.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target) && (p.relationType === "all" || !p.relationType || e.relation === p.relationType));
     return { nodes, edges };
-  }, [p.graph, p.nodeCategory, p.relationType, query]);
+  }, [p.graph, p.nodeCategory, p.relationType, query, branchIds]);
 
+  // Keep node coordinates stable while selecting, filtering, or exploring branches.
+  const fullPlacement = useMemo(() => computeLayout(p.graph.nodes, p.graph.edges, p.graph.nodes[0]?.id, 1, 1400, 900), [p.graph]);
   const placed = useMemo(() => {
-    const w = 1400, h = 900;
-    return computeLayout(visible.nodes, visible.edges, p.focusIds?.[0] || p.selectedNodeId || visible.nodes[0]?.id, p.depth, w, h);
-  }, [p.depth, p.focusIds, p.selectedNodeId, visible]);
+    const ids = new Set(visible.nodes.map(n => n.id));
+    return fullPlacement.filter(pt => ids.has(pt.node.id));
+  }, [fullPlacement, visible.nodes]);
   const placedById = useMemo(() => new Map(placed.map((pl) => [pl.node.id, pl])), [placed]);
   const placedByIdRef = useRef(placedById);
   useEffect(() => { placedByIdRef.current = placedById; }, [placedById]);
@@ -133,11 +147,12 @@ export default function KnowledgeGraphPanel(p: Props) {
     setView({ scale: Math.max(0.15, scale), tx, ty });
     // 焦点切换时平滑移动视图中心(提问→跳到相关节点)
     setViewAnim(true);
-    window.setTimeout(() => setViewAnim(false), 650);
+    if (animationTimer.current) window.clearTimeout(animationTimer.current);
+    animationTimer.current = window.setTimeout(() => setViewAnim(false), 650);
   }, [placed, placedById]);
 
   // 仅在内容结构变化(focusIds、节点数或深度)时重置视图,搜索/筛选导致的 visible 变化不覆盖用户手动视图
-  const fitKey = `${p.focusIds?.join(",") || ""}|${visible.nodes.length}|${p.depth}`;
+  const fitKey = `${p.focusIds?.join(",") || ""}|${p.graph.nodes.map(n => n.id).join(",")}|${p.depth}|${branch.join(",")}`;
   const fitKeyRef = useRef("");
   useEffect(() => {
     if (fitKeyRef.current === fitKey) return;
@@ -161,7 +176,9 @@ export default function KnowledgeGraphPanel(p: Props) {
       return { vx: (clientX - rect.left - offsetX) / rs, vy: (clientY - rect.top - offsetY) / rs };
     };
     const onWheel = (e: WheelEvent) => {
+      if ((e.target as Element).closest("button, .legacy-relation-card")) return;
       e.preventDefault();
+      setViewAnim(false);
       const { vx, vy } = toViewBox(e.clientX, e.clientY);
       setView((v) => {
         const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
@@ -170,8 +187,21 @@ export default function KnowledgeGraphPanel(p: Props) {
         return { scale, tx: vx - (vx - v.tx) * k, ty: vy - (vy - v.ty) * k };
       });
     };
+    const pointers = new Map<number, { x: number; y: number }>();
+    let pinch: { distance: number; vx: number; vy: number; scale: number; tx: number; ty: number } | null = null;
     const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0 || (e.target as Element).closest("button, .legacy-relation-card, [data-edge-id]")) return;
       e.preventDefault();
+      setViewAnim(false);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        const center = toViewBox((a.x + b.x) / 2, (a.y + b.y) / 2);
+        pinch = { distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), ...center, ...viewRef.current };
+        dragRef.current.active = false; dragRef.current.moved = true; setNodeDrag(null);
+        el.setPointerCapture(e.pointerId); return;
+      }
+      if (pointers.size > 2) return;
       const nodeEl = (e.target as Element).closest?.("[data-node-id]");
       if (nodeEl) {
         // 节点拖拽(物理):capture 到节点自身,记录基准布局位置
@@ -189,12 +219,21 @@ export default function KnowledgeGraphPanel(p: Props) {
       }
     };
     const onPointerMove = (e: PointerEvent) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && pointers.size >= 2) {
+        const [a, b] = [...pointers.values()];
+        const center = toViewBox((a.x + b.x) / 2, (a.y + b.y) / 2);
+        const scale = Math.min(3, Math.max(.15, pinch.scale * Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance));
+        const k = scale / pinch.scale;
+        setView({ scale, tx: center.vx - (pinch.vx - pinch.tx) * k, ty: center.vy - (pinch.vy - pinch.ty) * k }); return;
+      }
       if (!dragRef.current.active) return;
       const { rs } = renderScale();
       if (Math.abs(e.clientX - dragRef.current.startX) + Math.abs(e.clientY - dragRef.current.startY) > 5) dragRef.current.moved = true;
       if (dragRef.current.nodeId) {
-        const dx = (e.clientX - dragRef.current.startX) / rs;
-        const dy = (e.clientY - dragRef.current.startY) / rs;
+        const dx = (e.clientX - dragRef.current.startX) / rs / viewRef.current.scale;
+        const dy = (e.clientY - dragRef.current.startY) / rs / viewRef.current.scale;
         dragRef.current.dx = dx; dragRef.current.dy = dy;
         // 速度估计(用于松手惯性)
         const now = performance.now();
@@ -208,7 +247,7 @@ export default function KnowledgeGraphPanel(p: Props) {
         setView((v) => ({ ...v, tx: dragRef.current.tx + (e.clientX - dragRef.current.startX) / rs, ty: dragRef.current.ty + (e.clientY - dragRef.current.startY) / rs }));
       }
     };
-    const onPointerUp = () => { if (dragRef.current.active) { const d = dragRef.current; dragRef.current.active = false; if (d.nodeId) { lastDragIdRef.current = d.nodeId; const vx = Math.max(-40, Math.min(40, d.vel.x * 0.4)); const vy = Math.max(-40, Math.min(40, d.vel.y * 0.4)); if (Math.abs(vx) + Math.abs(vy) > 8) { setSpringKick({ x: vx, y: vy }); if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); kickTimerRef.current = window.setTimeout(() => setSpringKick(null), 380); } // 自由摆放:松手后节点停留在拖到的新位置(不再弹回),可随时重置
+    const onPointerUp = (e: PointerEvent) => { if (!pointers.delete(e.pointerId)) return; if (pinch) { if (pointers.size < 2) pinch = null; return; } if (dragRef.current.active) { const d = dragRef.current; dragRef.current.active = false; if (d.nodeId && d.moved && e.type !== "pointercancel") { lastDragIdRef.current = d.nodeId; const vx = Math.max(-40, Math.min(40, d.vel.x * 0.4)); const vy = Math.max(-40, Math.min(40, d.vel.y * 0.4)); if (Math.abs(vx) + Math.abs(vy) > 8) { setSpringKick({ x: vx, y: vy }); if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); kickTimerRef.current = window.setTimeout(() => setSpringKick(null), 380); } // 自由摆放:松手后节点停留在拖到的新位置(不再弹回),可随时重置
         setNodeLayoutOverrides((prev) => { const next = new Map(prev); next.set(d.nodeId!, { x: d.baseX + d.dx, y: d.baseY + d.dy }); return next; }); } setNodeDrag(null); } };
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("pointerdown", onPointerDown);
@@ -232,9 +271,10 @@ export default function KnowledgeGraphPanel(p: Props) {
       if (focusSet.has(e.target)) set.add(e.source);
     });
     if (p.depth === 2) {
+      const first = new Set(set);
       visible.edges.forEach((e) => {
-        if (set.has(e.source) && !focusSet.has(e.target)) set.add(e.target);
-        if (set.has(e.target) && !focusSet.has(e.source)) set.add(e.source);
+        if (first.has(e.source)) set.add(e.target);
+        if (first.has(e.target)) set.add(e.source);
       });
     }
     return set;
@@ -267,10 +307,13 @@ export default function KnowledgeGraphPanel(p: Props) {
     return KIND_META[n.category] || DEFAULT_KIND;
   };
   const radiusOf = (depth: number) => (depth === 0 ? 36 : depth === 1 ? 25 : 19);
-  const edgeFocus = (e: { source: string; target: string }) => (relatedIds.has(e.source) && relatedIds.has(e.target)) || (e.source === selectedId || e.target === selectedId);
+  const edgeFocus = (e: { source: string; target: string }) => (relatedIds.has(e.source) && relatedIds.has(e.target)) || (e.source === selectedId || e.target === selectedId) || e.source === hover?.id || e.target === hover?.id;
+  const explore = (node: KnowledgeNode) => { setBranch(old => old.at(-1) === node.id ? old : [...old, node.id]); setRelation(null); setHover(null); p.onExpand(node); };
+  const relationSource = relation && p.graph.nodes.find(n => n.id === relation.source);
+  const relationTarget = relation && p.graph.nodes.find(n => n.id === relation.target);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: "radial-gradient(circle at 50% 42%, rgba(22,93,255,0.08), transparent 26%), radial-gradient(circle at 18% 18%, rgba(24,184,216,0.06), transparent 18%), radial-gradient(circle at 78% 72%, rgba(138,99,255,0.07), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.52), rgba(250,252,255,0.84))" }}>
+    <div className="legacy-enhanced-graph relative flex h-full min-h-0 flex-col overflow-hidden" style={{ background: "radial-gradient(circle at 50% 42%, rgba(22,93,255,0.08), transparent 26%), radial-gradient(circle at 18% 18%, rgba(24,184,216,0.06), transparent 18%), radial-gradient(circle at 78% 72%, rgba(138,99,255,0.07), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.52), rgba(250,252,255,0.84))" }}>
       <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(130,149,185,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(130,149,185,0.05) 1px, transparent 1px)", backgroundSize: "42px 42px", maskImage: "linear-gradient(180deg, rgba(0,0,0,0.75), rgba(0,0,0,0.06))" }} />
       <div className="relative z-10 flex flex-wrap items-center gap-2 border-b border-[rgba(105,126,165,0.12)] bg-white/80 px-3 py-2 backdrop-blur">
         <div className="flex min-w-[150px] flex-1 items-center rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 shadow-sm">
@@ -300,7 +343,11 @@ export default function KnowledgeGraphPanel(p: Props) {
         </select>
         <span className="ml-auto text-[11px] font-medium text-[#6f7e97]">{visible.nodes.length} 节点 · {visible.edges.length} 关系</span>
       </div>
-      <div ref={hostRef} className="relative min-h-0 flex-1 cursor-grab overflow-hidden active:cursor-grabbing" aria-label="交互式知识图谱">
+      <div ref={hostRef} className="relative min-h-0 flex-1 cursor-grab overflow-hidden active:cursor-grabbing" style={{ touchAction: "none" }} aria-label="交互式知识图谱">
+        {(branch.length > 0 || selectedId) && <nav className="legacy-graph-navigation" aria-label="图谱探索路径">
+          {branch.length > 0 && <><button onClick={() => { setBranch([]); setRelation(null); fit(undefined, true); }}>返回全图</button><button onClick={() => setBranch(old => old.slice(0, -1))}>上一层</button><span>{p.graph.nodes.find(n => n.id === branch.at(-1))?.name}</span></>}
+          {selectedId && branch.at(-1) !== selectedId && <button onClick={() => { const node = p.graph.nodes.find(n => n.id === selectedId); if (node) explore(node); }}>探索此分支</button>}
+        </nav>}
         <svg ref={svgRef} className="h-full w-full" viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid meet">
           <defs>
             <filter id="kgSoftGlow" x="-60%" y="-60%" width="220%" height="220%">
@@ -324,8 +371,9 @@ export default function KnowledgeGraphPanel(p: Props) {
                 const tx = (to || t).x + (tp?.x || 0), ty = (to || t).y + (tp?.y || 0);
                 const focused = edgeFocus(e);
                 return <g key={e.id}>
-                  <path d={buildPath(sx, sy, tx, ty)} fill="none" strokeLinecap="round" stroke={focused ? "rgba(22,93,255,0.40)" : "rgba(123,142,172,0.26)"} strokeWidth={focused ? 2.4 : 1.8} style={{ transition: "stroke .25s ease, stroke-width .25s ease" }} />
-                  {labels && <text x={(sx + tx) / 2} y={(sy + ty) / 2 - 6} textAnchor="middle" fontSize="10" fill={focused ? "#2450a5" : "#6f7e97"} style={{ paintOrder: "stroke", stroke: "rgba(255,255,255,0.85)", strokeWidth: 3, strokeLinejoin: "round", fontWeight: 600, transition: "fill .25s ease" }}>{e.label || rels[e.relation] || e.relation}</text>}
+                  <path data-edge-id={e.id} className="legacy-edge-hit" d={buildPath(sx, sy, tx, ty)} role="button" tabIndex={0} aria-label={`${s.node.name}到${t.node.name}：${e.label || rels[e.relation]}`} onClick={() => { setRelation(e); setHover(null); }} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setRelation(e); setHover(null); } }} />
+                  <path className={branch.length ? "legacy-branch-edge" : ""} pathLength={1} pointerEvents="none" d={buildPath(sx, sy, tx, ty)} fill="none" strokeLinecap="round" stroke={focused ? "rgba(22,93,255,0.40)" : "rgba(123,142,172,0.26)"} strokeWidth={focused ? 2.4 : 1.8} style={{ transition: "stroke .25s ease, stroke-width .25s ease" }} />
+                  {labels && <text pointerEvents="none" x={(sx + tx) / 2} y={(sy + ty) / 2 - 6} textAnchor="middle" fontSize="10" fill={focused ? "#2450a5" : "#6f7e97"} style={{ paintOrder: "stroke", stroke: "rgba(255,255,255,0.85)", strokeWidth: 3, strokeLinejoin: "round", fontWeight: 600, transition: "fill .25s ease" }}>{e.label || rels[e.relation] || e.relation}</text>}
                 </g>;
               })}
             </g>
@@ -343,9 +391,11 @@ export default function KnowledgeGraphPanel(p: Props) {
                 const fy = base.y + (spring?.y || 0);
                 const radius = radiusOf(depth);
                 const lines = wrapLabel(node.name);
-                return <g key={node.id} data-node-id={node.id} className={`node-shell${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.45 : 1, transition: nodeDrag ? "opacity .3s ease" : "opacity .3s ease, transform .6s cubic-bezier(0.34, 1.56, 0.64, 1)", cursor: "grab", transform: `translate(${fx}px, ${fy}px)` }}
+                return <g key={node.id} data-node-id={node.id} className={`node-shell${isFocus ? " legacy-lit" : ""}${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.45 : 1, transition: nodeDrag ? "opacity .3s ease" : "opacity .3s ease, transform .6s cubic-bezier(0.34, 1.56, 0.64, 1)", cursor: "grab", transform: `translate(${fx}px, ${fy}px)` }}
                   onClick={(e) => { e.stopPropagation(); if (dragRef.current.moved) { dragRef.current.moved = false; return; } if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; return; } clickTimer.current = window.setTimeout(() => { clickTimer.current = null; p.onNodeClick(node); }, 220); }}
-                  onDoubleClick={(e) => { e.stopPropagation(); if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; } p.onExpand(node); }}
+                  role="button" tabIndex={0} aria-label={`知识点：${node.name}`} aria-pressed={isSelected}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); p.onNodeClick(node); } if (e.key === "ArrowRight") { e.preventDefault(); explore(node); } if (e.key === "Escape") setBranch(old => old.slice(0, -1)); }}
+                  onDoubleClick={(e) => { e.stopPropagation(); if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; } explore(node); }}
                   onMouseEnter={() => setHover(node)}
                   onMouseLeave={() => setHover(null)}>
                   <circle cx="0" cy="0" r={radius} fill={kind.color} fillOpacity={depth === 0 ? 1 : 0.92} stroke="rgba(255,255,255,0.88)" strokeWidth={isSelected ? 3 : 2} filter={isSelected ? "url(#kgHoverGlow)" : "url(#kgSoftGlow)"} style={{ transition: "r .3s ease, stroke-width .25s ease, filter .25s ease" }} />
@@ -358,6 +408,7 @@ export default function KnowledgeGraphPanel(p: Props) {
             </g>
           </g>
         </svg>
+        {relation && relationSource && relationTarget && <aside className="legacy-relation-card" aria-label="关系说明"><button aria-label="关闭关系说明" onClick={() => setRelation(null)}>×</button><h3>{relationSource.name} → {relationTarget.name}</h3><p>{relationExplanation(relation, relationSource, relationTarget)}</p><div className="legacy-mini-controls"><button onClick={() => p.onNodeClick(relationSource)}>查看起点</button><button onClick={() => p.onNodeClick(relationTarget)}>查看终点</button></div></aside>}
         {hover && (
           <div className="fade-in pointer-events-none absolute left-3 top-20 z-20 max-w-xs rounded-2xl border border-[rgba(105,126,165,0.14)] bg-white/95 p-4 text-xs shadow-xl backdrop-blur">
             <div className="text-base font-bold text-[#183b8f]">{hover.name}</div>
