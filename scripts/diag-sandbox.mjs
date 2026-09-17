@@ -1,4 +1,4 @@
-// 诊断线上沙盘 v2：页内 fetch 探测 + 完整错误 + 截图
+// 沙盘诊断：默认只检查本地，远程地址需显式传入。
 import { chromium } from "playwright";
 import { mkdirSync } from "fs";
 
@@ -6,7 +6,7 @@ const OUT = "artifacts/sandbox-diag";
 mkdirSync(OUT, { recursive: true });
 
 async function main() {
-  const url = process.argv[2] || "http://117.72.97.219/sandbox";
+  const url = process.argv[2] || "http://localhost:3000/sandbox";
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 

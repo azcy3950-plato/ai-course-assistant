@@ -20,8 +20,8 @@
 *.pem
 
 # env
-.env*.local
-.env
+.env*
+!.env.example
 
 # debug
 npm-debug.log*
@@ -60,3 +60,16 @@ tsconfig.tsbuildinfo
 
 # 本地真实SWMM回放fixture(仅开发验收,不进生产仓库)
 /public/sandbox-fixture.json
+
+# Local sandbox engine and calculation cache
+/.runtime/
+/.sandbox-runs/
+/.venv/
+/venv/
+/tmp/
+/artifacts/
+/playwright-report/
+/test-results/
+
+# Local reference attachment; unrelated to the runnable source/model
+/Multiobjective layout optimization for low impact development considering its ecosystem services(1).pdf

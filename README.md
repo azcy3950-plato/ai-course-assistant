@@ -18,6 +18,21 @@
 - 节点详情、课程资料、前置学习、练习生成和下一节点推荐
 - 提问次数、学习次数、测验正确率、最近学习时间和掌握度记录
 - 约 5 次有效提问后生成阶段小测
+- 海绵城市沙盘：紫荆雅苑十片区设施配置、真实 SWMM 计算与生态服务教学估值
+
+## 海绵城市沙盘
+
+当前沙盘入口为 `/sandbox`，真实计算体验为 `/sandbox/demo`。完整安装、验证和 GitHub 提交说明见 [沙盘说明](src/app/sandbox/README.md)。
+
+仅体验本地沙盘（Node.js 22.12+、64 位 Python 3.10–3.13）：
+
+```bash
+npm ci
+npm run sandbox:setup
+npm run dev
+```
+
+打开 `http://localhost:3000/sandbox/demo`。安装命令会创建独立 Python 环境；不要上传 `.venv`、真实环境配置和计算缓存。
 
 ## 环境要求
 

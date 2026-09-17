@@ -1,9 +1,9 @@
-// Sandbox automated screenshot + verification script
+// Legacy sandbox screenshots; current student sandbox uses sandbox:test:browser.
 import { chromium } from "playwright";
 import * as path from "path";
 import { mkdirSync } from "fs";
 
-const BASE = "http://117.72.97.219/sandbox";
+const BASE = process.env.SANDBOX_LEGACY_URL || "http://localhost:3000/sandbox/legacy";
 const OUT = path.resolve("artifacts/sandbox-final");
 mkdirSync(OUT, { recursive: true });
 

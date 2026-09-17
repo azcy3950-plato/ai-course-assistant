@@ -1,9 +1,9 @@
-// Sandbox automated screenshot + verification script
+// Legacy sandbox screenshot checks; current student sandbox uses sandbox:test:browser.
 import { chromium } from "playwright";
 import * as path from "path";
 import { mkdirSync } from "fs";
 
-const BASE = "http://117.72.97.219/sandbox";
+const BASE = process.env.SANDBOX_LEGACY_URL || "http://localhost:3000/sandbox/legacy";
 const OUT = path.resolve("artifacts/sandbox-final");
 mkdirSync(OUT, { recursive: true });
 
@@ -14,9 +14,11 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
   // ── 登录（动态仿真需要登录态） ──
-  await page.goto("http://117.72.97.219/login", { waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.fill('input[type="email"]', "student01@demo.edu.cn");
-  await page.fill('input[type="password"]', "Demo123456");
+  const email = process.env.SANDBOX_TEST_EMAIL, password = process.env.SANDBOX_TEST_PASSWORD;
+  if (!email || !password) throw new Error("Set SANDBOX_TEST_EMAIL and SANDBOX_TEST_PASSWORD for legacy login checks.");
+  await page.goto(new URL('/login', BASE).href, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.fill('input[type="email"]', email);
+  await page.fill('input[type="password"]', password);
   await page.click('button[type="submit"]');
   await sleep(2500);
 
