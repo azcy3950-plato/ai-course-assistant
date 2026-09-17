@@ -11,7 +11,7 @@ type Link = LinkObject<SphereNode> & { edge: KnowledgeEdge };
 export type SphereHandle = { fit(ids?: string[]): void; reset(): void };
 type Props = {
   graph: KnowledgeGraph; visibleIds: string[]; edges: KnowledgeEdge[];
-  selectedId?: string; focusIds?: string[]; paused: boolean; rotating: boolean; labels: boolean;
+  selectedId?: string; focusIds?: string[]; rotating: boolean; labels: boolean;
   color(node: KnowledgeNode): string;
   onSelect(node: KnowledgeNode): void; onExpand(node: KnowledgeNode): void;
   onHover(node: KnowledgeNode | null): void; onRelation(edge: KnowledgeEdge): void;
@@ -49,9 +49,9 @@ export default forwardRef<SphereHandle, Props>(function KnowledgeGraphSphere(pro
       const media = window.matchMedia("(prefers-reduced-motion: reduce)");
       const controls = graph.controls() as OrbitControls;
       controls.enableDamping = true; controls.dampingFactor = .12;
-      controls.autoRotateSpeed = .5; controls.minDistance = 80; controls.maxDistance = 2600;
+      controls.autoRotateSpeed = .65; controls.minDistance = 80; controls.maxDistance = 2600;
       const startInteraction = () => { interacting = true; };
-      const endInteraction = () => { interacting = false; suspendedUntil = performance.now() + 3500; };
+      const endInteraction = () => { interacting = false; suspendedUntil = performance.now() + 250; };
       controls.addEventListener("start", startInteraction); controls.addEventListener("end", endInteraction);
       // The graph library emits a pointerId=0 release after dragging. OrbitControls
       // r185 needs the real pointer-up, which follows it with the correct ID.
@@ -59,24 +59,46 @@ export default forwardRef<SphereHandle, Props>(function KnowledgeGraphSphere(pro
         if (!event.isTrusted && event.pointerId === 0 && event.pointerType === "touch" && event.target === document) event.stopImmediatePropagation();
       };
       document.addEventListener("pointerup", ignoreSyntheticRelease, true);
+      const shell = new THREE.Group();
+      const shellRadius = Math.max(100, ...nodes.map(n => Math.hypot(n.ax, n.ay, n.az))) * 1.06;
+      const shellMaterial = new THREE.LineBasicMaterial({ color: "#9ab9dc", transparent: true, opacity: .16, depthWrite: false });
+      const shellGeometries: THREE.BufferGeometry[] = [];
+      for (let ring = 0; ring < 3; ring++) {
+        const points = Array.from({ length: 160 }, (_, i) => {
+          const angle = i / 160 * Math.PI * 2;
+          return new THREE.Vector3(Math.cos(angle) * shellRadius, Math.sin(angle) * shellRadius, 0);
+        });
+        const ringGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        shellGeometries.push(ringGeometry);
+        const line = new THREE.LineLoop(ringGeometry, shellMaterial);
+        if (ring === 1) line.rotation.y = Math.PI / 2;
+        if (ring === 2) line.rotation.x = Math.PI / 2;
+        line.raycast = () => {};
+        shell.add(line);
+      }
+      shell.rotation.set(.18, 0, .24);
+      graph.scene().add(shell);
       graph.backgroundColor("#f8fbff").showNavInfo(false).nodeLabel(() => "").linkLabel(() => "")
         .nodeThreeObject(node => {
           const group = new THREE.Group();
-          const material = new THREE.MeshStandardMaterial({ color: latest.current.color(node.node), roughness: .42, metalness: .04 });
+          const material = new THREE.MeshStandardMaterial({ color: latest.current.color(node.node), roughness: .3, metalness: .12 });
           disposables.push(material);
           const sphere = new THREE.Mesh(geometry, material);
-          const size = node.depth === 0 ? 8 : node.depth === 1 ? 5 : 3.5;
+          const size = node.depth === 0 ? 9 : node.depth === 1 ? 5.5 : 3.2;
           sphere.scale.setScalar(size); group.add(sphere); meshes.set(node.id, sphere);
           const label = new SpriteText(node.node.name, node.depth === 0 ? 12 : 10, "#30415f");
           label.fontFace = "Microsoft YaHei, sans-serif"; label.fontWeight = node.depth === 0 ? "700" : "500";
           label.backgroundColor = "rgba(248,251,255,0.9)"; label.padding = [1, .5]; label.borderRadius = 2;
-          label.position.y = -size - 8; label.material.depthWrite = false;
+          label.position.y = -size - 8; label.material.depthWrite = false; label.material.depthTest = false;
           label.raycast = () => {};
           labels.set(node.id, label); group.add(label);
           if (label.material.map) disposables.push(label.material.map); disposables.push(label.material);
           return group;
         })
-        .linkColor(() => "#829fbe").linkOpacity(.55).linkWidth(.55).linkHoverPrecision(2)
+        .linkColor(link => {
+          const source = typeof link.source === "object" ? link.source : nodes.find(n => n.id === link.source);
+          return source ? new THREE.Color(latest.current.color(source.node)).lerp(new THREE.Color("#a4bad2"), .65).getStyle() : "#a4bad2";
+        }).linkOpacity(.38).linkWidth(.65).linkCurvature(.08).linkHoverPrecision(2)
         .linkThreeObjectExtend(true).linkThreeObject(link => {
           const label = new SpriteText(link.edge.label || link.edge.relation, 6, "#60738e");
           label.backgroundColor = "#f8fbff"; label.padding = 1; label.visible = latest.current.labels;
@@ -89,12 +111,12 @@ export default forwardRef<SphereHandle, Props>(function KnowledgeGraphSphere(pro
         .d3Force("x", forces.forceX<SphereNode>(n => n.ax).strength(.1))
         .d3Force("y", forces.forceY<SphereNode>(n => n.ay).strength(.1))
         .d3Force("z", forces.forceZ<SphereNode>(n => n.az).strength(.1))
-        .d3VelocityDecay(.6).cooldownTicks(70)
+        .d3VelocityDecay(.38).cooldownTicks(140)
         .onNodeHover(node => { hovered = node?.id || null; latest.current.onHover(node?.node || null); })
         .onNodeClick(node => {
           if (clickTimer && lastClick === node.id) { clearTimeout(clickTimer); clickTimer = undefined; latest.current.onExpand(node.node); return; }
           if (clickTimer) clearTimeout(clickTimer);
-          lastClick = node.id; suspendedUntil = performance.now() + 3500;
+          lastClick = node.id;
           clickTimer = setTimeout(() => { clickTimer = undefined; latest.current.onSelect(node.node); }, 230);
         })
         .onNodeRightClick((node, event) => { event.preventDefault(); latest.current.onExpand(node.node); })
@@ -112,8 +134,9 @@ export default forwardRef<SphereHandle, Props>(function KnowledgeGraphSphere(pro
           });
         })
         .onNodeDragEnd(node => {
-          dragging = null; suspendedUntil = performance.now() + 3500;
-          node.ax = node.fx = node.x; node.ay = node.fy = node.y; node.az = node.fz = node.z;
+          dragging = null; interacting = false; suspendedUntil = performance.now() + 250;
+          node.fx = node.fy = node.fz = undefined;
+          if (media.matches) { node.x = node.fx = node.ax; node.y = node.fy = node.ay; node.z = node.fz = node.az; }
           graph.d3ReheatSimulation();
         })
         .onEngineStop(() => nodes.forEach(n => { if (n.id !== dragging) { n.x = n.fx = n.ax; n.y = n.fy = n.ay; n.z = n.fz = n.az; } }));
@@ -135,6 +158,7 @@ export default forwardRef<SphereHandle, Props>(function KnowledgeGraphSphere(pro
       };
       refresh.current = () => {
         const p = latest.current, visible = new Set(p.visibleIds);
+        shell.visible = visible.size > 1 && visible.size === nodes.length;
         nodes.forEach(n => { const updated = p.graph.nodes.find(item => item.id === n.id); if (updated) n.node = updated; });
         graph.graphData({ nodes: nodes.filter(n => visible.has(n.id)), links: p.edges.map(edge => ({ source: edge.source, target: edge.target, edge })) });
         meshes.forEach((mesh, id) => { const node = nodes.find(n => n.id === id); if (node) mesh.material.color.set(p.color(node.node)); });
@@ -162,7 +186,7 @@ export default forwardRef<SphereHandle, Props>(function KnowledgeGraphSphere(pro
       const draw = () => {
         if (cancelled) return;
         const p = latest.current;
-        const autoRotate = p.rotating && !media.matches && !p.paused && !hovered && !interacting && !dragging && performance.now() > suspendedUntil;
+        const autoRotate = p.rotating && !media.matches && !interacting && !dragging && performance.now() > suspendedUntil;
         const stopping = controls.autoRotate && !autoRotate;
         controls.autoRotate = autoRotate;
         if (stopping) { controls.enableDamping = false; controls.update(0); controls.enableDamping = true; }
@@ -179,7 +203,7 @@ export default forwardRef<SphereHandle, Props>(function KnowledgeGraphSphere(pro
           const viewPoint = world.clone().applyMatrix4(camera.matrixWorldInverse);
           const scale = graph.height() / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * -viewPoint.z);
           const screen = graph.graph2ScreenCoords(world.x, world.y, world.z);
-          const minHeight = emphasized || node.depth === 0 ? 13 : 0;
+          const minHeight = emphasized || node.depth === 0 ? 13 : active.length <= 45 ? 11 : 0;
           const targetHeight = Math.max(node.depth === 0 ? 12 : 10, minHeight / Math.max(.01, scale));
           if (Math.abs(label.textHeight - targetHeight) > .1) label.textHeight = targetHeight;
           const box = { x: screen.x, y: screen.y, w: label.scale.x * scale + 8, h: label.scale.y * scale + 5 };
@@ -197,6 +221,7 @@ export default forwardRef<SphereHandle, Props>(function KnowledgeGraphSphere(pro
         controls.removeEventListener("start", startInteraction); controls.removeEventListener("end", endInteraction);
         const renderer = graph.renderer();
         graph._destructor(); geometry.dispose(); disposables.forEach(item => item.dispose());
+        shellGeometries.forEach(item => item.dispose()); shellMaterial.dispose();
         renderer.dispose(); engine.current = null; element.replaceChildren();
       };
     }).catch(error => { if (!cancelled) { console.error("Knowledge graph renderer failed", error); setFailure(true); } });

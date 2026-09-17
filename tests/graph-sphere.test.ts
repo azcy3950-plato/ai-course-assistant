@@ -24,7 +24,18 @@ describe("spherical knowledge graph", () => {
     expect(roots).toHaveLength(networks.length);
     for (let i = 0; i < roots.length; i++) for (let j = i + 1; j < roots.length; j++) {
       const a = roots[i], b = roots[j];
-      expect(Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z)).toBeGreaterThan(250);
+      expect(Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z)).toBeGreaterThan(200);
+    }
+    for (let i = 0; i < layout.length; i++) for (let j = i + 1; j < layout.length; j++) {
+      const a = layout[i], b = layout[j];
+      expect(Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z)).toBeGreaterThan(6);
+    }
+    expect(Math.max(...layout.map(n => Math.hypot(n.x, n.y, n.z)))).toBeLessThan(340);
+  });
+  it("bounds deep branches inside a compact spherical envelope", () => {
+    for (const network of buildAllNetworks()) {
+      const layout = sphereLayout(network);
+      expect(Math.max(...layout.map(n => Math.hypot(n.x, n.y, n.z)))).toBeLessThanOrEqual(241);
     }
   });
   it("handles empty, disconnected and cyclic input", () => {

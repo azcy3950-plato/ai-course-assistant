@@ -97,10 +97,10 @@ export default function KnowledgeGraphPanel(p: Props) {
           {selectedId && branch.at(-1) !== selectedId && <button onClick={() => { const node = p.graph.nodes.find(n => n.id === selectedId); if (node) explore(node); }}>探索此分支</button>}
         </nav>}
         <KnowledgeGraphSphere ref={sphere} graph={p.graph} visibleIds={visible.nodes.map(n => n.id)} edges={visible.edges}
-          selectedId={p.selectedNodeId} focusIds={p.focusIds} paused={Boolean(p.selectedNodeId || relation || query)} rotating={rotating} labels={labels}
+          selectedId={p.selectedNodeId} focusIds={p.focusIds} rotating={rotating} labels={labels}
           color={node => kindOf(node).color} onSelect={p.onNodeClick} onExpand={explore} onHover={setHover} onRelation={setRelation} />
         <button type="button" onClick={() => setRotating(value => !value)} aria-label={rotating ? "暂停旋转" : "开始旋转"} title={rotating ? "暂停旋转" : "开始旋转"} aria-pressed={rotating}
-          className="absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-50">
+          className="absolute bottom-3 right-3 z-30 flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-50">
           {rotating ? <Pause size={15} /> : <Play size={15} />}
         </button>
         {relation && relationSource && relationTarget && <aside className="legacy-relation-card" aria-label="关系说明"><button aria-label="关闭关系说明" onClick={() => setRelation(null)}>×</button><h3>{relationSource.name} → {relationTarget.name}</h3><p>{relationExplanation(relation, relationSource, relationTarget)}</p><div className="legacy-mini-controls"><button onClick={() => p.onNodeClick(relationSource)}>查看起点</button><button onClick={() => p.onNodeClick(relationTarget)}>查看终点</button></div></aside>}

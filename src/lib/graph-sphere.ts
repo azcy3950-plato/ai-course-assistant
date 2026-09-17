@@ -15,7 +15,7 @@ function direction(index: number, count: number) {
   return new Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
 }
 
-/** Fixed chapter groups with branch-local spherical shells, independent of camera motion. */
+/** Compact spherical sectors keep each branch together without long radial spikes. */
 export function sphereLayout(graph: KnowledgeGraph): SphereNode[] {
   const groups = new Map<string, KnowledgeNode[]>();
   graph.nodes.forEach(node => {
@@ -39,28 +39,26 @@ export function sphereLayout(graph: KnowledgeGraph): SphereNode[] {
       }
     }
     nodes.filter(n => !depths.has(n.id)).forEach(n => { children.get(root.id)!.push(n.id); depths.set(n.id, 1); });
-    const center = groups.size > 1 ? direction(groupIndex, groups.size).multiplyScalar(340) : new Vector3();
-    const scale = groups.size > 1 ? .58 : 1;
+    const center = groups.size > 1 ? direction(groupIndex, groups.size).multiplyScalar(215) : new Vector3();
+    const scale = groups.size > 1 ? .48 : 1;
     const positions = new Map([[root.id, new Vector3()]]);
     const branches = children.get(root.id)!;
     branches.forEach((id, i) => {
       const axis = direction(i, branches.length);
-      positions.set(id, axis.clone().multiplyScalar(nodes.length <= 10 ? 135 : 110));
+      positions.set(id, axis.clone().multiplyScalar(nodes.length <= 10 ? 155 : 105));
       const tangent = new Vector3().crossVectors(axis, Math.abs(axis.y) > .9 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0)).normalize();
       const bitangent = new Vector3().crossVectors(axis, tangent).normalize();
-      const visit = (parent: string) => {
-        const list = children.get(parent)!;
-        list.forEach((child, j) => {
-          const angle = 2 * Math.PI * j / Math.max(1, list.length);
-          const radius = Math.max(38, list.length * 12);
-          const depth = depths.get(child)!;
-          const point = axis.clone().multiplyScalar(110 + (depth - 1) * 110)
-            .addScaledVector(tangent, Math.cos(angle) * radius)
-            .addScaledVector(bitangent, Math.sin(angle) * radius);
-          positions.set(child, point); visit(child);
-        });
-      };
+      const descendants: string[] = [];
+      const visit = (parent: string) => children.get(parent)!.forEach(child => { descendants.push(child); visit(child); });
       visit(id);
+      descendants.forEach((child, j) => {
+        const angle = j * Math.PI * (3 - Math.sqrt(5));
+        const spread = .78 * Math.sqrt((j + .5) / descendants.length);
+        const radius = 180 + Math.min(3, depths.get(child)! - 2) * 20;
+        const point = axis.clone().addScaledVector(tangent, Math.cos(angle) * spread)
+          .addScaledVector(bitangent, Math.sin(angle) * spread).normalize().multiplyScalar(radius);
+        positions.set(child, point);
+      });
     });
     nodes.forEach(node => {
       const point = positions.get(node.id)!.clone().multiplyScalar(scale).add(center);
