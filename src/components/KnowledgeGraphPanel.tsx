@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from "@/types";
 import { computeLayout, type Placed } from "@/lib/graph-layout";
 import { neighborhood, relationExplanation } from "./guided/model";
+import { graphLabelLines as wrapLabel, nodeRadius as radiusOf } from "@/lib/graph-physics";
+import { useGraphPhysics } from "./useGraphPhysics";
 
 type Props = { graph: KnowledgeGraph; focusIds?: string[]; selectedNodeId?: string; depth: 1 | 2; mode: "current" | "cumulative"; nodeCategory?: string; relationType?: string; onModeChange: (v: "current" | "cumulative") => void; onDepthChange: (v: 1 | 2) => void; onNodeCategory?: (v: string) => void; onRelationType?: (v: string) => void; onNodeClick: (n: KnowledgeNode) => void; onExpand: (n: KnowledgeNode) => void; onFullscreen: () => void; onCollapsePanel: () => void; onAsk?: (n: KnowledgeNode) => void; onCollapse?: () => void };
 
@@ -17,18 +19,6 @@ const KIND_META: Record<string, { label: string; color: string; tint: string }> 
 const DEFAULT_KIND = { label: "章节/类别", color: "#18b8d8", tint: "rgba(24,184,216,0.16)" };
 const rels: Record<string, string> = { prerequisite: "先修", leads_to: "推导", related: "相关", applied_in: "应用", governed_by: "依据" };
 
-function wrapLabel(label: string): string[] {
-  if (!label) return [""];
-  if (label.length <= 8) return [label];
-  const lines: string[] = [];
-  let remaining = label;
-  while (remaining.length > 0) {
-    const size = remaining.length > 12 ? 5 : remaining.length > 9 ? 4 : remaining.length;
-    lines.push(remaining.slice(0, size));
-    remaining = remaining.slice(size);
-  }
-  return lines.slice(0, 3);
-}
 
 
 function buildPath(sx: number, sy: number, tx: number, ty: number) {
@@ -52,7 +42,7 @@ export default function KnowledgeGraphPanel(p: Props) {
   const [viewAnim, setViewAnim] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; tx: number; ty: number; active: boolean; moved: boolean; nodeId: string | null; baseX: number; baseY: number; dx: number; dy: number; prevDx: number; prevDy: number; lastT: number; vel: { x: number; y: number } }>({ startX: 0, startY: 0, tx: 0, ty: 0, active: false, moved: false, nodeId: null, baseX: 0, baseY: 0, dx: 0, dy: 0, prevDx: 0, prevDy: 0, lastT: 0, vel: { x: 0, y: 0 } });
   const clickTimer = useRef<number | null>(null);
-  const [nodeDrag, setNodeDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
+
   const [branch, setBranch] = useState<string[]>([]);
   const [relation, setRelation] = useState<KnowledgeEdge | null>(null);
   const animationTimer = useRef<number | null>(null);
@@ -84,52 +74,20 @@ export default function KnowledgeGraphPanel(p: Props) {
   const placedByIdRef = useRef(placedById);
   useEffect(() => { placedByIdRef.current = placedById; }, [placedById]);
 
-  // 邻接表(用于节点拖拽的弹簧联动)
-  const adj = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    visible.nodes.forEach((n) => map.set(n.id, new Set()));
-    visible.edges.forEach((e) => { map.get(e.source)?.add(e.target); map.get(e.target)?.add(e.source); });
-    return map;
-  }, [visible.edges, visible.nodes]);
-
-  // 松手惯性涟漪(弹簧物理):一阶邻居被速度带一下再回弹
-  const [springKick, setSpringKick] = useState<{ x: number; y: number } | null>(null);
-  const lastDragIdRef = useRef<string | null>(null);
-  const kickTimerRef = useRef<number | null>(null);
-  useEffect(() => () => { if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); }, []);
-
-  // 节点拖拽后的自由摆放位置(松手停留,覆盖算法布局);换图(网络/加载)时清空,搜索/筛选不触发
-  const [nodeLayoutOverrides, setNodeLayoutOverrides] = useState<Map<string, { x: number; y: number }>>(new Map());
-  const nodeLayoutOverridesRef = useRef(nodeLayoutOverrides);
-  useEffect(() => { nodeLayoutOverridesRef.current = nodeLayoutOverrides; }, [nodeLayoutOverrides]);
-  useEffect(() => { setNodeLayoutOverrides(new Map()); }, [p.graph]);
-
-  // 节点拖拽时的弹簧位移:被拖节点 1.0,一阶邻居 0.45,二阶邻居 0.18;松手后惯性涟漪 0.5
-  const springOffsets = useMemo(() => {
-    const out = new Map<string, { x: number; y: number }>();
-    if (nodeDrag) {
-      out.set(nodeDrag.id, { x: nodeDrag.dx, y: nodeDrag.dy });
-      const first = new Set<string>();
-      adj.get(nodeDrag.id)?.forEach((nid) => first.add(nid));
-      first.forEach((nid) => out.set(nid, { x: nodeDrag.dx * 0.45, y: nodeDrag.dy * 0.45 }));
-      first.forEach((nid) => adj.get(nid)?.forEach((n2) => { if (n2 !== nodeDrag.id && !first.has(n2)) out.set(n2, { x: nodeDrag.dx * 0.18, y: nodeDrag.dy * 0.18 }); }));
-      return out;
-    }
-    if (springKick && lastDragIdRef.current) {
-      adj.get(lastDragIdRef.current)?.forEach((nid) => out.set(nid, { x: springKick.x * 0.5, y: springKick.y * 0.5 }));
-    }
-    return out;
-  }, [adj, nodeDrag, springKick]);
+  const expansionOrigin = useRef<string | undefined>(undefined);
+  const physics = useGraphPhysics(fullPlacement, p.graph.edges, visible.nodes.map(n => n.id), expansionOrigin.current || p.selectedNodeId, Boolean(p.selectedNodeId || relation));
+  const physicsRef = useRef(physics);
+  physicsRef.current = physics;
 
   const fit = useCallback((ids?: string[], force = false) => {
     if (!placed.length) return;
     const W = 1400, H = 900;
     // 完整图模式:缩放级别由全图决定(保持完整可见),中心对准焦点/指定节点
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    placed.forEach((pt) => { minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y); maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y); });
+    placed.forEach((original) => { const pt = physicsRef.current.fitPositionRef.current.get(original.node.id) || original; minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y); maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y); });
     const pad = 110;
     const fullScale = Math.min((W - pad * 2) / Math.max(60, maxX - minX), (H - pad * 2) / Math.max(60, maxY - minY), 1.15);
-    const targets = ids && ids.length ? ids.map((id) => placedById.get(id)).filter(Boolean) as Placed[] : [];
+    const targets = placed.length <= 80 && ids && ids.length ? ids.map((id) => { const pl = placedById.get(id); return pl ? { ...pl, ...(physicsRef.current.fitPositionRef.current.get(id) || {}) } : undefined; }).filter(Boolean) as Placed[] : [];
     // 指定了焦点但全部被搜索/筛选过滤(不可见)时保持当前视图,不做无效重置(用户显式点击时 force=true 跳过)
     if (!force && ids && ids.length && targets.length === 0 && !placedById.has(ids[0])) return;
     // 有焦点时:以焦点包围盒计算缩放(比全图放大,焦点更突出),上限全图缩放的 1.8 倍
@@ -146,7 +104,7 @@ export default function KnowledgeGraphPanel(p: Props) {
     const ty = H / 2 - cy * scale;
     setView({ scale: Math.max(0.15, scale), tx, ty });
     // 焦点切换时平滑移动视图中心(提问→跳到相关节点)
-    setViewAnim(true);
+    setViewAnim(!physicsRef.current.reducedMotion);
     if (animationTimer.current) window.clearTimeout(animationTimer.current);
     animationTimer.current = window.setTimeout(() => setViewAnim(false), 650);
   }, [placed, placedById]);
@@ -198,7 +156,8 @@ export default function KnowledgeGraphPanel(p: Props) {
         const [a, b] = [...pointers.values()];
         const center = toViewBox((a.x + b.x) / 2, (a.y + b.y) / 2);
         pinch = { distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), ...center, ...viewRef.current };
-        dragRef.current.active = false; dragRef.current.moved = true; setNodeDrag(null);
+        if (dragRef.current.nodeId) physicsRef.current.release({ x: 0, y: 0 }, true);
+        dragRef.current.active = false; dragRef.current.moved = true;
         el.setPointerCapture(e.pointerId); return;
       }
       if (pointers.size > 2) return;
@@ -207,11 +166,11 @@ export default function KnowledgeGraphPanel(p: Props) {
         // 节点拖拽(物理):capture 到节点自身,记录基准布局位置
         const nodeId = nodeEl.getAttribute("data-node-id") || "";
         const pl = placedByIdRef.current.get(nodeId);
-        // 二次拖动基准:优先用已摆放位置(override,经 ref 读取避免闭包旧值),否则算法布局——避免二次拖动时跳回
-        const placed = nodeLayoutOverridesRef.current.get(nodeId) || pl;
+        // 从当前物理位置开始拖动，连续拖动不跳回初始布局。
+        const placed = physicsRef.current.positionRef.current.get(nodeId) || pl;
         (nodeEl as Element).setPointerCapture(e.pointerId);
         dragRef.current = { startX: e.clientX, startY: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, active: true, moved: false, nodeId, baseX: placed?.x ?? 0, baseY: placed?.y ?? 0, dx: 0, dy: 0, prevDx: 0, prevDy: 0, lastT: performance.now(), vel: { x: 0, y: 0 } };
-        setNodeDrag({ id: nodeId, dx: 0, dy: 0 });
+
       } else {
         // 画布平移
         el.setPointerCapture(e.pointerId);
@@ -230,7 +189,14 @@ export default function KnowledgeGraphPanel(p: Props) {
       }
       if (!dragRef.current.active) return;
       const { rs } = renderScale();
-      if (Math.abs(e.clientX - dragRef.current.startX) + Math.abs(e.clientY - dragRef.current.startY) > 5) dragRef.current.moved = true;
+      if (!dragRef.current.moved && Math.abs(e.clientX - dragRef.current.startX) + Math.abs(e.clientY - dragRef.current.startY) > 5) {
+        dragRef.current.moved = true;
+        if (dragRef.current.nodeId) {
+          const v = viewRef.current;
+          physicsRef.current.begin(dragRef.current.nodeId, { left: -v.tx / v.scale + 12, right: (1400 - v.tx) / v.scale - 12, top: -v.ty / v.scale + 12, bottom: (900 - v.ty) / v.scale - 12 });
+        }
+      }
+      if (!dragRef.current.moved) return;
       if (dragRef.current.nodeId) {
         const dx = (e.clientX - dragRef.current.startX) / rs / viewRef.current.scale;
         const dy = (e.clientY - dragRef.current.startY) / rs / viewRef.current.scale;
@@ -242,13 +208,22 @@ export default function KnowledgeGraphPanel(p: Props) {
           dragRef.current.vel = { x: (dx - dragRef.current.prevDx) / dt * 16, y: (dy - dragRef.current.prevDy) / dt * 16 };
           dragRef.current.prevDx = dx; dragRef.current.prevDy = dy; dragRef.current.lastT = now;
         }
-        setNodeDrag({ id: dragRef.current.nodeId, dx, dy });
+        physicsRef.current.move({ x: dragRef.current.baseX + dx, y: dragRef.current.baseY + dy });
       } else {
         setView((v) => ({ ...v, tx: dragRef.current.tx + (e.clientX - dragRef.current.startX) / rs, ty: dragRef.current.ty + (e.clientY - dragRef.current.startY) / rs }));
       }
     };
-    const onPointerUp = (e: PointerEvent) => { if (!pointers.delete(e.pointerId)) return; if (pinch) { if (pointers.size < 2) pinch = null; return; } if (dragRef.current.active) { const d = dragRef.current; dragRef.current.active = false; if (d.nodeId && d.moved && e.type !== "pointercancel") { lastDragIdRef.current = d.nodeId; const vx = Math.max(-40, Math.min(40, d.vel.x * 0.4)); const vy = Math.max(-40, Math.min(40, d.vel.y * 0.4)); if (Math.abs(vx) + Math.abs(vy) > 8) { setSpringKick({ x: vx, y: vy }); if (kickTimerRef.current) window.clearTimeout(kickTimerRef.current); kickTimerRef.current = window.setTimeout(() => setSpringKick(null), 380); } // 自由摆放:松手后节点停留在拖到的新位置(不再弹回),可随时重置
-        setNodeLayoutOverrides((prev) => { const next = new Map(prev); next.set(d.nodeId!, { x: d.baseX + d.dx, y: d.baseY + d.dy }); return next; }); } setNodeDrag(null); } };
+    const onPointerUp = (e: PointerEvent) => {
+      if (!pointers.delete(e.pointerId)) return;
+      if (pinch) { if (pointers.size < 2) pinch = null; return; }
+      const d = dragRef.current;
+      if (!d.active) return;
+      d.active = false;
+      if (d.nodeId && d.moved) {
+        const stale = performance.now() - d.lastT > 90;
+        physicsRef.current.release(d.moved && !stale ? d.vel : { x: 0, y: 0 }, e.type === "pointercancel");
+      }
+    };
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove);
@@ -306,9 +281,8 @@ export default function KnowledgeGraphPanel(p: Props) {
     if (n.color) return { label: n.category, color: n.color, tint: n.color + "22" };
     return KIND_META[n.category] || DEFAULT_KIND;
   };
-  const radiusOf = (depth: number) => (depth === 0 ? 36 : depth === 1 ? 25 : 19);
   const edgeFocus = (e: { source: string; target: string }) => (relatedIds.has(e.source) && relatedIds.has(e.target)) || (e.source === selectedId || e.target === selectedId) || e.source === hover?.id || e.target === hover?.id;
-  const explore = (node: KnowledgeNode) => { setBranch(old => old.at(-1) === node.id ? old : [...old, node.id]); setRelation(null); setHover(null); p.onExpand(node); };
+  const explore = (node: KnowledgeNode) => { expansionOrigin.current = node.id; setBranch(old => old.at(-1) === node.id ? old : [...old, node.id]); setRelation(null); setHover(null); p.onExpand(node); };
   const relationSource = relation && p.graph.nodes.find(n => n.id === relation.source);
   const relationTarget = relation && p.graph.nodes.find(n => n.id === relation.target);
 
@@ -325,7 +299,7 @@ export default function KnowledgeGraphPanel(p: Props) {
         <button onClick={() => p.onDepthChange(1)} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.depth === 1 ? "bg-[#165dff] text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`}>一阶</button>
         <button onClick={() => p.onDepthChange(2)} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.depth === 2 ? "bg-[#165dff] text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`}>二阶</button>
         <button onClick={() => fit(p.focusIds, true)} title="对准当前焦点(若被筛选过滤则重置到全图)" className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">适应视图</button>
-        <button onClick={() => { setNodeLayoutOverrides(new Map()); fit(); }} title="清空手动摆放,回到算法布局并适应视图" className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">重置布局</button>
+        <button onClick={() => { physics.reset(); fit(); }} title="清空手动摆放,回到算法布局并适应视图" className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">重置布局</button>
         <button onClick={() => setLabels((v) => !v)} className={`rounded-full border px-3 py-1 text-xs font-medium shadow-sm transition ${labels ? "border-[rgba(22,93,255,0.2)] bg-[rgba(22,93,255,0.08)] text-[#2450a5]" : "border-[rgba(105,126,165,0.16)] bg-white text-[#314362]"}`}>关系标签</button>
         <button onClick={() => setLegend((v) => !v)} className={`rounded-full border px-3 py-1 text-xs font-medium shadow-sm transition ${legend ? "border-[rgba(22,93,255,0.2)] bg-[rgba(22,93,255,0.08)] text-[#2450a5]" : "border-[rgba(105,126,165,0.16)] bg-white text-[#314362]"}`}>图例</button>
         <button onClick={p.onFullscreen} className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">全屏</button>
@@ -364,11 +338,8 @@ export default function KnowledgeGraphPanel(p: Props) {
               {visible.edges.map((e) => {
                 const s = placedById.get(e.source), t = placedById.get(e.target);
                 if (!s || !t) return null;
-                // 边端点与节点同源:override(自由摆放)+ 弹簧位移(拖动中实时跟随,关系线不脱离节点)
-                const so = nodeLayoutOverrides.get(e.source), to = nodeLayoutOverrides.get(e.target);
-                const sp = springOffsets.get(e.source), tp = springOffsets.get(e.target);
-                const sx = (so || s).x + (sp?.x || 0), sy = (so || s).y + (sp?.y || 0);
-                const tx = (to || t).x + (tp?.x || 0), ty = (to || t).y + (tp?.y || 0);
+                const sp = physics.positions.get(e.source) || s, tp = physics.positions.get(e.target) || t;
+                const sx = sp.x, sy = sp.y, tx = tp.x, ty = tp.y;
                 const focused = edgeFocus(e);
                 return <g key={e.id}>
                   <path data-edge-id={e.id} className="legacy-edge-hit" d={buildPath(sx, sy, tx, ty)} role="button" tabIndex={0} aria-label={`${s.node.name}到${t.node.name}：${e.label || rels[e.relation]}`} onClick={() => { setRelation(e); setHover(null); }} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setRelation(e); setHover(null); } }} />
@@ -385,13 +356,11 @@ export default function KnowledgeGraphPanel(p: Props) {
                 const isRelated = selectionIds.has(node.id) || relatedIds.has(node.id);
                 // 完整图模式:选中节点时其余淡化;未选中时仅焦点范围外轻微淡化(仍可见)
                 const dimmed = selectedId !== null && selectedId !== undefined ? (selectedId !== node.id && !selectionIds.has(node.id)) : (focusSet.size > 0 && !isRelated);
-                const spring = springOffsets.get(node.id);
-                const base = nodeLayoutOverrides.get(node.id) || { x, y };
-                const fx = base.x + (spring?.x || 0);
-                const fy = base.y + (spring?.y || 0);
+                const position = physics.positions.get(node.id) || { x, y };
+                const fx = position.x, fy = position.y;
                 const radius = radiusOf(depth);
                 const lines = wrapLabel(node.name);
-                return <g key={node.id} data-node-id={node.id} className={`node-shell${isFocus ? " legacy-lit" : ""}${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.45 : 1, transition: nodeDrag ? "opacity .3s ease" : "opacity .3s ease, transform .6s cubic-bezier(0.34, 1.56, 0.64, 1)", cursor: "grab", transform: `translate(${fx}px, ${fy}px)` }}
+                return <g key={node.id} data-node-id={node.id} className={`node-shell${isFocus ? " legacy-lit" : ""}${isSelected ? " selected" : ""}${dimmed ? " dimmed" : ""}`} style={{ opacity: dimmed ? 0.45 : 1, transition: physics.reducedMotion ? "none" : "opacity .3s ease", cursor: "grab", transform: `translate(${fx}px, ${fy}px)` }}
                   onClick={(e) => { e.stopPropagation(); if (dragRef.current.moved) { dragRef.current.moved = false; return; } if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null; return; } clickTimer.current = window.setTimeout(() => { clickTimer.current = null; p.onNodeClick(node); }, 220); }}
                   role="button" tabIndex={0} aria-label={`知识点：${node.name}`} aria-pressed={isSelected}
                   onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); p.onNodeClick(node); } if (e.key === "ArrowRight") { e.preventDefault(); explore(node); } if (e.key === "Escape") setBranch(old => old.slice(0, -1)); }}
