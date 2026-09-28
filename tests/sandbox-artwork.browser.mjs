@@ -56,7 +56,7 @@ async function download(filename) {
 
 try {
   await page.goto(new URL('/sandbox', base).href);
-  await page.getByTestId('sandbox-2d').waitFor();
+  await page.getByTestId('sandbox-landscape').waitFor();
   await check('Portable local assets and exact approved base for an empty plan', async () => {
     for (const file of ['base.png', 'green-roof.png', 'bioswale.png', 'rain-garden.png', 'permeable-paving.png']) {
       const response = await page.request.get(new URL('/sandbox/artwork/zijing-v1/' + file, base).href);
@@ -98,7 +98,7 @@ try {
     await importPlan('调整后的草稿', changed);
     await page.getByRole('button', { name: '查看效果图', exact: true }).click(); await ready();
     assert.notEqual(await pixels(), originalPixels); await close();
-    await page.reload(); await page.getByTestId('sandbox-2d').waitFor(); await notebook();
+    await page.reload(); await page.getByTestId('sandbox-landscape').waitFor(); await notebook();
     await page.getByRole('button', { name: '查看四类设施方案的效果图', exact: true }).locator('[data-artwork-state="ready"]').waitFor();
     await page.getByRole('button', { name: '查看四类设施方案的效果图', exact: true }).click(); await ready();
     assert.equal(await pixels(), originalPixels);
@@ -121,7 +121,7 @@ try {
     const bad = await badContext.newPage();
     const pattern = '**/sandbox/artwork/zijing-v1/base.png';
     await bad.route(pattern, route => route.abort());
-    await bad.goto(new URL('/sandbox', base).href); await bad.getByTestId('sandbox-2d').waitFor();
+    await bad.goto(new URL('/sandbox', base).href); await bad.getByTestId('sandbox-landscape').waitFor();
     await bad.getByRole('button', { name: '保存方案', exact: true }).click();
     const d = bad.getByRole('dialog', { name: '方案效果图', exact: true });
     await d.locator('[data-artwork-state="error"]').waitFor();

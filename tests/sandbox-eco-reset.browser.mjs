@@ -44,7 +44,7 @@ try{
    localStorage.setItem('eco-reset-test-initialized','true');
   }
  },{plan,otherSaved});
- await page.goto(base+'/sandbox');await page.getByTestId('sandbox-2d').waitFor();await settle();
+ await page.goto(base+'/sandbox');await page.getByRole('button',{name:'俯视编辑',exact:true}).click();await page.getByTestId('sandbox-2d').waitFor();await settle();
  let ecoBefore={},heroBefore,savedBefore,result;
  await check('Physical indicators appear above smaller monetary values, including negative carbon',async()=>{
   await page.getByRole('button',{name:'生态服务',exact:true}).click();

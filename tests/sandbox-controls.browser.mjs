@@ -47,6 +47,7 @@ async function drag(from,to) {await page.mouse.move(from.x,from.y);await page.mo
 async function hold(key,ms=230,fast=false){await svg().focus();if(fast)await page.keyboard.down('Shift');await page.keyboard.down(key);await page.waitForTimeout(ms);await page.keyboard.up(key);if(fast)await page.keyboard.up('Shift');await settle();}
 try {
   await page.goto(url.endsWith('/sandbox')?url:url+'/sandbox');
+  await page.getByRole('button',{name:'俯视编辑',exact:true}).click();
   await svg().waitFor({state:'visible'});
   await svg().scrollIntoViewIfNeeded();
   await settle();

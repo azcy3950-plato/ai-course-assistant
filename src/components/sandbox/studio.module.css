@@ -123,6 +123,11 @@
 .mapBody { position: relative; height: max(420px,calc(100dvh - 350px)); min-width: 0; border: 1px solid #dde6de; border-radius: 16px; background: #eef3ed; overflow: hidden; }
 .mapCanvas,.threeWrap,.viewLayer { position: absolute; inset: 0; }
 .viewLayer[hidden] { display: none; }
+.landscapeViewport { background: #e8ecdf; }
+.mapBody.landscapeBody { height: auto; min-height: 0; aspect-ratio: 1484 / 1060; }
+.landscapeStatus { position: absolute; top: 12px; right: 12px; max-width: calc(100% - 24px); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: #fffffff5; color: var(--muted); font-size: 12px; pointer-events: none; }
+.landscapeStatus[role=alert] { top: 60px; color: #a24c29; pointer-events: auto; }
+.landscapeDrop { position: absolute; inset: 0; display: grid; place-items: center; border: 3px solid var(--color-primary); background: #f4f8ffb8; color: var(--color-primary); font-size: 16px; font-weight: 600; text-align: center; padding: 24px; pointer-events: none; }
 .mapCanvas svg,.threeWrap svg { width: 100%; height: 100%; touch-action: none; overscroll-behavior: contain; user-select: none; cursor: grab; outline: 0; }
 .mapCanvas svg:focus-visible,.threeWrap svg:focus-visible { outline: 3px solid #9bb8ff; outline-offset: -3px; }
 .mapCanvas svg[data-space=true],.mapCanvas svg[data-space=true] *,.threeWrap svg[data-space=true],.threeWrap svg[data-space=true] * { cursor: grab !important; }

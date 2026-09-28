@@ -26,7 +26,7 @@ try{
  const responseReady=page.waitForResponse(r=>r.url().endsWith('/api/sandbox/run')&&r.request().method()==='POST',{timeout:120000});
  const start=Date.now();
  await page.goto(base+'/sandbox/demo');
- await page.getByTestId('sandbox-2d').waitFor();
+ await page.getByTestId('sandbox-landscape').waitFor();
  const response=await responseReady,result=await response.json();
  assert.equal(response.status(),200,JSON.stringify(result));
  assert.equal(result.proposed.source,'SWMM');

@@ -1,4 +1,5 @@
 import { Campus, FACILITIES, Facility, Patch, Placement, Surface, SURFACE_NAMES } from './types';
+import { newSandboxId } from './id';
 
 export interface SpaceGroup {
   id: string;
@@ -69,7 +70,7 @@ export function setGroupArea(campus: Campus, placements: Placement[], space: Spa
   const distributed: Placement[] = [];
   for (const {patch, free} of capacities) {
     const area = Math.min(free, remaining, remaining * (free / remainingCapacity));
-    if (area > 0) distributed.push({id: oldIds.get(patch.id) || crypto.randomUUID(), patchId: patch.id, facility: config.facility, depth: config.depth, trees: config.facility === 'RG' && config.trees, area});
+    if (area > 0) distributed.push({id: oldIds.get(patch.id) || newSandboxId(), patchId: patch.id, facility: config.facility, depth: config.depth, trees: config.facility === 'RG' && config.trees, area});
     remaining -= area;
     remainingCapacity -= free;
   }

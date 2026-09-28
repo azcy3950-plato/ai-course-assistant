@@ -8,7 +8,9 @@ import {calculateEco,ECO_PARAMETERS} from '@/lib/sandbox/ecosystem';
 import {planSignature,validatePlacements} from '@/lib/sandbox/model';
 import {configKey,groupPlacements,groupSpaces,setGroupArea,spaceId} from '@/lib/sandbox/grouping';
 import {createArtworkRecipe,type ArtworkRecipe} from '@/lib/sandbox/artwork';
+import {newSandboxId} from '@/lib/sandbox/id';
 import CampusMap from './CampusMap';
+import LandscapeViewport from './LandscapeViewport';
 import PlanArtwork from './PlanArtwork';
 import GroupPlacementEditor from './GroupPlacementEditor';
 import type {ViewRequest} from './useSvgViewport';
@@ -44,7 +46,7 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
  const[campus,setCampus]=useState<Campus|null>(null),[loadError,setLoadError]=useState('');
  const[placements,setPlacements]=useState<Placement[]>([]),[zone,setZone]=useState(5),[focusZone,setFocusZone]=useState<number|null>(5),[patchId,setPatchId]=useState(''),[active,setActive]=useState<Facility>('RG');
  const[area,setArea]=useState(50),[depth,setDepth]=useState(100),[trees,setTrees]=useState(true),[rain,setRain]=useState('5A'),[name,setName]=useState('我的方案 01');
- const[view,setView]=useState<'2d'|'3d'>('2d'),[showPipes,setShowPipes]=useState(false),[focusMode,setFocusMode]=useState(false),[libraryOpen,setLibraryOpen]=useState(false),[inspectorOpen,setInspectorOpen]=useState(false),[toast,setToast]=useState(''),[error,setError]=useState('');
+ const[view,setView]=useState<'artwork'|'2d'|'3d'>('artwork'),[showPipes,setShowPipes]=useState(false),[focusMode,setFocusMode]=useState(false),[libraryOpen,setLibraryOpen]=useState(false),[inspectorOpen,setInspectorOpen]=useState(false),[toast,setToast]=useState(''),[error,setError]=useState('');
  const[result,setResult]=useState<RunResult|null>(null),[running,setRunning]=useState(false),[tab,setTab]=useState('overview'),[pollutant,setPollutant]=useState('COD');
  const[modal,setModal]=useState<'help'|'saved'|'params'|'artwork'|null>(null),[saved,setSaved]=useState<Saved[]>([]),[artworkPlan,setArtworkPlan]=useState<Saved|null>(null);
  const dialogRef=useRef<HTMLElement>(null);
@@ -58,9 +60,9 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
  function closeDrawers(){setLibraryOpen(false);setInspectorOpen(false);}
  useEffect(()=>{const query=window.matchMedia('(max-width: 1100px)');const update=()=>setCompactViewport(query.matches);update();query.addEventListener('change',update);return()=>query.removeEventListener('change',update);},[]);
  useEffect(()=>{if(!drawerMode||(!libraryOpen&&!inspectorOpen))return;const close=(event:KeyboardEvent)=>{if(event.key==='Escape'){setLibraryOpen(false);setInspectorOpen(false);}};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[drawerMode,libraryOpen,inspectorOpen]);
- const[viewRequests,setViewRequests]=useState<Record<'2d'|'3d',ViewRequest>>({'2d':{sequence:1,zone:5},'3d':{sequence:0,zone:null}});
- function switchView(next:'2d'|'3d'){if(next!==view&&viewRequests[next].sequence===0)setViewRequests(previous=>({...previous,[next]:{sequence:1,zone}}));setView(next);}
- function locateView(id:number|null){setFocusZone(id);setViewRequests(previous=>({...previous,[view]:{sequence:previous[view].sequence+1,zone:id}}));}
+ const[viewRequests,setViewRequests]=useState<Record<'2d'|'3d',ViewRequest>>({'2d':{sequence:0,zone:null},'3d':{sequence:0,zone:null}});
+ function switchView(next:'artwork'|'2d'|'3d'){if(next!=='artwork'&&next!==view&&viewRequests[next].sequence===0)setViewRequests(previous=>({...previous,[next]:{sequence:1,zone}}));setView(next);}
+ function locateView(id:number|null){setFocusZone(id);if(view!=='artwork')setViewRequests(previous=>({...previous,[view]:{sequence:previous[view].sequence+1,zone:id}}));}
  const hydrated=useRef(false),fileInput=useRef<HTMLInputElement>(null),previewStarted=useRef(false);
  useEffect(()=>{let alive=true;fetch('/api/sandbox/model').then(r=>{if(!r.ok)throw new Error('场地加载失败');return r.json();}).then((data:Campus)=>{
    if(!alive)return;setCampus(data);const p=data.patches.filter(p=>p.zone===5&&p.surface==='green').sort((a,b)=>b.area-a.area)[0]||data.patches[0];setPatchId(p.id);
@@ -92,7 +94,7 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
  function enterFocus(){setFocusMode(true);setLibraryOpen(false);setInspectorOpen(false);}
  function exitFocus(){setFocusMode(false);setLibraryOpen(false);setInspectorOpen(false);}
  function showGlobal(){locateView(null);}
- function tool(f:Facility){setActive(f);setDepth(FACILITIES[f].depth);setError('');}
+ function tool(f:Facility){setActive(f);setDepth(FACILITIES[f].depth);const p=campus?.patches.filter(p=>p.zone===zone&&p.surface===FACILITIES[f].surface).sort((a,b)=>b.area-a.area)[0];if(p)selectPatch(p.id);setError('');}
  const applyGroup=useCallback((spaceIdValue:string,config:{facility:Facility;depth:number;trees:boolean},total:number)=>{
    if(!campus)return false;const space=spaces.find(s=>s.id===spaceIdValue);if(!space)return false;
    try{const next=setGroupArea(campus,placements,space,config,total);return commit(next);}catch(e){setError(e instanceof Error?e.message:'无法调整片区合计面积');return false;}
@@ -108,6 +110,7 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
    if(a<=0||a>free+.001){setError(`此片区${SURFACE_NAMES[p.surface]}剩余 ${n(free,2)} m²，请减少面积或调整已有设施。`);return;}
    if(applyGroup(space.id,config,previous+a))setToast(`已添加 ${n(a,2)} m² ${FACILITIES[f].name}，已按片区同类空间分配。`);
  },[campus,placements,spaces,applyGroup,selectPatch,depth,trees]);
+ function addToZone(f:Facility){const p=campus?.patches.filter(p=>p.zone===zone&&p.surface===FACILITIES[f].surface).sort((a,b)=>b.area-a.area)[0];if(p)addAt(p.id,f);else setError(`此片区没有可布置${FACILITIES[f].name}的空间。`);}
  function undo(){if(!history.length)return;setFuture(f=>[placements,...f]);setPlacements(history[history.length-1]);setHistory(h=>h.slice(0,-1));setError('');}
  function redo(){if(!future.length)return;setHistory(h=>[...h,placements]);setPlacements(future[0]);setFuture(f=>f.slice(1));setError('');}
  function resetPlan(){
@@ -120,9 +123,10 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
  async function run(){setRunning(true);setError('');try{
    const r=await fetch('/api/sandbox/run',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken()},body:JSON.stringify({placements,rain})});const data=await r.json();if(!r.ok)throw new Error(data.error||'计算失败');setResult(data);setTab('overview');setToast('计算完成，可以查看结果和对比曲线。');
  }catch(e){setError(e instanceof Error?e.message:'计算失败');}finally{setRunning(false);}}
- function snapshot():Saved{return {id:crypto.randomUUID(),name:name||'未命名方案',placements:structuredClone(placements),rain,result:result&&!stale?result:undefined,date:new Date().toLocaleString('zh-CN'),artwork:currentArtwork||undefined};}
+ function snapshot():Saved{return {id:newSandboxId(),name:name||'未命名方案',placements:placements.map(p=>({...p})),rain,result:result&&!stale?result:undefined,date:new Date().toLocaleString('zh-CN'),artwork:currentArtwork||undefined};}
  function showArtwork(item:Saved){setArtworkPlan({...item,artwork:savedArtworks.get(item.id)||item.artwork||createArtworkRecipe(campus!,item.placements,item.rain)});setModal('artwork');}
- function save(){const item=snapshot();const next=[item,...saved].slice(0,8);try{localStorage.setItem(STORAGE+'-saved',JSON.stringify(next));setSaved(next);setToast('方案、效果图配置和有效计算结果已保存在本机。');showArtwork(item);}catch{setError('浏览器存储空间不足，请导出方案文件。');}}
+ function previewArtwork(){try{showArtwork(snapshot());}catch{setError('无法打开效果图，请刷新后重试。');}}
+ function save(){try{const item=snapshot();const next=[item,...saved].slice(0,8);localStorage.setItem(STORAGE+'-saved',JSON.stringify(next));setSaved(next);setToast('方案、效果图配置和有效计算结果已保存在本机。');showArtwork(item);}catch{setError('方案保存失败，请检查浏览器存储空间，或导出方案文件。');}}
  function download(value:string,filename:string,type='application/json'){const url=URL.createObjectURL(new Blob([value],{type}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
  async function exportInp(){try{const r=await fetch('/api/sandbox/run',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken()},body:JSON.stringify({placements,rain,export:true})});if(!r.ok)throw new Error((await r.json()).error);download(await r.text(),'zijing-student.inp','text/plain');}catch(e){setError(String(e));}}
  async function importFile(file?:File){if(!file||!campus)return;try{const data=JSON.parse(await file.text());if(data.version!==campus.version||!['3A','5A','10A','20A','50A'].includes(data.rain))throw new Error('请选择本沙盘导出的方案文件。');if(commit(data.placements)){setRain(data.rain);setName(String(data.name||'导入方案').slice(0,60));setToast('方案已导入。');}}catch(e){setError(e instanceof Error?e.message:'无法读取方案');}if(fileInput.current)fileInput.current.value='';}
@@ -131,7 +135,7 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
   <div className={styles.workbench}>
   <div className={styles.toolbar}>
    <div className={styles.planName}><span className={styles.brandIcon}><Icon type="layers" size={22}/></span><div className={styles.planIdentity}><h1>海绵城市沙盘</h1><div className={styles.planSubtitle}><span>紫荆雅苑</span><span aria-hidden="true">·</span><input aria-label="方案名称" title="编辑当前方案名称" maxLength={60} value={name} onChange={e=>setName(e.target.value)}/></div></div><span className={styles.draftStatus}><span className={styles.liveDot}/>草稿自动保存</span></div>
-   <div className={styles.toolbarRight}><button className={styles.undoButton} aria-label="撤销" title="撤销上次配置" onClick={undo} disabled={!history.length}><Icon type="undo" size={16}/><span>撤销</span></button><div className={styles.planActions}><button className={styles.save} onClick={()=>showArtwork(snapshot())}>查看效果图</button><button className={styles.save} onClick={save}><Icon type="save" size={16}/>保存方案</button><button className={styles.save} title="清空所有片区的设施配置，可撤销" onClick={resetPlan} disabled={running||(!placements.length&&!result)}>重置方案</button></div><i/><label><span>降雨情景</span><select aria-label="降雨情景" value={rain} onChange={e=>setRain(e.target.value)}>{[3,5,10,20,50].map(y=><option key={y} value={y+'A'}>{y} 年一遇</option>)}</select></label><button className={styles.run} onClick={run} disabled={running}><Icon type="play" size={15}/>{running?'正在计算…':'运行计算'}</button><details className={styles.moreMenu}><summary aria-label="更多操作" title="更多操作"><Icon type="more" size={20}/></summary><div><button onClick={()=>setModal('saved')}>我的实验 <span className={styles.count}>{saved.length}</span></button><button onClick={()=>setModal('help')}>使用指南</button><button aria-label="重做" onClick={redo} disabled={!future.length}>重做上次配置</button></div></details></div>
+   <div className={styles.toolbarRight}><button className={styles.undoButton} aria-label="撤销" title="撤销上次配置" onClick={undo} disabled={!history.length}><Icon type="undo" size={16}/><span>撤销</span></button><div className={styles.planActions}><button className={styles.save} onClick={previewArtwork}>查看效果图</button><button className={styles.save} onClick={save}><Icon type="save" size={16}/>保存方案</button><button className={styles.save} title="清空所有片区的设施配置，可撤销" onClick={resetPlan} disabled={running||(!placements.length&&!result)}>重置方案</button></div><i/><label><span>降雨情景</span><select aria-label="降雨情景" value={rain} onChange={e=>setRain(e.target.value)}>{[3,5,10,20,50].map(y=><option key={y} value={y+'A'}>{y} 年一遇</option>)}</select></label><button className={styles.run} onClick={run} disabled={running}><Icon type="play" size={15}/>{running?'正在计算…':'运行计算'}</button><details className={styles.moreMenu}><summary aria-label="更多操作" title="更多操作"><Icon type="more" size={20}/></summary><div><button onClick={()=>setModal('saved')}>我的实验 <span className={styles.count}>{saved.length}</span></button><button onClick={()=>setModal('help')}>使用指南</button><button aria-label="重做" onClick={redo} disabled={!future.length}>重做上次配置</button></div></details></div>
   </div>
   {preview&&<div className={styles.previewBanner}><div><strong>SWMM 实算体验 · 紫荆雅苑案例</strong><p>首次打开自动载入四类设施并运行 5 年一遇降雨。可修改配置后重新计算；此处的草稿和保存方案独立存储。</p></div><div><a href="#sandbox-results">查看计算结果 ↓</a><Link href="/sandbox">返回我的沙盘 ↗</Link></div></div>}
   <div className={`${styles.workspace} ${drawerMode?styles.workspaceFocus:''} ${!libraryVisible?styles.libraryCollapsed:''} ${!inspectorVisible?styles.inspectorCollapsed:''}`}>
@@ -148,16 +152,17 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
     <Link className={styles.textButton} href="/sandbox/legacy">查看原版管网沙盘 ↗</Link>
    </aside>
    <section className={styles.mapColumn}>
-    <div className={styles.mapHeading}><div><h2>{focusMode?'专注编辑':'社区空间'} <span> Z{String(zone).padStart(2,'0')} · {zoneData?.name}</span></h2><p>把想法，种进这片社区。</p></div><div className={styles.viewToggle}><button aria-pressed={view==='2d'} onClick={()=>switchView('2d')}>俯视编辑</button><button aria-pressed={view==='3d'} onClick={()=>switchView('3d')}>三维查看</button></div></div>
+    <div className={styles.mapHeading}><div><h2>{view==='artwork'?'方案景观效果':focusMode?'专注编辑':'社区空间'} <span> Z{String(zone).padStart(2,'0')} · {zoneData?.name}</span></h2><p>{view==='artwork'?'选择片区和空间调整设施，景观随总面积更新。':'把想法，种进这片社区。'}</p></div><div className={styles.viewToggle}><button aria-pressed={view==='artwork'} onClick={()=>switchView('artwork')}>景观效果</button><button aria-pressed={view==='2d'} onClick={()=>switchView('2d')}>俯视编辑</button><button aria-pressed={view==='3d'} onClick={()=>switchView('3d')}>三维查看</button></div></div>
     <div className={styles.mapActions}><div className={styles.panelToggles}>{!libraryVisible&&<button className={styles.mapAction} onClick={toggleLibrary} aria-expanded={false} aria-controls="sandbox-library"><Icon type="panelLeft" size={15}/>设施工具箱</button>}{!inspectorVisible&&<button className={styles.mapAction} onClick={toggleInspector} aria-expanded={false} aria-controls="sandbox-inspector"><Icon type="panelRight" size={15}/>空间配置</button>}</div><button className={styles.mapActionPrimary} onClick={focusMode?exitFocus:enterFocus}>{focusMode?'退出专注':'专注编辑 ↗'}</button></div>
-    <div className={styles.zoneNav}><span>选择片区</span><div className={styles.zoneStrip} aria-label="选择教学片区">{campus.zones.map(z=><button key={z.id} aria-pressed={zone===z.id} onClick={()=>selectZone(z.id)} title={`${z.name} · 点击自动放大`}>Z{String(z.id).padStart(2,'0')}{placements.some(p=>campus.patches.find(x=>x.id===p.patchId)?.zone===z.id)&&<i/>}</button>)}</div><span className={styles.zoneNavHint}>{focusZone?`定位片区 Z${String(focusZone).padStart(2,'0')}`:'点击片区按钮定位；点击对象只选中'}</span></div>
-    <div className={styles.mapBody}>
+    <div className={styles.zoneNav}><span>选择片区</span><div className={styles.zoneStrip} aria-label="选择教学片区">{campus.zones.map(z=><button key={z.id} aria-pressed={zone===z.id} onClick={()=>selectZone(z.id)} title={`${z.name} · ${view==='artwork'?'配置此片区设施':'点击自动放大'}`}>Z{String(z.id).padStart(2,'0')}{placements.some(p=>campus.patches.find(x=>x.id===p.patchId)?.zone===z.id)&&<i/>}</button>)}</div><span className={styles.zoneNavHint}>{view==='artwork'?'画面展示全社区，右侧配置当前片区':focusZone?`定位片区 Z${String(focusZone).padStart(2,'0')}`:'点击片区按钮定位；点击对象只选中'}</span></div>
+    <div className={`${styles.mapBody} ${view==='artwork'?styles.landscapeBody:''}`}>
+      <div className={styles.viewLayer} hidden={view!=='artwork'}><LandscapeViewport recipe={currentArtwork!} disabled={!!modal||view!=='artwork'||(compactViewport&&(libraryVisible||inspectorVisible)&&!draggingFacility)} onDropFacility={addToZone} onViewAll={showGlobal}/></div>
       <div className={styles.viewLayer} hidden={view!=='2d'}><CampusMap campus={campus} placements={placements} zone={zone} viewRequest={viewRequests['2d']} disabled={!!modal||view!=='2d'||(compactViewport&&(libraryVisible||inspectorVisible)&&!draggingFacility)} patch={patchId} active={active} showPipes={showPipes} step={0} depths={!stale?result?.proposed.nodeDepth:undefined} onSelect={selectPatch} onDropFacility={addAt} onViewAll={showGlobal}/></div>
       <div className={styles.viewLayer} hidden={view!=='3d'}><ThreeMap campus={campus} placements={placements} viewRequest={viewRequests['3d']} disabled={!!modal||view!=='3d'||(compactViewport&&(libraryVisible||inspectorVisible))} selected={patchId} onSelect={selectPatch} onViewAll={showGlobal}/></div>
-      <div className={styles.mapBadge}><span className={styles.liveDot}/>Z{String(zone).padStart(2,'0')} · {zoneData?.name}<span>{n(zoneData?.area||0)} m²</span></div>
-      {focusMode&&<div className={styles.focusHint}><strong>专注编辑</strong><span>滚轮缩放 · 空格 + 左键平移 · 点击选中</span></div>}
+      <div className={styles.mapBadge}><span className={styles.liveDot}/>{view==='artwork'?'正在配置 · ':''}Z{String(zone).padStart(2,'0')} · {zoneData?.name}<span>{n(zoneData?.area||0)} m²</span></div>
+      {focusMode&&<div className={styles.focusHint}><strong>{view==='artwork'?'景观效果':'专注编辑'}</strong><span>{view==='artwork'?'滚轮缩放 · 拖动平移 · 通过片区配置设施':'滚轮缩放 · 空格 + 左键平移 · 点击选中'}</span></div>}
     </div>
-    <div className={styles.mapBottom}><div className={styles.legend}>{(['roof','road','green','reserved'] as Surface[]).map(t=><span key={t}><i className={styles[t]}/>{SURFACE_NAMES[t]}</span>)}</div><label className={styles.check}><input type="checkbox" checked={showPipes} onChange={e=>setShowPipes(e.target.checked)} disabled={view==='3d'}/>排水管网</label></div>
+    <div className={styles.mapBottom}>{view==='artwork'?<><span>按社区设施总量展示；具体地块可在俯视编辑中查看。</span><button className={styles.textButton} onClick={()=>switchView('2d')}>查看地块位置 ↗</button></>:<><div className={styles.legend}>{(['roof','road','green','reserved'] as Surface[]).map(t=><span key={t}><i className={styles[t]}/>{SURFACE_NAMES[t]}</span>)}</div><label className={styles.check}><input type="checkbox" checked={showPipes} onChange={e=>setShowPipes(e.target.checked)} disabled={view==='3d'}/>排水管网</label></>}</div>
     <div className={styles.designSummary}><div><span>已布置面积</span><strong>{n(eco.area)}<small> m²</small></strong></div><div><span>设施组合</span><strong>{KEYS.filter(f=>eco.byFacility[f]>0).length}<small> / 4 类</small></strong></div><div><span>预计建设投入</span><strong>{money(eco.construction)}<small> 元</small></strong></div><button onClick={()=>setModal('params')}>查看计算依据 ↗</button></div>
    </section>
    <aside id="sandbox-inspector" aria-label="空间配置面板" className={`${styles.inspector} ${!inspectorVisible?styles.drawerClosed:''}`}>

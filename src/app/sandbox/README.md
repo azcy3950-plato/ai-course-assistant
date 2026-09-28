@@ -113,7 +113,11 @@ public/zijing_inp.inp                必须提交的原始案例模型
 
 ### 保存方案效果图
 
+主视图区默认显示「景观效果」，使用与保存图片相同的底图、素材和合成规则。选择片区、设施及右侧空间配置后，画面自动更新；拖入设施会添加到当前片区的适用空间。精确地块选择及管网查看使用「俯视编辑」，「三维查看」继续保留。
+
 沙盘提供「查看效果图」；点击「保存方案」会保存配置快照并自动打开效果图。「我的实验」显示已保存方案的缩略图，点击缩略图可重新查看、下载 PNG。旧方案没有图片元数据也可根据原配置生成效果图。
+
+本机方案及设施编号支持没有 `crypto.randomUUID` 的 HTTP 浏览器环境，预览和保存不依赖该接口。
 
 采用固定底图、透明设施素材和浏览器确定性合成，不需要图像生成 API、密钥或额外后端服务。保存记录只存设施配置、计算结果和轻量图片配置，不把大幅 PNG 写入 localStorage。导出的方案 JSON 可继续导入。
 
@@ -127,6 +131,8 @@ src/lib/sandbox/artwork-layout.json 已校准视觉区域及树冠遮挡
 src/lib/sandbox/artwork.ts          参数汇总、版本和图片配置
 src/lib/sandbox/artwork-renderer.ts 画面合成及带说明的 PNG 导出
 src/components/sandbox/PlanArtwork.tsx
+src/components/sandbox/LandscapeViewport.tsx
+src/lib/sandbox/id.ts
 src/components/sandbox/StudentSandbox.tsx
 src/components/sandbox/studio.module.css
 tests/sandbox-artwork.test.ts
@@ -141,6 +147,7 @@ tests/sandbox-artwork.browser.mjs
 npx vitest run tests/sandbox-artwork.test.ts
 # 先启动 npm run dev，再运行：
 node tests/sandbox-artwork.browser.mjs
+node tests/sandbox-landscape.browser.mjs
 ```
 
 浏览器验收使用独立上下文和真实模型接口，检查空方案、参数变化、旧方案、快照恢复、PNG 下载和素材加载失败后重试。使用 `SANDBOX_BASE_URL` 指定测试端口。
