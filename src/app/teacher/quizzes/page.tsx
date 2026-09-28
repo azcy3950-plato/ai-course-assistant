@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useApp } from "@/contexts/AppContext";
+import { useApp, getAuthToken } from "@/contexts/AppContext";
 
 export default function QuizBankPage() {
   const { state } = useApp();
@@ -12,7 +12,7 @@ export default function QuizBankPage() {
     (async () => {
       if (state.role !== "teacher") return;
       try {
-        const r = await fetch("/api/quiz-results");
+        const r = await fetch("/api/quiz-results", { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         if (r.ok) setResults(await r.json());
       } catch (e) {}
       setLoading(false);

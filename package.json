@@ -1,28 +1,47 @@
 {
   "name": "ai-course-assistant",
   "version": "1.0.0",
-  "description": "",
+  "private": true,
+  "description": "AI课程助手：智能体B与海绵城市知识图谱双向闭环学习系统",
   "main": "index.js",
   "scripts": {
     "dev": "next dev",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "sandbox:setup": "node scripts/sandbox-setup.mjs",
+    "sandbox:test": "vitest run tests/sandbox-grouping.test.ts tests/swmm-quality.test.ts tests/swmm-inject.test.ts tests/swmm-lid-frozen.test.ts",
+    "sandbox:test:browser": "node tests/sandbox-controls.browser.mjs && node tests/sandbox-eco-reset.browser.mjs && node tests/sandbox-swmm-preview.browser.mjs",
     "build": "npm run copy:cesium && next build",
     "start": "next start",
     "lint": "next lint",
-    "copy:cesium": "cp -r node_modules/cesium/Build/Cesium public/Cesium"
+    "copy:cesium": "node -e \"require('fs').cpSync('node_modules/cesium/Build/Cesium','public/Cesium',{recursive:true})\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@alicloud/dysmsapi20170525": "^4.6.0",
+    "@alicloud/openapi-client": "^0.4.15",
+    "@aws-sdk/client-s3": "^3.1101.0",
+    "@aws-sdk/s3-request-presigner": "^3.1101.0",
+    "@supabase/supabase-js": "^2.111.0",
     "@types/leaflet": "^1.9.21",
     "@types/three": "^0.185.1",
+    "3d-force-graph": "^1.80.0",
     "bcryptjs": "^3.0.3",
     "cesium": "^1.143.0",
+    "d3-force-3d": "^3.0.6",
     "docx": "^9.7.1",
+    "echarts": "^6.1.0",
+    "echarts-for-react": "^3.0.6",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
-    "next": "^16.2.10",
+    "lucide-react": "^1.47.0",
+    "next": "^16.2.11",
+    "nodemailer": "^9.0.6",
+    "pdf-parse": "^1.1.1",
+    "pdf2json": "^4.0.3",
     "pg": "^8.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -30,15 +49,29 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.9.2",
     "remark-gfm": "^4.0.1",
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "three-spritetext": "^1.10.0",
+    "vis-data": "^8.0.4",
+    "vis-network": "^10.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.1.1",
+    "@types/nodemailer": "^8.0.1",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pg": "^8.20.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "postcss": "^8.5.19",
     "tailwindcss": "^4.3.3",
-    "typescript": "7.0.2"
+    "typescript": "5.9.3",
+    "vitest": "^4.1.10",
+    "@playwright/test": "^1.62.1",
+    "playwright": "^1.62.1"
+  },
+  "overrides": {
+    "postcss": "$postcss",
+    "sharp": "0.35.0"
   }
 }

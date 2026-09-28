@@ -1,22 +1,46 @@
 const { Pool } = require("pg");
-const pool = new Pool({ connectionString: "postgresql://aiuser:Ai123456@localhost:5432/aicourse" });
-(async () => {
-  const { rows } = await pool.query("SELECT name, r2_key FROM documents WHERE created_at > $1", ["2026-07-23"]);
-  console.log("Processing", rows.length, "new docs...");
-  for (const doc of rows) {
-    const fileUrl = "https://ai-course-assistant.oss-cn-beijing.aliyuncs.com/" + doc.r2_key;
-    console.log("Processing:", doc.name);
-    try {
-      const r = await fetch("http://localhost:3000/api/process-file", {
+
+function required(name) {
+  const value = process.env[name];
+  if (!value) throw new Error(`缺少环境变量 ${name}`);
+  return value;
+}
+
+async function main() {
+  const databaseUrl = required("DATABASE_URL");
+  const publicBaseUrl = required("OSS_PUBLIC_BASE_URL").replace(/\/$/, "");
+  const since = required("PROCESS_SINCE");
+  const apiUrl = process.env.PROCESS_API_URL || "http://localhost:3000/api/process-file";
+  const token = process.env.PROCESS_FILE_TOKEN;
+  const pool = new Pool({ connectionString: databaseUrl });
+
+  try {
+    const { rows } = await pool.query(
+      "SELECT name, r2_key FROM documents WHERE created_at > $1",
+      [since],
+    );
+    console.log(`待处理文档：${rows.length}`);
+
+    for (const doc of rows) {
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch(apiUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer system" },
-        body: JSON.stringify({ fileName: doc.name, fileUrl })
+        headers,
+        body: JSON.stringify({
+          fileName: doc.name,
+          fileUrl: `${publicBaseUrl}/${doc.r2_key}`,
+        }),
       });
-      const j = await r.json();
-      console.log("  =>", j.message || j.error || "OK");
-    } catch(e) { console.log("  => ERROR:", e.message); }
-    await new Promise(r => setTimeout(r, 2000));
+      const result = await response.json();
+      console.log(`${doc.name}: ${result.message || result.error || response.status}`);
+    }
+  } finally {
+    await pool.end();
   }
-  console.log("DONE");
-  await pool.end();
-})();
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+});

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { verify as jwtVerify } from "jsonwebtoken";
 
 const DASHSCOPE_KEY = process.env.DASHSCOPE_API_KEY;
 const OSS_BUCKET = process.env.OSS_BUCKET || "ai-course-assistant";
+// 模块级连接池：此前每请求新建 Pool 且循环内异常路径不释放（连接泄漏）
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const s3 = new S3Client({
   region: "oss-cn-beijing",
@@ -57,28 +60,52 @@ async function extractOfficeText(buffer: Buffer, ext: string): Promise<string> {
     return text.replace(/\s+/g, " ").trim();
   }
   if (ext === "docx") {
-    const docXml = await zip.file("word/document.xml")!.async("string");
+    // 非标/损坏 docx 缺 document.xml：null 检查返回空，避免 TypeError → 500
+    const docEntry = zip.file("word/document.xml");
+    if (!docEntry) return "";
+    const docXml = await docEntry.async("string");
     return docXml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   }
   return "";
 }
 
-const pdfParsePromise = import("pdf-parse").then((m) => m.default);
+const pdfParsePromise = import("pdf-parse/lib/pdf-parse.js").then((m) => m.default);
 
 export async function POST(req: NextRequest) {
-  if (!req.headers.get("Authorization")) {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const jwtSecret = process.env.JWT_SECRET;
+  const user = token && jwtSecret ? (() => { try { return jwtVerify(token, jwtSecret) as { email?: string; role?: string }; } catch { return null; } })() : null;
+  if (!user?.email) {
     return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+  // 消耗向量化成本,仅教师可调用
+  if ((user.role || "student") !== "teacher") {
+    return NextResponse.json({ error: "仅教师可处理文件" }, { status: 403 });
   }
 
   try {
-    const { fileName, fileUrl } = await req.json();
-    if (!fileName || !fileUrl) {
+    const { fileName, fileUrl: requestedFileUrl, fileKey: requestedFileKey } = await req.json();
+    if (!fileName || (!requestedFileUrl && !requestedFileKey)) {
       return NextResponse.json({ error: "参数缺失" }, { status: 400 });
     }
 
     // Download via S3 client (bucket is private)
-    const urlObj = new URL(fileUrl);
-    const key = decodeURIComponent(urlObj.pathname.substring(1));
+    let key = typeof requestedFileKey === "string" ? requestedFileKey : "";
+    if (!key && requestedFileUrl) {
+      try {
+        const urlObj = new URL(requestedFileUrl);
+        key = decodeURIComponent(urlObj.pathname.substring(1));
+      } catch {
+        return NextResponse.json({ error: "无效的文件地址" }, { status: 400 });
+      }
+    }
+    // 归属校验:只允许读取 uploads/ 前缀的教师上传对象,防越权读取其他存储
+    if (!key.startsWith("uploads/")) {
+      return NextResponse.json({ error: "无权访问该文件" }, { status: 403 });
+    }
+    // 入库链接由服务端按自家 OSS 域名重建（防教师传入外部域名的伪造链接，后续被渲染给学生）
+    const endpointHost = (process.env.OSS_ENDPOINT || "oss-cn-beijing.aliyuncs.com").replace("https://", "").replace("http://", "");
+    const fileUrlSafe = `https://${OSS_BUCKET}.${endpointHost}/${key}`;
     const s3Res = await s3.send(new GetObjectCommand({ Bucket: OSS_BUCKET, Key: key }));
     const bufChunks: Buffer[] = [];
     if (s3Res.Body) {
@@ -110,7 +137,6 @@ export async function POST(req: NextRequest) {
     if (!chunks.length) return NextResponse.json({ ok: true, chunks: 0 });
 
     // Embed & store
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     let stored = 0;
     for (const chunk of chunks) {
       try {
@@ -118,13 +144,12 @@ export async function POST(req: NextRequest) {
         if (emb) {
           await pool.query(
             "INSERT INTO document_chunks (doc_name, content, embedding, file_url) VALUES ($1, $2, $3, $4)",
-            [fileName, chunk, JSON.stringify(emb), fileUrl]
+            [fileName, chunk, JSON.stringify(emb), fileUrlSafe]
           );
           stored++;
         }
       } catch (e) { console.error(e); }
     }
-    await pool.end();
 
     return NextResponse.json({
       ok: true,
@@ -133,6 +158,7 @@ export async function POST(req: NextRequest) {
       message: "提取 " + (text.length / 1000).toFixed(0) + "k 字，向量化 " + stored + "/" + chunks.length + " 片段",
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[process-file]:', err?.message || err);
+    return NextResponse.json({ error: "文件处理服务暂时不可用" }, { status: 500 });
   }
 }

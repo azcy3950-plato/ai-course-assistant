@@ -20,12 +20,13 @@
 *.pem
 
 # env
-.env*.local
-.env
+.env*
+!.env.example
 
 # debug
 npm-debug.log*
 *.log
+*.tsbuildinfo
 
 # IDE
 .idea/
@@ -33,6 +34,9 @@ npm-debug.log*
 
 # Cesium static assets (45MB, regenerated at build time)
 /public/Cesium/
+
+# user uploads (avatars etc., runtime-generated, may contain personal data)
+/public/avatars/
 
 # Python
 __pycache__/
@@ -42,6 +46,30 @@ __pycache__/
 /public/beijing_buildings*.json
 /public/beijing_terrain.tif
 
+# development artifacts
+*.bak
+tsconfig.tsbuildinfo
+
 # test files with credentials
 /test-pdf.js
 /test-pipeline.js
+
+# 本地验收截图(临时产物,不进仓库)
+/shots/
+/.tmp-swmm/
+
+# 本地真实SWMM回放fixture(仅开发验收,不进生产仓库)
+/public/sandbox-fixture.json
+
+# Local sandbox engine and calculation cache
+/.runtime/
+/.sandbox-runs/
+/.venv/
+/venv/
+/tmp/
+/artifacts/
+/playwright-report/
+/test-results/
+
+# Local reference attachment; unrelated to the runnable source/model
+/Multiobjective layout optimization for low impact development considering its ecosystem services(1).pdf

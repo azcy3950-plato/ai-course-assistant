@@ -50,11 +50,9 @@ export default function SourceCard({ reference, isHighlighted, onClick }: Props)
         href={reference.fileUrl}
         target="_blank"
         rel="noopener noreferrer"
-        onClick={(e) => {
-          if (onClick) {
-            e.preventDefault();
-            onClick();
-          }
+        onClick={() => {
+          // 保留高亮回调，同时放行默认跳转——此前 preventDefault 导致"点击查看源文件"永远打不开
+          if (onClick) onClick();
         }}
         className={cardClass}
       >

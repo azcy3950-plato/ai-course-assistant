@@ -49,18 +49,80 @@ body {
   font-size: 0.875em;
 }
 
-/* Reference highlight animation */
-@keyframes highlight-pulse {
-  0%, 100% { background-color: #fef3c7; }
-  50% { background-color: #fde68a; }
+/* ── 引导学习工作台动效 ── */
+@keyframes msg-fade-up {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.55); }
+  70% { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes glow-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(22, 93, 255, 0.10); }
+  50% { box-shadow: 0 0 0 14px rgba(22, 93, 255, 0); }
+}
+@keyframes typing-pulse {
+  0%, 100% { opacity: 0.4; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
 }
 
-.reference-highlight {
-  animation: highlight-pulse 1.5s ease-in-out 2;
-  border-radius: 0.25rem;
+.msg-enter { animation: msg-fade-up 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.typing-dot { display: inline-block; width: 5px; height: 5px; margin-right: 3px; border-radius: 999px; background: currentColor; animation: typing-pulse 1.2s ease-in-out infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+.pop-in { animation: pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.slide-in-right { animation: slide-in-right 0.28s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.fade-in { animation: fade-in 0.25s ease both; }
+.glow-breathe { animation: glow-breathe 2.4s ease-in-out infinite; }
+
+/* 平滑滚动与过渡基调 */
+html { scroll-behavior: smooth; }
+
+/* 用户偏好减少动效时关闭动画 */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .node-shell, .node-shell *, svg path, svg text {
+    transition: none !important;
+  }
 }
 
 /* Custom scrollbar */
+@media (min-width: 768px) {
+  /* Guided learning keeps the graph viewport aligned with the chat workspace. */
+  main > div.h-\[calc\(100vh-3\.5rem\)\] > div > div.min-h-0.flex-1.md\:grid > section:first-child {
+    height: 100%;
+  }
+  main > div[class*="h-[calc(100vh-3.5rem)]"] > div > div[class*="md:grid"] {
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  main > div[class*="h-[calc(100vh-3.5rem)]"] > div > div[class*="md:grid"] > [role="separator"] {
+    grid-column: 2;
+    grid-row: 1;
+    z-index: 20;
+    align-self: stretch;
+  }
+  main > div[class*="h-[calc(100vh-3.5rem)]"] > div > div[class*="md:grid"] > section:last-child {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }

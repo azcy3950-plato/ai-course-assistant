@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useApp } from '@/contexts/AppContext';
-import { useLearning } from '@/contexts/LearningContext';
-import { supabase } from '@/lib/supabase';
+import { useApp, getAuthToken } from "@/contexts/AppContext";
+import { TASK_TYPE_META, TASK_STATUS_META } from "@/lib/task-ui";
 
 // ══════════════ UNAUTHENTICATED LANDING ══════════════
 function LandingPage() {
@@ -13,10 +12,10 @@ function LandingPage() {
       <div className="mt-20 mb-8">
         <span className="text-6xl">🎓</span>
         <h1 className="text-3xl font-bold text-[var(--color-text)] mt-4 mb-3">
-          AI 课程助教
+          基规智学
         </h1>
         <p className="text-[var(--color-text-secondary)] mb-8 max-w-xl mx-auto leading-relaxed">
-          城市排水与内涝防治智能教学平台 — 统一知识库智能体、引导思考智能体、电子沙盘三位一体
+          《基础设施规划》AI 教学平台 — 城市排水与内涝防治为当前仿真实践专题
         </p>
         <div className="flex gap-4 justify-center">
           <Link
@@ -39,6 +38,12 @@ function LandingPage() {
 
 // Student module cards
 const studentModules = [
+  {
+    href: '/tasks', icon: '📋', title: '我的任务',
+    desc: '查看教师发布的学习、练习、引导和仿真任务，按截止时间完成与修改',
+    color: 'from-cyan-500 to-blue-600', bgColor: 'bg-cyan-50',
+    features: ['任务状态', '截止提醒', '教师反馈'],
+  },
   {
     href: '/knowledge',
     icon: '📚',
@@ -66,31 +71,34 @@ const studentModules = [
     bgColor: 'bg-purple-50',
     features: ['地图可视化', '参数调节模拟', '时间轴回放'],
   },
+  {
+    href: '/history', icon: '📖', title: '学习档案',
+    desc: '回看问答、小测、引导学习和仿真实践记录，定位待复习知识点',
+    color: 'from-amber-500 to-orange-600', bgColor: 'bg-amber-50',
+    features: ['学习时间线', '错题记录', '个人学情'],
+  },
 ];
 
 // Teacher module cards
 const teacherModules = [
   {
-    href: '/teacher',
-    icon: '📤',
-    title: '资料管理',
-    desc: '上传教材、PPT、案例和文献，管理知识库内容',
+    href: '/teacher?tab=dashboard',
+    icon: '🏠',
+    title: '教学仪表盘',
+    desc: '查看班级、任务、活跃度、逾期项目和近期学习动态',
     color: 'from-orange-500 to-red-500',
     bgColor: 'bg-orange-50',
   },
   {
-    href: '/teacher',
-    icon: '📊',
-    title: '学生统计',
-    desc: '查看学生使用情况、学习进度和沙盘实验数据',
+    href: '/teacher?tab=analysis',
+    icon: '📊', title: '学情分析',
+    desc: '按知识点、学生和任务分析掌握情况并布置补充学习',
     color: 'from-teal-500 to-cyan-600',
     bgColor: 'bg-teal-50',
   },
   {
-    href: '/sandbox',
-    icon: '⚙️',
-    title: '沙盘管理',
-    desc: '配置沙盘数据、导入地形和管网图层',
+    href: '/teacher?tab=review', icon: '🛡️', title: 'AI 审核与知识库',
+    desc: '审核学生反馈、抽检 AI 回答、保留修正版本并维护课程资料',
     color: 'from-indigo-500 to-blue-600',
     bgColor: 'bg-indigo-50',
   },
@@ -98,28 +106,57 @@ const teacherModules = [
 
 export default function HomePage() {
   const { state } = useApp();
-  const { state: learningState } = useLearning();
   const [stats, setStats] = useState({ docCount: 0, quizTotal: 0, quizRate: 0, recordCount: 0 });
+  // 学生首页：待办任务、教师反馈、最近学习事件（真实数据）
+  const [pendingTasks, setPendingTasks] = useState<any[]>([]);
+  const [latestFeedback, setLatestFeedback] = useState<any[]>([]);
+  const [recentEvents, setRecentEvents] = useState<any[]>([]);
 
   useEffect(() => {
     if (!state.role) return;
     (async () => {
       try {
-        const { data: s } = await supabase.auth.getSession();
-        const em = s.session?.user?.email || '';
-        // Fetch documents count
-        const dRes = await fetch('/api/documents', { headers: { Authorization: 'Bearer ' + (s.session?.access_token || '') } });
+        // Fetch documents count(经 /api/storage,仅教师可见)
         let docCount = 0;
-        if (dRes.ok) { const docs = await dRes.json(); docCount = docs.length; }
-        // Fetch quiz stats
-        const qRes = await fetch('/api/quiz-results?email=' + encodeURIComponent(em));
+        if (state.role === "teacher") {
+          const dRes = await fetch('/api/storage', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+          if (dRes.ok) { const docs = await dRes.json(); docCount = Array.isArray(docs) ? docs.length : 0; }
+        }
+        // Fetch quiz stats(经 /api/quiz-results,登录查询自己的)
+        const qRes = await fetch('/api/quiz-results', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         let quizTotal = 0, quizRate = 0;
         if (qRes.ok) { const qr = await qRes.json(); quizTotal = qr.length; quizRate = qr.length > 0 ? Math.round(qr.filter((q: any) => q.is_correct).length / qr.length * 100) : 0; }
         // Fetch records count
-        const rRes = await fetch('/api/records?email=' + encodeURIComponent(em));
+        const rRes = await fetch("/api/records", { headers: { Authorization: `Bearer ${getAuthToken()}` } });
         let recordCount = 0;
         if (rRes.ok) { const recs = await rRes.json(); recordCount = recs.length; }
         setStats({ docCount, quizTotal, quizRate, recordCount });
+        // 学生：待办任务 + 最新教师反馈 + 最近学习事件
+        if (state.role === "student") {
+          const [tRes, fRes, eRes] = await Promise.all([
+            fetch("/api/tasks", { headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+            fetch("/api/feedback", { headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+            fetch("/api/learning-events", { headers: { Authorization: `Bearer ${getAuthToken()}` } }),
+          ]);
+          if (tRes.ok) {
+            const tasks = await tRes.json();
+            const prio: Record<string, number> = { REVISION_REQUIRED: 0, OVERDUE: 1, IN_PROGRESS: 2, TODO: 3 };
+            setPendingTasks(
+              tasks
+                .filter((t: any) => ["TODO", "IN_PROGRESS", "REVISION_REQUIRED", "OVERDUE"].includes(t.effective_status))
+                .sort((a: any, b: any) => (prio[a.effective_status] ?? 9) - (prio[b.effective_status] ?? 9))
+                .slice(0, 3),
+            );
+          }
+          if (fRes.ok) {
+            const fb = await fRes.json();
+            setLatestFeedback(Array.isArray(fb) ? fb.slice(0, 3) : []);
+          }
+          if (eRes.ok) {
+            const events = await eRes.json();
+            setRecentEvents(Array.isArray(events) ? events.slice(0, 3) : []);
+          }
+        }
       } catch (e) {}
     })();
   }, [state.role]);
@@ -156,15 +193,66 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* 学生：待办任务与教师反馈（真实数据） */}
+      {isStudent && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="bg-white rounded-xl border border-[var(--color-border)] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-[var(--color-text)]">⏳ 待办任务</h3>
+              <Link href="/tasks" className="text-xs text-[var(--color-primary)] hover:underline">全部 →</Link>
+            </div>
+            {pendingTasks.length === 0 ? (
+              <p className="text-xs text-[var(--color-text-muted)] py-3 text-center">暂无待办任务</p>
+            ) : (
+              <div className="space-y-2">
+                {pendingTasks.map((t) => (
+                  <Link key={t.id} href={`/tasks/${t.id}`}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 hover:border-[var(--color-primary)] transition-colors ${t.effective_status === "REVISION_REQUIRED" ? "border-red-200 bg-red-50" : "border-[var(--color-border)]"}`}>
+                    <span className="text-sm">{TASK_TYPE_META[t.type as keyof typeof TASK_TYPE_META]?.icon || "📋"}</span>
+                    <span className="text-xs font-medium text-[var(--color-text)] flex-1 truncate">{t.title}</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${TASK_STATUS_META[t.effective_status as keyof typeof TASK_STATUS_META]?.cls || "bg-gray-100 text-gray-600"}`}>
+                      {TASK_STATUS_META[t.effective_status as keyof typeof TASK_STATUS_META]?.label || t.effective_status}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="bg-white rounded-xl border border-[var(--color-border)] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-[var(--color-text)]">💬 最新教师反馈</h3>
+              <Link href="/tasks" className="text-xs text-[var(--color-primary)] hover:underline">全部 →</Link>
+            </div>
+            {latestFeedback.length === 0 ? (
+              <p className="text-xs text-[var(--color-text-muted)] py-3 text-center">暂无教师反馈</p>
+            ) : (
+              <div className="space-y-2">
+                {latestFeedback.map((f) => (
+                  <Link key={f.id} href={`/tasks/${f.task_id}`} className="block rounded-lg border border-[var(--color-border)] px-3 py-2 hover:border-[var(--color-primary)] transition-colors">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-[var(--color-text)] truncate">{f.task_title}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${f.status === "revision_required" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
+                        {f.status === "revision_required" ? "需要修改" : "已通过"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--color-text-secondary)] mt-1 line-clamp-2">{f.content}</p>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Welcome subtitle */}
       <p className="text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-6 text-center">
           {isStudent
-            ? '选择下方模块开始学习。AI 助教将帮助你掌握城市排水与内涝防治的核心知识。'
-            : '管理课程资料、知识库和沙盘数据，查看学生学习情况。'}
+            ? '选择下方模块开始学习。当前电子沙盘以城市排水与内涝防治为实践专题。'
+            : '管理《基础设施规划》课程任务、知识资源与学生学习过程。'}
         </p>
 
       {/* Module Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
         {modules.map((mod, i) => (
           <Link
             key={i}
@@ -198,8 +286,8 @@ export default function HomePage() {
         ))}
       </div>
 
-      {/* Recent Records (student only) */}
-      {isStudent && learningState.records.length > 0 && (
+      {/* Recent Records (student only, 真实学习事件) */}
+      {isStudent && recentEvents.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-[var(--color-text)]">
@@ -213,21 +301,21 @@ export default function HomePage() {
             </Link>
           </div>
           <div className="bg-white rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-            {learningState.records.slice(0, 3).map(record => (
-              <div key={record.id} className="flex items-center gap-4 px-5 py-3.5">
+            {recentEvents.slice(0, 3).map((e: any) => (
+              <div key={e.id} className="flex items-center gap-4 px-5 py-3.5">
                 <span className="text-xl">
-                  {record.type === 'knowledge' ? '📚' : record.type === 'guided' ? '💡' : '🗺️'}
+                  {String(e.type || '').includes('KNOWLEDGE') ? '📚' : String(e.type || '').includes('GUIDED') ? '💡' : '🗺️'}
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-[var(--color-text)] truncate">
-                    {record.title}
+                    {e.title}
                   </div>
                   <div className="text-xs text-[var(--color-text-secondary)] truncate">
-                    {record.summary}
+                    {e.summary}
                   </div>
                 </div>
                 <div className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">
-                  {new Date(record.timestamp).toLocaleDateString('zh-CN')}
+                  {new Date(e.created_at).toLocaleDateString('zh-CN')}
                 </div>
               </div>
             ))}

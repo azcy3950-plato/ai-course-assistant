@@ -8,10 +8,12 @@ import { useApp } from "@/contexts/AppContext";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams?.get("redirect") ?? "/";
+  // 开放重定向防护：仅接受站内相对路径（以 / 开头且非 //）
+  const rawRedirect = searchParams?.get("redirect") ?? "/";
+  const redirectTo = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/";
   const { state, login } = useApp();
 
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -26,8 +28,9 @@ function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!identifier.trim()) { setError("请输入邮箱地址"); return; }
     setLoading(true);
-    const result = await login(email, password);
+    const result = await login(identifier.trim(), password);
     setLoading(false);
     if (result.error) {
       setError(result.error);
@@ -60,21 +63,26 @@ function LoginForm() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-              邮箱
+              账号
             </label>
             <input
               type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your@email.com"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="你的邮箱"
               required
               className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-              密码
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-sm font-medium text-[var(--color-text)]">
+                密码
+              </label>
+              <Link href="/forgot-password" className="text-xs text-[var(--color-primary)] hover:underline">
+                忘记密码？
+              </Link>
+            </div>
             <input
               type="password"
               value={password}

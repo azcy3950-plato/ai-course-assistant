@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useChat } from '@/contexts/ChatContext';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, getAuthToken } from '@/contexts/AppContext';
 import { useLearning } from '@/contexts/LearningContext';
-import { supabase } from '@/lib/supabase';
 import { queryKnowledgeAgent, queryKnowledgeAgentStream } from '@/services/agent';
 import ChatMessage from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
@@ -13,19 +13,39 @@ import QuizPanel from '@/components/QuizPanel';
 import { Reference } from '@/types';
 
 export default function KnowledgePage() {
-  const { state: chatState, createConversation, setActive, addMessage, deleteConversation, updateTitle, updateLastMessage, getActiveConversation } = useChat();
+  const router = useRouter();
+  const { state: chatState, createConversation, setActive, addMessage, deleteConversation, updateTitle, removeLastMessage, updateLastMessage, getActiveConversation } = useChat();
   const { state: appState } = useApp();
   const { addRecord } = useLearning();
 
   const [loading, setLoading] = useState(false);
   const [highlightedRef, setHighlightedRef] = useState<number | null>(null);
   const [allReferences, setAllReferences] = useState<Reference[]>([]);
+  const [lastDomain, setLastDomain] = useState<string | undefined>(undefined);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [quizNotice, setQuizNotice] = useState('');
+  // 阶段检测：生成后提示学生，可立即或稍后进行（不再强制弹窗）
+  const [pendingQuiz, setPendingQuiz] = useState<{ token: string; questions: any[] } | null>(null);
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [persistenceNotice, setPersistenceNotice] = useState("");
+  const [taskContext, setTaskContext] = useState<{ id: string; title: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const sourcePanelRef = useRef<HTMLDivElement>(null);
 
   const activeConv = getActiveConversation();
+
+  // 登录守卫：未登录重定向（此前无守卫，未登录看到完整 UI 且提问得到误导性错误）
+  useEffect(() => {
+    if (appState.authLoading) return;
+    if (!appState.role) router.replace("/login?redirect=" + encodeURIComponent("/knowledge"));
+  }, [appState.authLoading, appState.role, router]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("taskId");
+    const title = params.get("taskTitle");
+    if (id && title) setTaskContext({ id, title });
+  }, []);
 
   // Auto-create conversation if none exists
   useEffect(() => {
@@ -39,11 +59,12 @@ export default function KnowledgePage() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConv?.messages]);
 
-  const handleSend = useCallback(async (content: string) => {
+  const handleSend = useCallback(async (content: string, options?: { reuseUserMessage?: boolean }) => {
     if (!activeConv) return;
+    setPersistenceNotice("");
 
     // Add user message
-    addMessage(activeConv.id, { role: 'user', content });
+    if (!options?.reuseUserMessage) addMessage(activeConv.id, { role: 'user', content });
 
     // Query agent
     setLoading(true);
@@ -52,12 +73,17 @@ export default function KnowledgePage() {
     addMessage(activeConv.id, { role: 'assistant', content: '' });
     try {
       let fullAnswer = '';
+      let lastRefs: Reference[] | undefined;
       const response = await queryKnowledgeAgentStream(content, (text) => {
         fullAnswer = text;
-        if (activeConv) updateLastMessage(activeConv.id, text);
+        if (activeConv) updateLastMessage(activeConv.id, text, lastRefs);
       }, (refs) => {
+        lastRefs = refs;
         setAllReferences(refs);
       });
+      // 流结束确保引用已挂到消息 → 消息底部引用列表显示(右侧面板同步)
+      if (activeConv && lastRefs?.length) updateLastMessage(activeConv.id, fullAnswer, lastRefs);
+      setLastDomain((response as { domain?: string })?.domain || undefined);
 
       // Auto-title
       if (activeConv.title === '新对话') {
@@ -65,20 +91,36 @@ export default function KnowledgePage() {
         updateTitle(activeConv.id, shortQ);
       }
 
-      // Save record
+      // Save record（服务端由 JWT 解析身份，勿用 supabase session 做门禁——纯 JWT 登录下 session 恒为空）
       try {
-        const { data: s } = await supabase.auth.getSession();
-        const em = s.session?.user?.email || '';
-        if (em) {
-          await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_email: em, question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: [], has_references: false }) });
-          const qr = await fetch('/api/quiz?email=' + encodeURIComponent(em));
-          const qd = await qr.json();
-          if (qd.needsQuiz && qd.questions?.length) { setQuizQuestions(qd.questions); setQuizOpen(true); }
+        // 关联知识点：从智能体返回的图谱上下文提取节点 id（阶段检测据此出题，学生实际学的知识点）
+        const gc = (response as any)?.graphContext;
+        const gcTopics = [
+          gc?.focusNode?.id,
+          ...(gc?.highlightNodeIds || []),
+          ...((gc?.relatedNodes || []).map((n: any) => n.id)),
+        ].filter((x: any) => typeof x === "string").slice(0, 10);
+        const recordRes = await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer_summary: fullAnswer.slice(0, 200), keywords: [], topics: gcTopics, has_references: (lastRefs?.length || 0) > 0 }) });
+        if (!recordRes.ok) throw new Error("record");
+        // 问答存档（供 AI 历史页与教师内容审核使用）
+        const qaRes = await fetch('/api/qa-messages', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` }, body: JSON.stringify({ question: content, answer: fullAnswer, references: lastRefs || [] }) });
+        if (!qaRes.ok) throw new Error("qa");
+        const qr = await fetch('/api/quiz', { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        const qd = await qr.json();
+        if (qd.needsQuiz && qd.questions?.length) {
+          setPendingQuiz({ token: qd.token, questions: qd.questions });
+          setQuizNotice('');
+        } else if (qd.error) {
+          setQuizNotice('小测服务暂时不可用，稍后再试');
+        } else if (qd.needsQuiz) {
+          setQuizNotice('小测服务暂时不可用，稍后再试');
         }
-      } catch (e) {}
+      } catch (e) { console.error('[knowledge] 持久化失败:', e); setPersistenceNotice("回答已生成，但学习记录保存失败，请稍后重试"); }
 
       addRecord('knowledge', content.slice(0, 30) + (content.length > 30 ? '...' : ''), `查询了关于"${content.slice(0, 50)}"的内容`);
     } catch (err) {
+      // 移除流式占位消息，避免错误时留下空白 AI 气泡。
+      removeLastMessage(activeConv.id);
       addMessage(activeConv.id, {
         role: 'assistant',
         content: '抱歉，查询时出现了错误。请稍后重试。',
@@ -86,7 +128,7 @@ export default function KnowledgePage() {
     } finally {
       setLoading(false);
     }
-  }, [activeConv, addMessage, addRecord]);
+  }, [activeConv, addMessage, addRecord, removeLastMessage]);
 
   const handleRegenerate = useCallback(async () => {
     if (!activeConv || loading) return;
@@ -97,13 +139,12 @@ export default function KnowledgePage() {
       if (msgs[i].role === 'user') { lastUserMsg = msgs[i].content; break; }
     }
     if (!lastUserMsg) return;
-    // Remove last AI message
-    const updatedMessages = msgs.slice(0, -1);
-    activeConv.messages = updatedMessages;
-    chatState.conversations = chatState.conversations.map(c => c.id === activeConv.id ? { ...c, messages: updatedMessages } : c);
+    // 移除最后一条 AI 消息：走 reducer（此前直接改写 state 对象绕过 dispatch，
+    // React 不感知变更，并发渲染下旧回答残留且污染 localStorage 持久化）
+    removeLastMessage(activeConv.id);
     // Re-send
-    handleSend(lastUserMsg);
-  }, [activeConv, loading, handleSend, chatState.conversations]);
+    handleSend(lastUserMsg, { reuseUserMessage: true });
+  }, [activeConv, loading, handleSend, removeLastMessage]);
 
   const handleReferenceClick = useCallback((refId: number) => {
     setHighlightedRef(prev => prev === refId ? null : refId);
@@ -201,6 +242,13 @@ export default function KnowledgePage() {
             </div>
           ) : (
             <div className="max-w-3xl mx-auto">
+              {lastDomain && (
+                <div className="mb-2 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold">
+                  <span className={`rounded-full px-2.5 py-0.5 ${lastDomain === "emergency" ? "bg-red-50 text-red-600" : lastDomain === "research" ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}`}>
+                    {lastDomain === "emergency" ? "🧯 应急专家" : lastDomain === "research" ? "🔍 调研员" : "👨‍🏫 教师"}
+                  </span>
+                </div>
+              )}
               {activeConv.messages.map(msg => (
                 <ChatMessage
                   key={msg.id}
@@ -232,6 +280,16 @@ export default function KnowledgePage() {
               <button key={q} onClick={() => handleSend(q)} disabled={loading} className="text-xs px-3 py-1.5 bg-blue-50 text-[var(--color-primary)] rounded-full hover:bg-blue-100 transition-colors disabled:opacity-50">{q}</button>
             ))}
           </div>
+          {(persistenceNotice || quizNotice || pendingQuiz) && (
+            <div className="px-6 -mt-1 mb-1">
+              <div className={`flex items-center gap-3 text-[11px] rounded-lg px-3 py-1.5 ${persistenceNotice ? "text-red-700 bg-red-50 border border-red-200" : "text-amber-700 bg-amber-50 border border-amber-200"}`}>
+                <span>{persistenceNotice ? "⚠️ " + persistenceNotice : "📝 " + (pendingQuiz ? "已为你准备好阶段检测（2 道题），可立即进行" : quizNotice)}</span>
+                {pendingQuiz && (
+                  <button onClick={() => setQuizOpen(true)} className="px-2.5 py-0.5 rounded bg-[var(--color-primary)] text-white font-medium shrink-0">立即检测</button>
+                )}
+              </div>
+            </div>
+          )}
           <ChatInput onSend={handleSend} disabled={loading} placeholder="输入课程知识相关问题..." />
       </div>
 
@@ -273,7 +331,7 @@ export default function KnowledgePage() {
           )}
         </div>
       </aside>
-      {quizOpen && <QuizPanel questions={quizQuestions} onClose={() => setQuizOpen(false)} onComplete={() => setQuizOpen(false)} />}
+      {quizOpen && pendingQuiz && <QuizPanel token={pendingQuiz.token} questions={pendingQuiz.questions} onClose={() => { setQuizOpen(false); setPendingQuiz(null); }} onComplete={() => { setQuizOpen(false); setPendingQuiz(null); }} />}
     </div>
   );
 }

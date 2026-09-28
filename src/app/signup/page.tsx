@@ -1,24 +1,33 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useApp } from "@/contexts/AppContext";
-import type { UserRole } from "@/types";
 
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams?.get("redirect") ?? "/";
-  const { state, signup } = useApp();
+  // 开放重定向防护：仅接受站内相对路径（以 / 开头且非 //）
+  const rawRedirect = searchParams?.get("redirect") ?? "/";
+  const redirectTo = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/";
+  const { state, signup, sendVerificationCode } = useApp();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [selectedRole, setSelectedRole] = useState<UserRole>("student");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // 验证码发送状态
+  const [sending, setSending] = useState(false);
+  const [sentMasked, setSentMasked] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
   // Already logged in → go home
   useEffect(() => {
@@ -27,11 +36,37 @@ function SignupForm() {
     }
   }, [state.authLoading, state.role, router]);
 
+  const handleSendCode = async () => {
+    setError(null);
+    const v = email.trim();
+    if (!v || !/\S+@\S+\.\S+/.test(v)) {
+      setError("请输入有效的邮箱地址");
+      return;
+    }
+    setSending(true);
+    const result = await sendVerificationCode(v, "REGISTER");
+    setSending(false);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setSentMasked(result.masked || "");
+      setCountdown(result.retryAfter || 60);
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) { if (timerRef.current) clearInterval(timerRef.current); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+  };
+
   const validate = (): string | null => {
     if (!name.trim()) return "请输入姓名";
-    if (!email.trim() || !/\S+@\S+\.\S+/.test(email))
-      return "请输入有效的邮箱地址";
-    if (password.length < 6) return "密码至少 6 位";
+    if (!/\S+@\S+\.\S+/.test(email.trim())) return "请输入有效的邮箱地址";
+    if (!/^\d{6}$/.test(code.trim())) return "请输入 6 位验证码";
+    if (password.length < 8) return "密码至少 8 位";
+    if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) return "密码需同时包含字母和数字";
     if (password !== confirmPassword) return "两次密码不一致";
     return null;
   };
@@ -45,10 +80,12 @@ function SignupForm() {
       return;
     }
     setLoading(true);
-    const result = await signup(email, password, name.trim(), selectedRole);
+    const result = await signup(email.trim(), "EMAIL", code.trim(), password, name.trim());
     setLoading(false);
     if (result.error) {
       setError(result.error);
+      // 注册成功但自动登录失败 → 引导去登录页（此时已注册，直接注册会撞"邮箱已注册"）
+      if (result.error === "注册成功，请登录") router.push("/login");
     } else {
       router.push(redirectTo);
     }
@@ -61,6 +98,8 @@ function SignupForm() {
       </div>
     );
   }
+
+  const inputCls = "w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all";
 
   return (
     <div className="max-w-md mx-auto mt-8 px-4">
@@ -87,7 +126,7 @@ function SignupForm() {
               onChange={(e) => setName(e.target.value)}
               placeholder="请输入姓名"
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
+              className={inputCls}
             />
           </div>
 
@@ -102,8 +141,40 @@ function SignupForm() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="your@email.com"
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
+              className={inputCls}
             />
+          </div>
+
+          {/* Verification code */}
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+              验证码
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="6 位数字验证码"
+                required
+                className={inputCls}
+              />
+              <button
+                type="button"
+                onClick={handleSendCode}
+                disabled={sending || countdown > 0}
+                className="shrink-0 px-4 rounded-lg border border-[var(--color-primary)] text-[var(--color-primary)] text-sm font-medium hover:bg-[var(--color-primary-bg)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {sending ? "发送中..." : countdown > 0 ? `${countdown}s 后重发` : "获取验证码"}
+              </button>
+            </div>
+            {sentMasked && (
+              <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
+                验证码已发送至 {sentMasked}（5 分钟内有效，请查收邮件）
+              </p>
+            )}
           </div>
 
           {/* Password */}
@@ -115,9 +186,9 @@ function SignupForm() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="至少 6 位"
+              placeholder="至少 8 位，需包含字母和数字"
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
+              className={inputCls}
             />
           </div>
 
@@ -132,39 +203,21 @@ function SignupForm() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="再次输入密码"
               required
-              className="w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
+              className={inputCls}
             />
           </div>
 
-          {/* Role Selector */}
-          <div>
-            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-              身份
-            </label>
-            <div className="flex bg-gray-100 rounded-lg p-0.5">
-              <button
-                type="button"
-                onClick={() => setSelectedRole("student")}
-                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  selectedRole === "student"
-                    ? "bg-white text-[var(--color-primary)] shadow-sm"
-                    : "text-[var(--color-text-secondary)]"
-                }`}
-              >
-                🧑‍🎓 学生
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedRole("teacher")}
-                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  selectedRole === "teacher"
-                    ? "bg-white text-[var(--color-primary)] shadow-sm"
-                    : "text-[var(--color-text-secondary)]"
-                }`}
-              >
-                👨‍🏫 教师
-              </button>
-            </div>
+          {/* Role note */}
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
+            <span className="flex-1 px-4 py-2 rounded-md text-sm font-medium bg-white text-[var(--color-primary)] shadow-sm text-center">
+              🧑‍🎓 学生
+            </span>
+            <span
+              className="flex-1 px-4 py-2 rounded-md text-sm font-medium opacity-50 cursor-not-allowed text-center"
+              title="教师账号由管理员开通"
+            >
+              👨‍🏫 教师（管理员开通）
+            </span>
           </div>
 
           <button

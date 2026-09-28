@@ -1,5 +1,4 @@
-import { AgentResponse, Reference } from "@/types";
-import { guidedScenarios } from "@/data/guided-scenarios";
+import type { AgentResponse, GraphContext, Reference } from "@/types";
 
 function getToken(): string {
   if (typeof window === "undefined") return "";
@@ -9,7 +8,8 @@ function getToken(): string {
 export async function queryKnowledgeAgentStream(
   question: string,
   onChunk: (text: string) => void,
-  onRefs?: (refs: Reference[]) => void
+  onRefs?: (refs: Reference[]) => void,
+  onGraphContext?: (context: GraphContext) => void,
 ): Promise<AgentResponse> {
   const token = getToken();
   const res = await fetch("/api/agent", {
@@ -22,31 +22,74 @@ export async function queryKnowledgeAgentStream(
   const decoder = new TextDecoder();
   let fullText = "";
   let refs: Reference[] = [];
+  let graphContext: GraphContext | undefined;
+  let domain: string | undefined;
   let buffer = "";
+  let metadataRead = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    // Check for references prefix
-    if (buffer.startsWith("__REFS__")) {
+    if (!metadataRead) {
       const nl = buffer.indexOf("\n");
-      if (nl > 0) {
-        try {
-          const rawRefs = JSON.parse(buffer.slice(8, nl));
-          refs = rawRefs.map((r: any) => ({
-            id: r.id, docName: r.docName, chapter: r.chapter || "",
-            snippet: r.content || "", page: 0, fileUrl: r.fileUrl || "",
-          }));
-          if (onRefs) onRefs(refs);
-        } catch(e) {}
-        buffer = buffer.slice(nl + 1);
+      if (nl < 0) continue;
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      metadataRead = true;
+      try {
+        if (line.startsWith("__META__")) {
+          const metadata = JSON.parse(line.slice(8));
+          refs = mapReferences(metadata.references || []);
+          graphContext = metadata.graphContext;
+          domain = metadata.domain;
+          onRefs?.(refs);
+          if (graphContext) onGraphContext?.(graphContext);
+        } else if (line.startsWith("__REFS__")) {
+          refs = mapReferences(JSON.parse(line.slice(8)));
+          onRefs?.(refs);
+        } else {
+          buffer = `${line}\n${buffer}`;
+        }
+      } catch {
+        // A malformed metadata header should not discard the answer stream.
       }
     }
     fullText += buffer;
     buffer = "";
     onChunk(fullText);
   }
-  return { answer: fullText, references: refs };
+  // 流结束时仍可能有未遇到换行符的尾部数据，必须纳入最终答案。
+  buffer += decoder.decode();
+  if (buffer) {
+    if (buffer.startsWith("data: ")) {
+      const data = buffer.slice(6).trim();
+      if (data !== "[DONE]") {
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content || "";
+          fullText += content;
+        } catch {
+          // 非完整 SSE JSON 时保留原始片段，避免静默丢失模型输出。
+          fullText += buffer;
+        }
+      }
+    } else {
+      fullText += buffer;
+    }
+    onChunk(fullText);
+  }
+  return { answer: fullText, references: refs, graphContext, domain };
+}
+
+function mapReferences(rawReferences: any[]): Reference[] {
+  return rawReferences.map((reference) => ({
+    id: reference.id,
+    docName: reference.docName,
+    chapter: reference.chapter || "",
+    snippet: reference.content || reference.snippet || "",
+    page: Number(reference.page || 0),
+    fileUrl: reference.fileUrl || "",
+  }));
 }
 
 const AGENT_API = "/api/agent";
@@ -65,74 +108,12 @@ async function callAgent(action: string, params: Record<string, any>) {
 export async function queryKnowledgeAgent(question: string): Promise<AgentResponse> {
   try {
     const result = await callAgent("knowledge", { question });
-    const refs = (result.references || []).map((r: any) => ({
-      id: r.id,
-      docName: r.docName,
-      chapter: r.chapter || "",
-      snippet: r.content || "",
-      page: 0,
-      fileUrl: r.fileUrl || "",
-    }));
-    return { answer: result.answer, references: refs };
+    return {
+      answer: result.answer,
+      references: mapReferences(result.references || []),
+      graphContext: result.graphContext,
+    };
   } catch {
     return { answer: "抱歉，AI服务暂时不可用，请稍后再试。", references: [] };
   }
-}
-
-export async function startGuidedScenario(scenarioId: string) {
-  const scenario = guidedScenarios.find((s) => s.id === scenarioId);
-  if (!scenario) throw new Error("Scenario not found");
-  const firstStep = scenario.steps[0];
-  try {
-    const result = await callAgent("guided_start", {
-      scenarioTitle: scenario.title,
-      scenarioDescription: scenario.description,
-      firstQuestion: firstStep.question,
-      totalSteps: firstStep.totalSteps,
-    });
-    return { greeting: result.greeting, firstQuestion: result.firstQuestion || firstStep.question, step: 1, totalSteps: firstStep.totalSteps };
-  } catch {
-    return { greeting: "欢迎进入" + scenario.title + "！", firstQuestion: firstStep.question, step: 1, totalSteps: firstStep.totalSteps };
-  }
-}
-
-export async function evaluateGuidedAnswer(scenarioId: string, currentStep: number, studentAnswer: string) {
-  const scenario = guidedScenarios.find((s) => s.id === scenarioId);
-  if (!scenario) throw new Error("Scenario not found");
-  const stepData = scenario.steps[currentStep - 1];
-  if (!stepData) return { feedback: "引导已完成！", isComplete: true, explanation: "" };
-  const isLastStep = currentStep >= stepData.totalSteps;
-  const nextStep = isLastStep ? null : scenario.steps[currentStep];
-  try {
-    const result = await callAgent("guided_evaluate", {
-      scenarioTitle: scenario.title,
-      stepNumber: currentStep,
-      totalSteps: stepData.totalSteps,
-      question: stepData.question,
-      expectedAnswer: stepData.expectedAnswer || "",
-      studentAnswer,
-    });
-    return { feedback: result.feedback, nextQuestion: isLastStep ? undefined : nextStep?.question, isComplete: isLastStep, explanation: result.explanation };
-  } catch {
-    return { feedback: studentAnswer.length > 10 ? stepData.explanation : "试着展开说一下？", nextQuestion: nextStep?.question, isComplete: isLastStep, explanation: stepData.explanation };
-  }
-}
-
-export async function getHint(scenarioId: string, currentStep: number, hintsUsed: number) {
-  const scenario = guidedScenarios.find((s) => s.id === scenarioId);
-  if (!scenario) return "场景不可用。";
-  const stepData = scenario.steps[currentStep - 1];
-  if (!stepData) return "无提示。";
-  try {
-    const result = await callAgent("guided_hint", { question: stepData.question, hintsUsed });
-    return result.hint;
-  } catch { return stepData.hints[Math.min(hintsUsed, stepData.hints.length - 1)]; }
-}
-
-export async function querySandboxAgent(question: string, context?: { intensity: number; duration: number; maxDepth: number; floodArea: number }): Promise<AgentResponse> {
-  if (!context) return { answer: "请先运行模拟。" };
-  try {
-    const result = await callAgent("sandbox", { question, simulation: context });
-    return { answer: result.answer, references: [] };
-  } catch { return { answer: "AI分析暂时不可用。", references: [] }; }
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, ReactNode, useCallback, useEffect } from 'react';
-import { Conversation, Message } from '@/types';
+import { Conversation, Message, Reference } from '@/types';
 
 interface ChatState {
   conversations: Conversation[];
@@ -14,7 +14,8 @@ type ChatAction =
   | { type: 'ADD_MESSAGE'; payload: { conversationId: string; message: Message } }
   | { type: 'DELETE_CONVERSATION'; payload: string }
   | { type: 'UPDATE_TITLE'; payload: { id: string; title: string } }
-  | { type: 'UPDATE_LAST_MESSAGE'; payload: { conversationId: string; content: string } };
+  | { type: 'REMOVE_LAST_MESSAGE'; payload: { conversationId: string } }
+  | { type: 'UPDATE_LAST_MESSAGE'; payload: { conversationId: string; content: string; references?: Reference[] } };
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
@@ -58,13 +59,22 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           c.id === action.payload.id ? { ...c, title: action.payload.title } : c
         ),
       };
+    case 'REMOVE_LAST_MESSAGE':
+      return {
+        ...state,
+        conversations: state.conversations.map(c =>
+          c.id === action.payload.conversationId
+            ? { ...c, messages: c.messages.slice(0, -1), updatedAt: Date.now() }
+            : c
+        ),
+      };
     case 'UPDATE_LAST_MESSAGE':
       return {
         ...state,
         conversations: state.conversations.map(c => {
           if (c.id !== action.payload.conversationId) return c;
           const msgs = [...c.messages];
-          if (msgs.length > 0) msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: action.payload.content };
+          if (msgs.length > 0) msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: action.payload.content, ...(action.payload.references ? { references: action.payload.references } : {}) };
           return { ...c, messages: msgs, updatedAt: Date.now() };
         }),
       };
@@ -84,18 +94,27 @@ interface ChatContextValue {
   addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => void;
   deleteConversation: (id: string) => void;
   updateTitle: (id: string, title: string) => void;
-  updateLastMessage: (conversationId: string, content: string) => void;
+  removeLastMessage: (conversationId: string) => void;
+  updateLastMessage: (conversationId: string, content: string, references?: Reference[]) => void;
   getActiveConversation: () => Conversation | undefined;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
-const STORAGE_KEY = "aicourse-chat-v1";
+function storageKey(): string {
+  if (typeof window === "undefined") return "aicourse-chat-v1-anonymous";
+  let identity = "anonymous";
+  try {
+    const user = JSON.parse(localStorage.getItem("aicourse-user") || "null");
+    identity = String(user?.email || user?.phone || "anonymous").toLowerCase().replace(/[^a-z0-9_.@+-]/g, "_");
+  } catch { /* 使用匿名隔离空间 */ }
+  return `aicourse-chat-v1-${identity}`;
+}
 
 function loadState(): { conversations: Conversation[]; activeConversationId: string | null } {
   if (typeof window === "undefined") return { conversations: [], activeConversationId: null };
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey());
     if (raw) return JSON.parse(raw);
   } catch (e) {}
   return { conversations: [], activeConversationId: null };
@@ -106,7 +125,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Persist to localStorage
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+    try { localStorage.setItem(storageKey(), JSON.stringify(state)); } catch (e) {}
   }, [state]);
 
   const createConversation = useCallback(() => {
@@ -141,6 +160,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const removeLastMessage = useCallback((conversationId: string) => {
+    dispatch({ type: 'REMOVE_LAST_MESSAGE', payload: { conversationId } });
+  }, []);
+
   const deleteConversation = useCallback((id: string) => {
     dispatch({ type: 'DELETE_CONVERSATION', payload: id });
   }, []);
@@ -149,8 +172,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'UPDATE_TITLE', payload: { id, title } });
   }, []);
 
-  const updateLastMessage = useCallback((conversationId: string, content: string) => {
-    dispatch({ type: 'UPDATE_LAST_MESSAGE', payload: { conversationId, content } });
+  const updateLastMessage = useCallback((conversationId: string, content: string, references?: Reference[]) => {
+    dispatch({ type: 'UPDATE_LAST_MESSAGE', payload: { conversationId, content, references } });
   }, []);
 
   const getActiveConversation = useCallback(() => {
@@ -166,6 +189,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         addMessage,
         deleteConversation,
         updateTitle,
+        removeLastMessage,
         updateLastMessage,
         getActiveConversation,
       }}
