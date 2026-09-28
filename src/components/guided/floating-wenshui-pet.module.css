@@ -1,0 +1,71 @@
+.dock{position:fixed;z-index:45;pointer-events:none}
+.handle{display:block;width:100%;height:100%;border:0;padding:0;background:transparent;border-radius:50%;cursor:grab;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;filter:drop-shadow(0 5px 8px #24453630)}
+.handle:focus-visible{outline:3px solid #bf8f40;outline-offset:3px}
+.dragging{cursor:grabbing}
+.stillAvatar *{animation:none!important;transition:none!important}
+.bubble{position:fixed;z-index:46;box-sizing:border-box;padding:11px 14px;border:1px solid #d9dfc9;border-radius:16px 16px 5px 16px;background:#fffdf4;color:#426348;box-shadow:0 5px 20px #24453612;font:12px/1.6 system-ui,sans-serif;pointer-events:none;animation:arrive .22s ease-out both}
+.panel{position:fixed;z-index:46;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:16px;overflow:auto;overscroll-behavior:contain;border:1px solid #d3dec8;border-radius:20px;background:#fffdf7;color:#244536;box-shadow:0 12px 36px #24453626;font:12px/1.6 system-ui,sans-serif;pointer-events:auto;scrollbar-width:thin}
+.panel>*{flex-shrink:0}
+.heading{display:flex;align-items:center;gap:9px}
+.heading>div{flex:1}
+.heading small{display:block;color:#809077;font-size:10px}
+.heading h2{margin:0;font-size:17px;line-height:1.4;font-weight:700;letter-spacing:.02em}
+.heading button{display:grid;place-items:center;flex:none;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:#f0f4e9;color:#5a7758;cursor:pointer}
+.presenceDot{width:8px;height:8px;flex:none;border-radius:50%;background:#85ac71;box-shadow:0 0 0 4px #85ac7115}
+.companionPanel{gap:9px;background:linear-gradient(155deg,#fffdf7 58%,#f4f8ec)}
+.companionLine{margin:3px 0 1px;padding:10px 12px;min-height:39px;display:flex;align-items:center;border-radius:11px;background:#edf2e3;color:#4b6748;font-size:12px;line-height:1.75}
+.careActions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:2px 0 6px}
+.careActions button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:64px;padding:8px 2px;border:1px solid #e1e7d7;border-radius:12px;background:#fffefb;color:#54734e;font:inherit;font-size:11px;cursor:pointer;transition:background .15s,transform .15s}
+.careActions button:hover{background:#eef5e4;transform:translateY(-2px)}
+.careActions button:active{transform:scale(.97)}
+.careActions button:nth-child(2){color:#a37b45}
+.careActions button:nth-child(3){color:#797999}
+.bond{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:#87927a}
+.bond span{display:flex;align-items:center;gap:5px}
+.bond strong{color:#60834e;font-size:12px;font-weight:600}
+.panel progress{display:block;flex:none;width:100%;height:5px;border:0;border-radius:4px;overflow:hidden;background:#e7ecdF;color:#8bad72;accent-color:#8bad72}
+.panel progress::-webkit-progress-bar{background:#e7ecdf}
+.panel progress::-webkit-progress-value{background:#8bad72}
+.panel progress::-moz-progress-bar{background:#8bad72}
+.caption{display:block;color:#87927a;font-size:10px;line-height:1.5}
+.studyEntry{display:flex;align-items:center;gap:10px;padding:11px 12px;margin-top:3px;border:1px solid #d9e3cb;border-radius:12px;background:#f0f5e8;color:#426a40;font:inherit;cursor:pointer;text-align:left}
+.studyEntry>span{flex:1;font-weight:600}
+.studyEntry small{display:block;max-width:194px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:400;color:#88957c}
+.studyEntry:hover{background:#e5eed8}
+.petSettings{display:flex;justify-content:space-between;gap:10px;margin-top:1px}
+.petSettings button{display:flex;align-items:center;gap:4px;padding:3px 0;border:0;background:transparent;color:#87937d;font:inherit;font-size:10px;cursor:pointer}
+.petSettings button[aria-pressed=true]{color:#477044}
+.warning{color:#9b6646;font-size:10px}
+.panel button:focus-visible{outline:3px solid #bf8f40;outline-offset:2px}
+.panel button:disabled{opacity:.55;cursor:default}
+.context{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:9px;background:#f0f4e9}
+.context span{font-size:10px;color:#6b7e69}
+.context strong{font-size:13px}
+.context small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#637660}
+.studyActions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.studyActions button{display:flex;align-items:center;justify-content:center;gap:4px;min-height:36px;padding:5px 2px;border:1px solid #d4e0cb;border-radius:8px;background:#f8faf4;color:#356a50;font:inherit;cursor:pointer}
+.feed{flex:1 1 auto;min-height:100px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:3px 2px}
+.empty{margin:8px 2px;color:#6a7f69;line-height:1.9}
+.reply{padding:10px;border:1px solid #e1e8d9;border-radius:9px;background:white;overflow-wrap:anywhere}
+.reply+.reply{margin-top:9px}
+.replyLabel{font-size:11px;font-weight:600;color:#6c825e}
+.reply p{margin:6px 0;white-space:pre-wrap;line-height:1.85}
+.source{display:block;margin-top:7px;color:#7b8673;font-size:10px}
+.quizQuestion{font-weight:600}
+.options{display:grid;gap:6px;margin:8px 0}
+.options button{display:flex;gap:6px;text-align:left;padding:8px;border:1px solid #dbe5d3;border-radius:6px;background:#f9fbf5;color:#334f39;font:inherit;cursor:pointer;white-space:pre-wrap;overflow-wrap:anywhere}
+.options button:disabled{opacity:1}
+.options .correct{background:#e8f5df;border-color:#79a66b}
+.options .incorrect{background:#fff0e9;border-color:#d89c86}
+.feedback{padding-top:7px;color:#466746}
+.feedback button,.pending button,.error button{border:0;background:transparent;text-decoration:underline;text-underline-offset:3px;color:#477146;font:inherit;cursor:pointer;padding:3px 5px}
+.pending{padding:12px 4px;color:#758663}
+.error{padding:8px;color:#9b4b35;background:#fff1ea;border-radius:7px}
+.ask{display:flex;gap:6px}
+.ask input{flex:1;min-width:0;padding:9px 10px;border:1px solid #ccdac4;border-radius:8px;font:inherit;background:white;color:#244536}
+.ask input:focus{outline:2px solid #94ae79;outline-offset:1px}
+.ask button{display:grid;place-items:center;width:38px;border:0;border-radius:8px;background:#557c4e;color:white;cursor:pointer}
+.studyFooter{display:flex;align-items:center;gap:5px;color:#889579;font-size:10px}
+.studyFooter small{margin-left:auto;font-size:10px}
+@keyframes arrive{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.bubble,.careActions button{animation:none;transition:none}.careActions button:hover{transform:none}}

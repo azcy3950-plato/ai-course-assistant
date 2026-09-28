@@ -192,7 +192,7 @@ export default function Navbar() {
 
   return (
     <nav className="bg-white border-b border-[var(--color-border)] shadow-sm sticky top-0 z-50">
-      <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center justify-between gap-3">
+      <div className="max-w-[1600px] mx-auto px-2 sm:px-4 h-14 flex items-center justify-between gap-1 sm:gap-3">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 shrink-0">
           <span className="text-xl">🎓</span>
@@ -200,7 +200,7 @@ export default function Navbar() {
         </Link>
 
         {/* Nav Links */}
-        <div className="flex items-center gap-1 overflow-x-auto">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {links.map((link) => (
             <Link key={link.href} href={link.href}
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${
@@ -212,7 +212,7 @@ export default function Navbar() {
           ))}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Search */}
           <div className="relative" ref={searchRef}>
             <input
@@ -220,10 +220,11 @@ export default function Navbar() {
               onChange={(e) => onSearchInput(e.target.value)}
               onFocus={() => setSearchOpen(true)}
               placeholder={state.role === "teacher" ? "搜学生/任务/知识点" : "搜知识点/任务/问答"}
-              className="w-36 md:w-52 px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)] transition-all"
+              aria-label="搜索知识点、任务和问答"
+              className="w-24 sm:w-36 md:w-52 px-2 sm:px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-sm focus:outline-none focus:border-[var(--color-primary)] transition-all"
             />
             {searchOpen && q.trim() && results && (
-              <div className="absolute right-0 top-10 w-80 bg-white rounded-xl border border-[var(--color-border)] shadow-lg max-h-96 overflow-y-auto z-50">
+              <div className="fixed left-2 right-2 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-10 sm:w-80 bg-white rounded-xl border border-[var(--color-border)] shadow-lg max-h-96 overflow-y-auto z-50">
                 {results.nodes.length === 0 && results.tasks.length === 0 && results.students.length === 0 && results.qa.length === 0 && (
                   <p className="px-4 py-3 text-xs text-[var(--color-text-muted)]">没有匹配结果</p>
                 )}
@@ -292,7 +293,7 @@ export default function Navbar() {
               )}
             </button>
             {notifOpen && (
-              <div className="absolute right-0 top-10 w-96 bg-white rounded-xl border border-[var(--color-border)] shadow-lg z-50 max-h-[70vh] overflow-y-auto">
+              <div className="fixed left-2 right-2 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-10 sm:w-96 bg-white rounded-xl border border-[var(--color-border)] shadow-lg z-50 max-h-[70vh] overflow-y-auto">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-border)] sticky top-0 bg-white">
                   <span className="text-sm font-bold">通知</span>
                   {unread > 0 && (

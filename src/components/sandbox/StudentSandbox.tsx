@@ -9,6 +9,8 @@ import {planSignature,validatePlacements} from '@/lib/sandbox/model';
 import {configKey,groupPlacements,groupSpaces,setGroupArea,spaceId} from '@/lib/sandbox/grouping';
 import {createArtworkRecipe,type ArtworkRecipe} from '@/lib/sandbox/artwork';
 import {newSandboxId} from '@/lib/sandbox/id';
+import {getExperimentPreset,planMentorSuggestion,type ExperimentLessonId,type ExperimentPreset} from '@/lib/mentor/experiment';
+import MentorExperiment from './MentorExperiment';
 import CampusMap from './CampusMap';
 import LandscapeViewport from './LandscapeViewport';
 import PlanArtwork from './PlanArtwork';
@@ -49,8 +51,10 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
  const[view,setView]=useState<'artwork'|'2d'|'3d'>('artwork'),[showPipes,setShowPipes]=useState(false),[focusMode,setFocusMode]=useState(false),[libraryOpen,setLibraryOpen]=useState(false),[inspectorOpen,setInspectorOpen]=useState(false),[toast,setToast]=useState(''),[error,setError]=useState('');
  const[result,setResult]=useState<RunResult|null>(null),[running,setRunning]=useState(false),[tab,setTab]=useState('overview'),[pollutant,setPollutant]=useState('COD');
  const[modal,setModal]=useState<'help'|'saved'|'params'|'artwork'|null>(null),[saved,setSaved]=useState<Saved[]>([]),[artworkPlan,setArtworkPlan]=useState<Saved|null>(null);
+ const[mentorLesson,setMentorLesson]=useState<ExperimentLessonId|null>(null);
  const dialogRef=useRef<HTMLElement>(null);
  useEffect(()=>{if(!modal)return;const previous=document.activeElement as HTMLElement|null;const dialog=dialogRef.current;dialog?.querySelector<HTMLButtonElement>('button')?.focus();const key=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();setModal(null);}if(event.key==='Tab'&&dialog){const controls=[...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),[tabindex="0"]')].filter(el=>el.getClientRects().length>0);const first=controls[0],last=controls[controls.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}};document.addEventListener('keydown',key);return()=>{document.removeEventListener('keydown',key);previous?.focus();};},[modal]);
+ useEffect(()=>{const update=()=>setMentorLesson(preview?null:getExperimentPreset(new URLSearchParams(window.location.search).get('mentor'))?.lessonId||null);update();window.addEventListener('popstate',update);return()=>window.removeEventListener('popstate',update);},[preview]);
  const[history,setHistory]=useState<Placement[][]>([]),[future,setFuture]=useState<Placement[][]>([]);
  const[libraryCollapsed,setLibraryCollapsed]=useState(false),[inspectorCollapsed,setInspectorCollapsed]=useState(false),[compactViewport,setCompactViewport]=useState(false),[draggingFacility,setDraggingFacility]=useState(false);
  const drawerMode=focusMode||compactViewport;
@@ -123,6 +127,10 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
  async function run(){setRunning(true);setError('');try{
    const r=await fetch('/api/sandbox/run',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getAuthToken()},body:JSON.stringify({placements,rain})});const data=await r.json();if(!r.ok)throw new Error(data.error||'计算失败');setResult(data);setTab('overview');setToast('计算完成，可以查看结果和对比曲线。');
  }catch(e){setError(e instanceof Error?e.message:'计算失败');}finally{setRunning(false);}}
+ function applyMentorSuggestion(preset:ExperimentPreset){
+   if(!campus||running)return {ok:false,message:'请等待场地或计算完成。'};
+   try{const next=planMentorSuggestion(campus,placements,zone,preset);if(!commit(next.placements))return {ok:false,message:'当前方案未通过空间校验，请检查配置。'};selectPatch(next.patchId);setActive(preset.facility);setArea(preset.area);setDepth(preset.depth);setTrees(preset.trees);setRain(preset.rain);return {ok:true,message:`已向当前方案新增 ${preset.area} m² ${FACILITIES[preset.facility].name}，降雨设为 5 年一遇。原有设施已保留，可撤销新增配置。`};}catch(e){return {ok:false,message:e instanceof Error?e.message:'暂时无法应用建议。'};}
+ }
  function snapshot():Saved{return {id:newSandboxId(),name:name||'未命名方案',placements:placements.map(p=>({...p})),rain,result:result&&!stale?result:undefined,date:new Date().toLocaleString('zh-CN'),artwork:currentArtwork||undefined};}
  function showArtwork(item:Saved){setArtworkPlan({...item,artwork:savedArtworks.get(item.id)||item.artwork||createArtworkRecipe(campus!,item.placements,item.rain)});setModal('artwork');}
  function previewArtwork(){try{showArtwork(snapshot());}catch{setError('无法打开效果图，请刷新后重试。');}}
@@ -138,6 +146,7 @@ export default function StudentSandbox({preview=false}:{preview?:boolean}){
    <div className={styles.toolbarRight}><button className={styles.undoButton} aria-label="撤销" title="撤销上次配置" onClick={undo} disabled={!history.length}><Icon type="undo" size={16}/><span>撤销</span></button><div className={styles.planActions}><button className={styles.save} onClick={previewArtwork}>查看效果图</button><button className={styles.save} onClick={save}><Icon type="save" size={16}/>保存方案</button><button className={styles.save} title="清空所有片区的设施配置，可撤销" onClick={resetPlan} disabled={running||(!placements.length&&!result)}>重置方案</button></div><i/><label><span>降雨情景</span><select aria-label="降雨情景" value={rain} onChange={e=>setRain(e.target.value)}>{[3,5,10,20,50].map(y=><option key={y} value={y+'A'}>{y} 年一遇</option>)}</select></label><button className={styles.run} onClick={run} disabled={running}><Icon type="play" size={15}/>{running?'正在计算…':'运行计算'}</button><details className={styles.moreMenu}><summary aria-label="更多操作" title="更多操作"><Icon type="more" size={20}/></summary><div><button onClick={()=>setModal('saved')}>我的实验 <span className={styles.count}>{saved.length}</span></button><button onClick={()=>setModal('help')}>使用指南</button><button aria-label="重做" onClick={redo} disabled={!future.length}>重做上次配置</button></div></details></div>
   </div>
   {preview&&<div className={styles.previewBanner}><div><strong>SWMM 实算体验 · 紫荆雅苑案例</strong><p>首次打开自动载入四类设施并运行 5 年一遇降雨。可修改配置后重新计算；此处的草稿和保存方案独立存储。</p></div><div><a href="#sandbox-results">查看计算结果 ↓</a><Link href="/sandbox">返回我的沙盘 ↗</Link></div></div>}
+  {mentorLesson&&<MentorExperiment lessonId={mentorLesson} placements={placements} zone={zone} rain={rain} result={result} stale={stale} running={running} onApply={applyMentorSuggestion} onRun={run}/>}
   <div className={`${styles.workspace} ${drawerMode?styles.workspaceFocus:''} ${!libraryVisible?styles.libraryCollapsed:''} ${!inspectorVisible?styles.inspectorCollapsed:''}`}>
    {compactViewport&&(libraryVisible||inspectorVisible)&&!draggingFacility&&<button className={styles.drawerShade} aria-label="关闭侧边面板" onClick={closeDrawers}/>}
 
