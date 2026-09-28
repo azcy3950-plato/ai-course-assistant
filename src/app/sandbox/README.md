@@ -111,6 +111,40 @@ public/zijing_inp.inp                必须提交的原始案例模型
 
 ## 上传到 GitHub
 
+### 保存方案效果图
+
+沙盘提供「查看效果图」；点击「保存方案」会保存配置快照并自动打开效果图。「我的实验」显示已保存方案的缩略图，点击缩略图可重新查看、下载 PNG。旧方案没有图片元数据也可根据原配置生成效果图。
+
+采用固定底图、透明设施素材和浏览器确定性合成，不需要图像生成 API、密钥或额外后端服务。保存记录只存设施配置、计算结果和轻量图片配置，不把大幅 PNG 写入 localStorage。导出的方案 JSON 可继续导入。
+
+设施总面积控制示意覆盖范围；蓄水深度、含乔木配置及降雨写入图片说明。原有景观树木属于固定背景，未模拟树木数量或生长。图片按社区总量表达，不进行逐地块坐标投影或工程选址；实际空间配置以沙盘编辑地图为准。小设施设置了最小视觉尺寸，图片不用于量取面积。
+
+需一起提交：
+
+```text
+public/sandbox/artwork/zijing-v1/     固定底图、四类透明素材和来源记录
+src/lib/sandbox/artwork-layout.json 已校准视觉区域及树冠遮挡
+src/lib/sandbox/artwork.ts          参数汇总、版本和图片配置
+src/lib/sandbox/artwork-renderer.ts 画面合成及带说明的 PNG 导出
+src/components/sandbox/PlanArtwork.tsx
+src/components/sandbox/StudentSandbox.tsx
+src/components/sandbox/studio.module.css
+tests/sandbox-artwork.test.ts
+tests/sandbox-artwork.browser.mjs
+```
+
+图片资源使用站内路径，代码不依赖开发电脑的绝对路径、临时目录或 `artifacts/`。五张图片合计约 11 MB，作为普通图片文件纳入仓库。图片版本应新增发布，保留旧版本以支持已有方案。
+
+效果图验证：
+
+```sh
+npx vitest run tests/sandbox-artwork.test.ts
+# 先启动 npm run dev，再运行：
+node tests/sandbox-artwork.browser.mjs
+```
+
+浏览器验收使用独立上下文和真实模型接口，检查空方案、参数变化、旧方案、快照恢复、PNG 下载和素材加载失败后重试。使用 `SANDBOX_BASE_URL` 指定测试端口。
+
 以**当前项目仓库**为单位提交，保留已有平台代码、`package.json`、`package-lock.json` 和原始模型。新增的 `src/components/sandbox/`、`src/lib/sandbox/`、`src/app/api/sandbox/`、`demo/`、`legacy/`、安装脚本及测试文件必须一起提交，不能只提交 `page.tsx`。
 
 GitHub Desktop 中检查 Changes，提交沙盘源码、依赖清单、文档、`.env.example` 和 `.gitignore`，再使用 Push origin 上传。

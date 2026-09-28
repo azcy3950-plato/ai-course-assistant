@@ -76,6 +76,7 @@ try{
  await page.getByRole('button',{name:'生态服务',exact:true}).click();
  await page.locator('#sandbox-results').screenshot({path:dir+'/swmm-eco.png'});
  await page.getByRole('button',{name:'保存方案',exact:true}).click();
+ await page.getByRole('dialog',{name:'方案效果图',exact:true}).getByRole('button',{name:'关闭窗口',exact:true}).click();
  const storage=await page.evaluate(()=>({draft:JSON.parse(localStorage.getItem('zijing-studio-v1')),saved:JSON.parse(localStorage.getItem('zijing-studio-v1-saved')),preview:JSON.parse(localStorage.getItem('zijing-swmm-preview-v1-saved'))}));
  assert.deepEqual(storage.draft,original);assert.deepEqual(storage.saved,saved);
  assert.equal(storage.preview[0].result.id,result.id);

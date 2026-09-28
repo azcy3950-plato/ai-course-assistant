@@ -261,6 +261,33 @@
 .helpSteps p { margin: 8px 0 0; font-size: 12px; }.helpSteps strong { color: var(--ink); }
 .savedRow { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); }.savedRow > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }.savedRow p { margin: 4px 0 0; font-size: 12px; }
 .savedRow > button:not(.save) { background: transparent; color: var(--muted); border: 0; padding: 8px; }
+.artworkModal { width: min(1160px,100%); }
+.artwork { min-width: 0; }
+.artworkCanvas { display: block; width: 100%; height: auto; }
+.artworkCanvas[hidden] { display: none; }
+.artwork > .artworkCanvas { max-height: 58dvh; object-fit: contain; }
+.artworkLoading { display: grid; place-items: center; align-content: center; gap: 12px; min-height: 240px; color: var(--muted); background: var(--color-surface-alt); }
+.artworkMeta { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; color: var(--muted); font-size: 12px; }
+.artworkStats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin-top: 16px; }
+.artworkStats > div { display: flex; flex-direction: column; gap: 4px; padding: 12px; background: var(--color-surface-alt); border-radius: 8px; color: var(--muted); font-size: 12px; }
+.artworkStats strong { color: var(--ink); font-size: 19px; overflow-wrap: anywhere; }
+.artworkStats small { font-size: 12px; font-weight: 400; }
+.artworkNote { margin: 12px 0 0; font-size: 12px; }
+.savedRow > button.savedThumbnail { flex: 0 0 112px; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; }
+.artworkThumbnail { width: 100%; aspect-ratio: 1484/1060; display: grid; place-items: center; }
+.artworkThumbnail .artworkLoading { min-height: 0; width: 100%; height: 100%; font-size: 12px; }
+.savedActions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width:760px) {
+  .toolbarRight { flex-wrap: wrap !important; justify-content: flex-start !important; }
+  .planActions { flex-wrap: wrap; }
+  .artworkStats { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  .artworkStats > div { padding: 8px; }
+  .artworkStats strong { font-size: 17px; }
+  .savedRow { flex-wrap: wrap; }
+  .savedRow > button.savedThumbnail { flex-basis: 80px; }
+  .savedRow > div { flex: 1 1 calc(100% - 100px); }
+  .artworkLoading { min-height: 160px; }
+}
 .notice { position: fixed; z-index: 90; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 12px; max-width: min(440px,calc(100% - 32px)); padding: 12px 16px; border: 1px solid #bfe3cf; border-radius: 12px; color: #206749; background: #f0faf4; box-shadow: 0 4px 20px #20345712; }
 .notice button { border: 0; background: transparent; color: inherit; padding: 4px; }.noticeError { color: #9b303b; background: #fff3f4; border-color: #f1ced3; }
 .loading { min-height: 50vh; display: grid; place-items: center; align-content: center; gap: 12px; color: var(--color-text-secondary); font-family: var(--font-sans); }.loading h2 { font-size: 18px; }

@@ -1,0 +1,13 @@
+{
+  "version": "zijing-plan-artwork-v1",
+  "creation": "Built-in image_gen; user-approved base and independently generated transparent facility assets.",
+  "layout": "Ground regions revised after visual inspection of open lawns and path edges; tree crowns are protected by foreground masks.",
+  "referenceImageDistributed": false,
+  "hashes": {
+    "base.png": "ba5e0b5558f361462d3ffb6bc1ac5457f9f204e928fcecc371bed1d3ad5fd5fd",
+    "green-roof.png": "7098beda830718202236f43f5c82749ca27fea3b2fe3b13fc43b23767e8e55d0",
+    "bioswale.png": "29c3d4ba3e67b23a6dd10b0b7e6d6358302f9d2eae6e98c46099d0f60215fdc7",
+    "rain-garden.png": "f13e1811af653f23337a8f1d56289f7d513c1f96edb7f16937e541dac69bef12",
+    "permeable-paving.png": "d21e319e3a63d89bc2d0d21164bea532abdca19242b521acf819c6a4b1ee6dc5"
+  }
+}

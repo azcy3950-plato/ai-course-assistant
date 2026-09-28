@@ -60,7 +60,8 @@ try{
   await page.locator('[class*="ecoContent"]').screenshot({path:dir+'/eco-desktop.png'});
  });
  await check('Real calculation and reset disabled while the engine is running',async()=>{
-  await page.getByRole('button',{name:'保存方案',exact:true}).click();savedBefore=await saved();
+  await page.getByRole('button',{name:'保存方案',exact:true}).click();
+  await page.getByRole('dialog',{name:'方案效果图',exact:true}).getByRole('button',{name:'关闭窗口',exact:true}).click();savedBefore=await saved();
   const view=await camera();result=await run();assert.equal(await camera(),view);
   await page.getByRole('button',{name:'生态服务',exact:true}).click();
   const format=(v,d=0)=>v.toLocaleString('zh-CN',{maximumFractionDigits:d});
@@ -100,6 +101,7 @@ try{
   await reset().click();await page.getByLabel('设施占地面积',{exact:true}).fill('25');
   await page.getByRole('button',{name:'＋ 添加到当前空间',exact:true}).click();
   await page.getByRole('button',{name:'保存方案',exact:true}).click();
+  await page.getByRole('dialog',{name:'方案效果图',exact:true}).getByRole('button',{name:'关闭窗口',exact:true}).click();
   const after=await draft();assert(Math.abs(after.placements.reduce((n,p)=>n+p.area,0)-25)<1e-6);
   const fresh=await run();assert.notEqual(fresh.signature,result.signature);assert(Math.abs(fresh.eco.area-25)<1e-6);
   assert.equal(await page.getByLabel('水位回放时间轴').count(),0);
