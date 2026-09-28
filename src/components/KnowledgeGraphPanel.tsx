@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from "@/types";
 import KnowledgeGraphSphere, { type SphereHandle } from "./KnowledgeGraphSphere";
 import { Pause, Play } from "lucide-react";
+import "./guided/legacy-interactions.css";
 import { neighborhood, relationExplanation } from "./guided/model";
 
-type Props = { graph: KnowledgeGraph; focusIds?: string[]; selectedNodeId?: string; depth: 1 | 2; mode: "current" | "cumulative"; nodeCategory?: string; relationType?: string; onModeChange: (v: "current" | "cumulative") => void; onDepthChange: (v: 1 | 2) => void; onNodeCategory?: (v: string) => void; onRelationType?: (v: string) => void; onNodeClick: (n: KnowledgeNode) => void; onExpand: (n: KnowledgeNode) => void; onFullscreen: () => void; onCollapsePanel: () => void; onAsk?: (n: KnowledgeNode) => void; onCollapse?: () => void };
+type Props = { hideModeControls?: boolean; graph: KnowledgeGraph; focusIds?: string[]; selectedNodeId?: string; depth: 1 | 2; mode: "current" | "cumulative"; nodeCategory?: string; relationType?: string; onModeChange: (v: "current" | "cumulative") => void; onDepthChange: (v: 1 | 2) => void; onNodeCategory?: (v: string) => void; onRelationType?: (v: string) => void; onNodeClick: (n: KnowledgeNode) => void; onExpand: (n: KnowledgeNode) => void; onFullscreen: () => void; onCollapsePanel: () => void; onAsk?: (n: KnowledgeNode) => void; onCollapse?: () => void };
 
 const KIND_META: Record<string, { label: string; color: string; tint: string }> = {
   core: { label: "核心概念", color: "#165dff", tint: "rgba(22,93,255,0.15)" },
@@ -68,8 +69,9 @@ export default function KnowledgeGraphPanel(p: Props) {
           <span className="mr-1 text-slate-400">⌕</span>
           <input aria-label="搜索知识节点" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索节点或关键词" className="w-full bg-transparent py-1 text-xs outline-none" />
         </div>
-        <button onClick={() => p.onModeChange("current")} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.mode === "current" ? "text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`} style={p.mode === "current" ? { background: "linear-gradient(135deg, #165dff, #5b34ff)" } : undefined}>当前问题</button>
+        {!p.hideModeControls && <><button onClick={() => p.onModeChange("current")} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.mode === "current" ? "text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`} style={p.mode === "current" ? { background: "linear-gradient(135deg, #165dff, #5b34ff)" } : undefined}>当前问题</button>
         <button onClick={() => p.onModeChange("cumulative")} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.mode === "cumulative" ? "text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`} style={p.mode === "cumulative" ? { background: "linear-gradient(135deg, #165dff, #5b34ff)" } : undefined}>累计图谱</button>
+        </>}
         <button onClick={() => p.onDepthChange(1)} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.depth === 1 ? "bg-[#165dff] text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`}>一阶</button>
         <button onClick={() => p.onDepthChange(2)} className={`rounded-full px-3 py-1 text-xs font-medium shadow-sm transition ${p.depth === 2 ? "bg-[#165dff] text-white" : "border border-[rgba(105,126,165,0.16)] bg-white text-[#314362] hover:shadow-md"}`}>二阶</button>
         <button onClick={() => fit(p.focusIds, true)} title="对准当前焦点(若被筛选过滤则重置到全图)" className="rounded-full border border-[rgba(105,126,165,0.16)] bg-white px-3 py-1 text-xs font-medium text-[#314362] shadow-sm transition hover:shadow-md">适应视图</button>
