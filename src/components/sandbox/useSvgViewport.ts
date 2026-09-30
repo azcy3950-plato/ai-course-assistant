@@ -71,8 +71,9 @@ export default function useSvgViewport({ bounds, targetBounds, request, disabled
   }
   function onPointerDown(e: ReactPointerEvent<SVGSVGElement>) {
     if (blocked() || e.button !== 0 || !e.isPrimary || gesture.current) return;
+    if (!space.current&&(e.target as Element).closest('[data-zone-label],[data-viewport-control],[data-landscape-space]')) { suppressClick.current = false; return; }
     focus(); suppressClick.current = false;
-    const hit = (e.target as Element).closest('[data-patch]');
+    const hit = (e.target as Element).closest('[data-patch],[data-landscape-space],[data-landscape-zone-boundary]');
     const matrix = e.currentTarget.getScreenCTM();
     if (!matrix) return;
     gesture.current = { id: e.pointerId, x: e.clientX, y: e.clientY, camera: current.current,

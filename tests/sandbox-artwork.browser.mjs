@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
-const base = process.argv[2] || process.env.SANDBOX_BASE_URL || 'http://127.0.0.1:3000';
+const base = process.argv[2] || process.env.SANDBOX_BASE_URL || 'http://localhost:3000';
 assert(['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname), 'Only local test URLs allowed');
 const dir = 'artifacts/sandbox-artwork-integration';
 mkdirSync(dir, { recursive: true });
@@ -23,6 +23,14 @@ const placements = [
   { id: 'qa-pp', patchId: road.id, facility: 'PP', area: road.area * 0.5, depth: 65, trees: false },
 ];
 const legacy = { id: 'legacy-plan', name: '旧方案', placements: placements.slice(1, 2), rain: '3A', date: '2026/9/28 10:00:00' };
+const canonical = JSON.stringify([legacy.rain, legacy.placements.map(p => [p.patchId,p.facility,p.area,p.depth,p.trees]).sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))]);
+let hash = 2166136261;
+for (let i = 0; i < canonical.length; i++) { hash ^= canonical.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+legacy.artwork = {
+  version: 'zijing-plan-artwork-v1', modelVersion: model.version, signature: (hash >>> 0).toString(16),
+  capacities: Object.fromEntries(['roof','road','green'].map(surface => [surface, model.patches.filter(p => p.surface === surface).reduce((sum,p) => sum + p.area, 0)])),
+  facilities: Object.fromEntries(['GR','VS','RG','PP'].map(f => [f, f === 'RG' ? { area: placements[1].area, depth: 120, treeArea: placements[1].area } : { area: 0, depth: 0, treeArea: 0 }])),
+};
 await context.addInitScript(item => {
   if (!localStorage.getItem('artwork-qa-seeded')) {
     localStorage.setItem('zijing-studio-v1', JSON.stringify({ placements: [], name: '零设施方案', rain: '5A' }));
@@ -56,7 +64,7 @@ async function download(filename) {
 
 try {
   await page.goto(new URL('/sandbox', base).href);
-  await page.getByTestId('sandbox-landscape').waitFor();
+  await page.getByTestId('sandbox-2d').waitFor();
   await check('Portable local assets and exact approved base for an empty plan', async () => {
     for (const file of ['base.png', 'green-roof.png', 'bioswale.png', 'rain-garden.png', 'permeable-paving.png']) {
       const response = await page.request.get(new URL('/sandbox/artwork/zijing-v1/' + file, base).href);
@@ -77,13 +85,19 @@ try {
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('zijing-studio-v1-saved')).length), 1, 'Preview must not save');
     await close();
   });
-  let originalPixels, firstPng;
+  let originalPixels, firstPng, legacyPixels;
+  await check('Existing v1 snapshots retain their original aggregate rendering', async () => {
+    await notebook(); await page.getByRole('button', { name: '查看旧方案的效果图', exact: true }).click(); await ready();
+    legacyPixels = await pixels();
+    assert.match(await dialog().textContent(), /按社区设施总量/);
+    await close();
+  });
   await check('Saving opens artwork, stores a recipe instead of pixels and exports a valid PNG', async () => {
     await importPlan('四类设施方案', placements);
     await page.getByRole('button', { name: '保存方案', exact: true }).click(); await ready();
     originalPixels = await pixels();
     const records = await page.evaluate(() => JSON.parse(localStorage.getItem('zijing-studio-v1-saved')));
-    assert.equal(records.length, 2); assert.equal(records[0].artwork.version, 'zijing-plan-artwork-v1');
+    assert.equal(records.length, 2); assert.equal(records[0].artwork.version, 'zijing-plan-artwork-v2');
     assert.equal(records[0].artwork.facilities.RG.depth, 120);
     assert.equal(records[0].artwork.facilities.RG.treeArea, placements[1].area);
     assert(!JSON.stringify(records).includes('data:image/'), 'Large image data must not be stored in localStorage');
@@ -98,7 +112,7 @@ try {
     await importPlan('调整后的草稿', changed);
     await page.getByRole('button', { name: '查看效果图', exact: true }).click(); await ready();
     assert.notEqual(await pixels(), originalPixels); await close();
-    await page.reload(); await page.getByTestId('sandbox-landscape').waitFor(); await notebook();
+    await page.reload(); await page.getByTestId('sandbox-2d').waitFor(); await notebook();
     await page.getByRole('button', { name: '查看四类设施方案的效果图', exact: true }).locator('[data-artwork-state="ready"]').waitFor();
     await page.getByRole('button', { name: '查看四类设施方案的效果图', exact: true }).click(); await ready();
     assert.equal(await pixels(), originalPixels);
@@ -106,6 +120,8 @@ try {
     assert.equal(createHash('sha256').update(again).digest('hex'), createHash('sha256').update(firstPng).digest('hex'));
     await close(); await notebook();
     await page.getByRole('button', { name: '查看旧方案的效果图', exact: true }).click(); await ready();
+    assert.equal(await pixels(), legacyPixels);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('zijing-studio-v1-saved')).find(s => s.id === 'legacy-plan').artwork.version), 'zijing-plan-artwork-v1');
     await close();
   });
   await check('PNG preview fits mobile and preserves keyboard focus', async () => {
@@ -121,7 +137,7 @@ try {
     const bad = await badContext.newPage();
     const pattern = '**/sandbox/artwork/zijing-v1/base.png';
     await bad.route(pattern, route => route.abort());
-    await bad.goto(new URL('/sandbox', base).href); await bad.getByTestId('sandbox-landscape').waitFor();
+    await bad.goto(new URL('/sandbox', base).href); await bad.getByTestId('sandbox-2d').waitFor();
     await bad.getByRole('button', { name: '保存方案', exact: true }).click();
     const d = bad.getByRole('dialog', { name: '方案效果图', exact: true });
     await d.locator('[data-artwork-state="error"]').waitFor();

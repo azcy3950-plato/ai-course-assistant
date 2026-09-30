@@ -1,0 +1,2 @@
+# Preserve versioned landscape PNGs byte for byte across Windows and other hosts.
+public/sandbox/artwork/**/*.png -text

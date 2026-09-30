@@ -1,5 +1,6 @@
 import layoutData from './artwork-layout.json';
-import { ARTWORK_FACILITIES, ARTWORK_NOTE, artworkCoverage, type ArtworkLayout, type ArtworkRecipe, type ArtworkRegion } from './artwork';
+import { ARTWORK_FACILITIES, ARTWORK_VERSION, artworkNote, artworkCoverage, type ArtworkLayout, type ArtworkRecipe, type ArtworkRegion } from './artwork';
+import { LANDSCAPE_ZONES } from './landscape-layout';
 import { FACILITIES, type Facility, type Point } from './types';
 
 const layout = layoutData as ArtworkLayout;
@@ -77,36 +78,43 @@ export async function renderPlanArtwork(recipe: ArtworkRecipe, width = layout.ca
   pavingTile.width = 64; pavingTile.height = 8;
   context(pavingTile).drawImage(sprites.PP, ...layout.assets.PP.sourceRect, 0, 0, 64, 8);
   for (const key of layout.drawOrder) {
-    const coverage = artworkCoverage(recipe, key);
-    if (!coverage) continue;
+    const groups: { coverage: number; regions: ArtworkRegion[]; boundary?: Point[] }[] = recipe.version === ARTWORK_VERSION && recipe.zones
+      ? LANDSCAPE_ZONES.map(zone=>({coverage:artworkCoverage(recipe,key,zone.id),regions:zone.facilities[key],boundary:zone.boundary}))
+      : [{coverage:artworkCoverage(recipe,key),regions:layout.layers[key].regions}];
+    if (!groups.some(group=>group.coverage>0)) continue;
     const c = makeCanvas(), ctx = context(c);
     ctx.scale(c.width / layout.canvas.width, c.height / layout.canvas.height);
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    const regions = layout.layers[key].regions;
-    let remaining = coverage * regions.reduce((sum, r) => sum + (r.polygon ? polygonArea(r.polygon) : 0), 0);
-    for (const region of regions) {
+    for (const {coverage,regions,boundary} of groups) {
+      if (!coverage) continue;
       ctx.save();
-      if (region.clipPolygon) ctx.clip(polygon(region.clipPolygon));
-      if (region.route) swale(ctx, sprites.VS, region, coverage);
-      else if (region.polygon) {
-        const area = polygonArea(region.polygon), share = Math.min(1, Math.max(0, remaining / area));
-        remaining -= area;
-        if (share > 0) {
-          const p = polygon(region.polygon), [x, y, w, h] = bounds(region.polygon);
-          ctx.clip(p); ctx.beginPath(); ctx.rect(x, y, w * share, h); ctx.clip();
-          if (key === 'PP') {
-            ctx.globalAlpha = 0.72; ctx.fillStyle = ctx.createPattern(pavingTile, 'repeat')!; ctx.fill(p);
-          } else {
-            ctx.globalAlpha = 0.97;
-            ctx.drawImage(sprites[key], ...layout.assets[key].sourceRect, x, y, w, h);
-            ctx.globalAlpha = 0.92; ctx.strokeStyle = '#dddcd0'; ctx.lineWidth = 1.5; ctx.stroke(p);
+      if (boundary) ctx.clip(polygon(boundary));
+      let remaining = coverage * regions.reduce((sum, r) => sum + (r.polygon ? polygonArea(r.polygon) : 0), 0);
+      for (const region of regions) {
+        ctx.save();
+        if (region.clipPolygon) ctx.clip(polygon(region.clipPolygon));
+        if (region.route) swale(ctx, sprites.VS, region, coverage);
+        else if (region.polygon) {
+          const area = polygonArea(region.polygon), share = Math.min(1, Math.max(0, remaining / area));
+          remaining -= area;
+          if (share > 0) {
+            const p = polygon(region.polygon), [x, y, w, h] = bounds(region.polygon);
+            ctx.clip(p); ctx.beginPath(); ctx.rect(x, y, w * share, h); ctx.clip();
+            if (key === 'PP') {
+              ctx.globalAlpha = 0.72; ctx.fillStyle = ctx.createPattern(pavingTile, 'repeat')!; ctx.fill(p);
+            } else {
+              ctx.globalAlpha = 0.97;
+              ctx.drawImage(sprites[key], ...layout.assets[key].sourceRect, x, y, w, h);
+              ctx.globalAlpha = 0.92; ctx.strokeStyle = '#dddcd0'; ctx.lineWidth = 1.5; ctx.stroke(p);
+            }
           }
+        } else if (region.rect) {
+          const [x, y, w, h] = region.rect, scale = Math.sqrt(coverage);
+          ctx.translate(x + w / 2, y + h / 2); ctx.rotate((region.rotation || 0) * Math.PI / 180);
+          ctx.globalAlpha = 0.97;
+          ctx.drawImage(sprites[key], ...layout.assets[key].sourceRect, -w * scale / 2, -h * scale / 2, w * scale, h * scale);
         }
-      } else if (region.rect) {
-        const [x, y, w, h] = region.rect, scale = Math.sqrt(coverage);
-        ctx.translate(x + w / 2, y + h / 2); ctx.rotate((region.rotation || 0) * Math.PI / 180);
-        ctx.globalAlpha = 0.97;
-        ctx.drawImage(sprites[key], ...layout.assets[key].sourceRect, -w * scale / 2, -h * scale / 2, w * scale, h * scale);
+        ctx.restore();
       }
       ctx.restore();
     }
@@ -149,6 +157,6 @@ export function exportArtworkCanvas(image: HTMLCanvasElement, recipe: ArtworkRec
     ctx.fillText(s.area > 0 ? '平均蓄水深度 ' + number(s.depth) + ' mm' : '未布置', x, y + 63);
     if (f === 'RG') ctx.fillText('含乔木配置 ' + number(s.treeArea, 2) + ' m²', x, y + 89);
   });
-  ctx.fillStyle = '#5d6e87'; ctx.font = '17px system-ui, "Microsoft YaHei", sans-serif'; ctx.fillText(ARTWORK_NOTE, 32, canvas.height - 22);
+  ctx.fillStyle = '#5d6e87'; ctx.font = '17px system-ui, "Microsoft YaHei", sans-serif'; ctx.fillText(artworkNote(recipe), 32, canvas.height - 22);
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('图片导出失败，请重试。')), 'image/png'));
 }

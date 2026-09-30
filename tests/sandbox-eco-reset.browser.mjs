@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {mkdirSync,writeFileSync} from 'node:fs';
-const base=process.argv[2]||process.env.SANDBOX_BASE_URL||'http://127.0.0.1:3000';
+const base=process.argv[2]||process.env.SANDBOX_BASE_URL||'http://localhost:3000';
 assert(['localhost','127.0.0.1','[::1]'].includes(new URL(base).hostname),'Local URL required');
 const dir='artifacts/sandbox-eco-reset-qa';mkdirSync(dir,{recursive:true});
 const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||undefined,headless:true});

@@ -70,6 +70,7 @@ SWMM 需要可执行 Python 子进程且可写磁盘的 Node.js 服务环境。G
 
 ```sh
 npm run check
+npm run sandbox:verify-source
 npm run sandbox:test
 npm run build
 ```
@@ -83,7 +84,7 @@ npm run sandbox:test:browser
 
 Linux 自动化环境可用 `npx playwright install --with-deps chromium` 安装浏览器及系统依赖。
 
-- `SANDBOX_BASE_URL` 可设置本机测试端口，默认 `http://127.0.0.1:3000`。
+- `SANDBOX_BASE_URL` 可设置本机测试端口，默认 `http://localhost:3000`。
 - `PLAYWRIGHT_CHANNEL=msedge` 可改用已安装的 Edge；默认使用 Playwright Chromium。
 - 验收运行在独立浏览器上下文，不读写用户当前浏览器的草稿。
 - 视图控制测试使用明确标记的界面测试数据；生态重置和案例预览测试调用真实 SWMM。
@@ -111,9 +112,15 @@ public/zijing_inp.inp                必须提交的原始案例模型
 
 ## 上传到 GitHub
 
+在 GitHub Desktop 中使用 **File → Add local repository…** 选择这个项目根目录（包含 `.git` 和 `package.json` 的目录）。在 **Changes** 中同时勾选修改文件和新增文件，填写提交说明「补齐景观沙盘交互及资源校验」，点击 **Commit to main**，再点击 **Push origin**。如果使用其他分支，Commit 按钮会显示该分支名称。
+
+本次需要一起提交景观交互源码、`public/sandbox/artwork/zijing-v1/` 的五张 PNG 及来源记录、测试、文档、`package.json`、`package-lock.json`、`.gitattributes` 和 `scripts/sandbox-verify-source.mjs`。已有的原始模型和 Python 安装/运行脚本继续保留在仓库中。
+
+`npm run sandbox:verify-source` 检查五张图片的 SHA-256、尺寸和裁剪范围，并确认原始模型、Python 脚本和 npm 依赖清单完整。`npm run build` 会先自动执行这项检查，漏传资源时会指出具体文件。该检查无需 Git、Python、API 密钥或启动本地服务；下载 ZIP 后也能运行。`.gitattributes` 保证景观 PNG 不进行文本换行转换。
+
 ### 保存方案效果图
 
-主视图区默认显示「景观效果」，使用与保存图片相同的底图、素材和合成规则。选择片区、设施及右侧空间配置后，画面自动更新；拖入设施会添加到当前片区的适用空间。精确地块选择及管网查看使用「俯视编辑」，「三维查看」继续保留。
+主视图区默认显示可交互的「俯视编辑」，可点击真实地块和片区标签，也可通过片区下拉框直接跳转 Z01–Z10。四种措施各有独立的添加按钮，当前片区的四项面积及地图标记会即时更新。「景观效果」支持点击片区标签定位、点击屋顶/道路/绿地打开设施配置，以及从工具箱拖放设施到落点片区。点击已布置的设施标记可调整该类设施的合计面积、移除，再通过撤销恢复；所有视图共用同一份模型配置。「三维查看」继续保留。
 
 沙盘提供「查看效果图」；点击「保存方案」会保存配置快照并自动打开效果图。「我的实验」显示已保存方案的缩略图，点击缩略图可重新查看、下载 PNG。旧方案没有图片元数据也可根据原配置生成效果图。
 
@@ -121,13 +128,14 @@ public/zijing_inp.inp                必须提交的原始案例模型
 
 采用固定底图、透明设施素材和浏览器确定性合成，不需要图像生成 API、密钥或额外后端服务。保存记录只存设施配置、计算结果和轻量图片配置，不把大幅 PNG 写入 localStorage。导出的方案 JSON 可继续导入。
 
-设施总面积控制示意覆盖范围；蓄水深度、含乔木配置及降雨写入图片说明。原有景观树木属于固定背景，未模拟树木数量或生长。图片按社区总量表达，不进行逐地块坐标投影或工程选址；实际空间配置以沙盘编辑地图为准。小设施设置了最小视觉尺寸，图片不用于量取面积。
+新效果图使用 v2 配置，按 Z01–Z10 分别显示四类设施，片区内设施面积控制该片区的示意覆盖范围；主景观图与保存图片使用相同的合成规则。已有 v1 图片配置保留原来的社区总量合成方式，不重写旧快照。蓄水深度、含乔木配置及降雨写入图片说明。原有景观树木属于固定背景，未模拟树木数量或生长。景观图采用人工划定的教学片区及空间热点，尚未逐地块精确配准；设施面积、容量约束和计算均使用原模型，合计面积按同片区同类空间分配。小设施设置了最小视觉尺寸，图片不用于量取面积。
 
 需一起提交：
 
 ```text
 public/sandbox/artwork/zijing-v1/     固定底图、四类透明素材和来源记录
 src/lib/sandbox/artwork-layout.json 已校准视觉区域及树冠遮挡
+src/lib/sandbox/landscape-layout.ts 十个教学片区的景观热点和设施示意区域
 src/lib/sandbox/artwork.ts          参数汇总、版本和图片配置
 src/lib/sandbox/artwork-renderer.ts 画面合成及带说明的 PNG 导出
 src/components/sandbox/PlanArtwork.tsx
@@ -137,6 +145,7 @@ src/components/sandbox/StudentSandbox.tsx
 src/components/sandbox/studio.module.css
 tests/sandbox-artwork.test.ts
 tests/sandbox-artwork.browser.mjs
+tests/sandbox-landscape-editing.browser.mjs
 ```
 
 图片资源使用站内路径，代码不依赖开发电脑的绝对路径、临时目录或 `artifacts/`。五张图片合计约 11 MB，作为普通图片文件纳入仓库。图片版本应新增发布，保留旧版本以支持已有方案。
@@ -148,9 +157,10 @@ npx vitest run tests/sandbox-artwork.test.ts
 # 先启动 npm run dev，再运行：
 node tests/sandbox-artwork.browser.mjs
 node tests/sandbox-landscape.browser.mjs
+node tests/sandbox-landscape-editing.browser.mjs
 ```
 
-浏览器验收使用独立上下文和真实模型接口，检查空方案、参数变化、旧方案、快照恢复、PNG 下载和素材加载失败后重试。使用 `SANDBOX_BASE_URL` 指定测试端口。
+浏览器验收使用独立上下文和真实模型接口，检查空方案、参数变化、旧方案、快照恢复、PNG 下载和素材加载失败后重试。景观交互验收覆盖 Z10 的四类空间布置、跨片区原生拖放、错误空间拒绝、标记编辑/删除/撤销、按片区像素变化及手机操作。使用 `SANDBOX_BASE_URL` 指定测试端口。
 
 以**当前项目仓库**为单位提交，保留已有平台代码、`package.json`、`package-lock.json` 和原始模型。新增的 `src/components/sandbox/`、`src/lib/sandbox/`、`src/app/api/sandbox/`、`demo/`、`legacy/`、安装脚本及测试文件必须一起提交，不能只提交 `page.tsx`。
 

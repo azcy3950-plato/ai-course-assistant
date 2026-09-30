@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
-const url = new URL('/sandbox',process.argv[2] || process.env.SANDBOX_BASE_URL || 'http://127.0.0.1:3000').href;
+const url = new URL('/sandbox',process.argv[2] || process.env.SANDBOX_BASE_URL || 'http://localhost:3000').href;
 assert(['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname), 'Only local test URLs allowed');
 const dir = 'artifacts/sandbox-controls-qa';
 mkdirSync(dir, {recursive:true});

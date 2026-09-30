@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { ARTWORK_FACILITIES, ARTWORK_NOTE, artworkFilename, type ArtworkRecipe } from '@/lib/sandbox/artwork';
+import { ARTWORK_FACILITIES, artworkNote, artworkFilename, type ArtworkRecipe } from '@/lib/sandbox/artwork';
 import { exportArtworkCanvas, renderPlanArtwork } from '@/lib/sandbox/artwork-renderer';
 import { FACILITIES } from '@/lib/sandbox/types';
 import styles from './studio.module.css';
@@ -41,7 +41,7 @@ export default function PlanArtwork({ recipe, name, rain, date, compact = false 
     {status === 'error' && <div className={styles.artworkLoading} role={compact ? undefined : 'alert'}>{compact ? '效果图暂不可用' : <>{message}<button className={styles.save} onClick={() => setAttempt(value => value + 1)}>重新生成</button></>}</div>}
     {!compact && <>
       <div className={styles.artworkStats}>{ARTWORK_FACILITIES.map(f => { const s = recipe.facilities[f]; return <div key={f}><span>{FACILITIES[f].name}</span><strong>{number(s.area, 2)}<small> m²</small></strong><span>{s.area ? '平均蓄水深度 ' + number(s.depth) + ' mm' : '未布置'}</span>{f === 'RG' && <span>含乔木配置 {number(s.treeArea, 2)} m²</span>}</div>; })}</div>
-      <p className={styles.artworkNote}>{ARTWORK_NOTE}</p>
+      <p className={styles.artworkNote}>{artworkNote(recipe)}</p>
       {message && status !== 'error' && <p role="alert" className={styles.constraint}>{message}</p>}
     </>}
   </div>;

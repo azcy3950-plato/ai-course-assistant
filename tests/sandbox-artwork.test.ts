@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { artworkCoverage, artworkFilename, createArtworkRecipe, ARTWORK_FACILITIES } from '@/lib/sandbox/artwork';
+import { artworkCoverage, artworkFilename, createArtworkRecipe, ARTWORK_FACILITIES, LEGACY_ARTWORK_VERSION } from '@/lib/sandbox/artwork';
+import { LANDSCAPE_ZONES } from '@/lib/sandbox/landscape-layout';
 import type { Campus, Placement } from '@/lib/sandbox/types';
 
 const campus: Campus = {
@@ -41,6 +42,30 @@ describe('saved plan artwork recipes', () => {
     expect(changed.facilities.RG.depth).toBe(180);
     expect(changed.facilities.RG.treeArea).toBe(200);
     expect(changed.signature).not.toBe(original.signature);
+  });
+  it('keeps the same facility area in its own zone instead of spreading it across the community', () => {
+    const model = { ...campus, patches: [campus.patches[1], { ...campus.patches[1], id: 'green10', zone: 10 }] };
+    const first = createArtworkRecipe(model, [p('a', 200)], '5A');
+    const last = createArtworkRecipe(model, [{ ...p('a', 200), patchId: 'green10' }], '5A');
+    expect(first.facilities).toEqual(last.facilities);
+    expect(artworkCoverage(first, 'RG', 5)).toBeGreaterThan(0);
+    expect(artworkCoverage(first, 'RG', 10)).toBe(0);
+    expect(artworkCoverage(last, 'RG', 10)).toBe(artworkCoverage(first, 'RG', 5));
+    expect(artworkCoverage(last, 'RG', 5)).toBe(0);
+    expect(last.zones?.[10].facilities.RG.area).toBe(200);
+    expect(last.zones?.[10].capacities.green).toBe(2000);
+    const { zones: _zones, ...totals } = first;
+    expect(artworkCoverage({ ...totals, version: LEGACY_ARTWORK_VERSION }, 'RG')).toBe(artworkCoverage(first, 'RG'));
+  });
+  it('provides all ten teaching zones with separate compatible facility regions', () => {
+    expect(LANDSCAPE_ZONES.map(zone => zone.id)).toEqual([1,2,3,4,5,6,7,8,9,10]);
+    for (const zone of LANDSCAPE_ZONES) {
+      for (const surface of ['roof', 'road', 'green'] as const) expect(zone.surfaces[surface].length).toBeGreaterThan(0);
+      expect(zone.facilities.GR.map(region => region.polygon)).toEqual(zone.surfaces.roof);
+      expect(zone.facilities.PP.map(region => region.polygon)).toEqual(zone.surfaces.road);
+      expect(zone.facilities.VS[0].route?.length).toBeGreaterThan(1);
+      expect(zone.facilities.RG[0].rect).toHaveLength(4);
+    }
   });
   it('makes a portable download filename', () => {
     expect(artworkFilename('CON / 草地:方案?')).toMatch(/^zijing-/);

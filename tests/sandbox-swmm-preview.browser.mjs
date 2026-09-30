@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {chromium} from 'playwright';
 
-const base=process.argv[2]||process.env.SANDBOX_BASE_URL||'http://127.0.0.1:3000';
+const base=process.argv[2]||process.env.SANDBOX_BASE_URL||'http://localhost:3000';
 assert(['localhost','127.0.0.1','[::1]'].includes(new URL(base).hostname),'Local URL required');
 const dir='artifacts/sandbox-swmm-preview';
 mkdirSync(dir,{recursive:true});
@@ -26,7 +26,7 @@ try{
  const responseReady=page.waitForResponse(r=>r.url().endsWith('/api/sandbox/run')&&r.request().method()==='POST',{timeout:120000});
  const start=Date.now();
  await page.goto(base+'/sandbox/demo');
- await page.getByTestId('sandbox-landscape').waitFor();
+ await page.getByTestId('sandbox-2d').waitFor();
  const response=await responseReady,result=await response.json();
  assert.equal(response.status(),200,JSON.stringify(result));
  assert.equal(result.proposed.source,'SWMM');

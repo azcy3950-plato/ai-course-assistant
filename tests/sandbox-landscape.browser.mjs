@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
-const base = process.argv[2] || process.env.SANDBOX_BASE_URL || 'http://127.0.0.1:3000';
+const base = process.argv[2] || process.env.SANDBOX_BASE_URL || 'http://localhost:3000';
 assert(['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname), 'Only local test URLs allowed');
 const dir = 'artifacts/sandbox-landscape-integration';
 mkdirSync(dir, { recursive: true });
@@ -43,9 +43,12 @@ async function add(name, area, depth) {
 }
 
 try {
-  await page.goto(new URL('/sandbox', base).href); await ready();
+  await page.goto(new URL('/sandbox', base).href); await page.getByTestId('sandbox-2d').waitFor();
   const model = await page.request.get(new URL('/api/sandbox/model', base).href).then(r => r.json());
-  await check('Default main view displays the approved landscape while exact editors remain available', async () => {
+  await check('Default main view edits exact patches and artwork remains available', async () => {
+    assert.equal(await page.getByTestId('sandbox-2d').isVisible(), true);
+    assert.equal(await image().isVisible(), false);
+    await page.getByRole('button', { name: '景观效果', exact: true }).click(); await ready();
     assert.equal(await image().isVisible(), true);
     assert.equal(await page.getByTestId('sandbox-2d').isVisible(), false);
     assert.equal(await page.getByRole('button', { name: '景观效果', exact: true }).getAttribute('aria-pressed'), 'true');
@@ -66,7 +69,10 @@ try {
     await add('雨水花园', 100, 140);
     const beforeDrop = await signature();
     const dataTransfer = await page.evaluateHandle(() => { const transfer = new DataTransfer(); transfer.setData('application/x-lid', 'VS'); return transfer; });
-    await image().dispatchEvent('drop', { dataTransfer }); await dataTransfer.dispose(); await changed(beforeDrop);
+    const point = await image().locator('g[data-landscape-space="Z05-green"]:not([data-landscape-facility]) polygon').first().evaluate(el => {
+      const p = new DOMPoint(180,500).matrixTransform(el.getScreenCTM()); return {clientX:p.x,clientY:p.y};
+    });
+    await image().dispatchEvent('drop', { dataTransfer, ...point }); await dataTransfer.dispose(); await changed(beforeDrop);
     const items = (await draft()).placements;
     assert(items.some(p => p.facility === 'VS'));
     assert(items.every(p => /^[0-9a-f-]{36}$/.test(p.id)));
@@ -92,9 +98,9 @@ try {
     await image().scrollIntoViewIfNeeded(); const initial = await camera();
     await page.getByRole('button', { name: '放大视图', exact: true }).click(); assert.notEqual(await camera(), initial);
     const zoomed = await camera(); await page.getByRole('button', { name: 'Z06', exact: true }).click();
-    assert.equal(await camera(), zoomed);
+    const fitted = await camera(); assert.notEqual(fitted, zoomed);
     await image().focus(); await page.keyboard.down('ArrowRight'); await page.waitForTimeout(200); await page.keyboard.up('ArrowRight');
-    const moved = await camera(); assert.notEqual(moved, zoomed);
+    const moved = await camera(); assert.notEqual(moved, fitted);
     const before = JSON.stringify((await draft()).placements);
     for (const [button, id] of [['俯视编辑', 'sandbox-2d'], ['三维查看', 'sandbox-3d'], ['景观效果', 'sandbox-landscape']]) {
       await page.getByRole('button', { name: button, exact: true }).click(); await page.getByTestId(id).waitFor();
@@ -102,7 +108,7 @@ try {
     }
     assert.equal(await camera(), moved);
     await page.getByRole('button', { name: '重置视图', exact: true }).click();
-    const old = await pixels(); await page.reload(); await ready(); assert.equal(await pixels(), old);
+    const old = await pixels(); await page.reload(); await page.getByRole('button', { name: '景观效果', exact: true }).click(); await ready(); assert.equal(await pixels(), old);
     const previous = await signature();
     await page.getByRole('button', { name: '载入案例四类设施 →', exact: true }).click(); await changed(previous);
     await page.locator('[data-testid="sandbox-landscape"]').screenshot({ path: dir + '/main-artwork.png' });
